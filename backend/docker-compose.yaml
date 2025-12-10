@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: codion-postgres
+    environment:
+      POSTGRES_DB: codion          # 만들 DB 이름
+      POSTGRES_USER: huisun        # 접속 유저
+      POSTGRES_PASSWORD: 1234      # 접속 비밀번호
+    ports:
+      - "5432:5432"                # 호스트:컨테이너
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
