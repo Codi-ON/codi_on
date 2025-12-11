@@ -7,11 +7,17 @@ import java.time.LocalDate;
 
 // domain/weather/DailyWeather.java
 @Entity
-@Table(name = "daily_weather")
+@Table(
+        name = "daily_weather",
+        indexes = {
+                @Index(name = "idx_daily_weather_region_date", columnList = "region, date")
+        }
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
+
 public class DailyWeather {
 
     @Id
