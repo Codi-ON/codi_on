@@ -9,12 +9,17 @@ import java.util.Optional;
 
 public interface DailyWeatherRepository extends JpaRepository<DailyWeather, Long> {
 
-    // 오늘 날씨 (정확히 오늘 날짜)
-    Optional<DailyWeather> findByRegionAndDate(String region, LocalDate date);
+    // 오늘 날짜 데이터들 (중복 가능성 고려해서 List)
+    List<DailyWeather> findByRegionAndDateOrderByIdDesc(String region, LocalDate date);
 
-    // 최근 날짜 1개 (오늘 데이터 없을 때 fallback 용)
+    // 기간 내 데이터 (주간 조회용)
+    List<DailyWeather> findByRegionAndDateBetweenOrderByDateAsc(String region,
+                                                                LocalDate start,
+                                                                LocalDate end);
+
+    // 해당 지역의 가장 최근 날짜 1개
     Optional<DailyWeather> findTopByRegionOrderByDateDesc(String region);
 
-    // 기간 조회 (오늘 ~ 6일 뒤 = 일주일)
-    List<DailyWeather> findByRegionAndDateBetween(String region, LocalDate start, LocalDate end);
+    // (선택) 새로 저장하기 전에 해당 기간 데이터 싹 정리하고 싶을 때
+    void deleteByRegionAndDateBetween(String region, LocalDate start, LocalDate end);
 }
