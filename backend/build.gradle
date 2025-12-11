@@ -1,22 +1,15 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.8'
-    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.springframework.boot' version '3.3.5'          // 사용 중인 버전에 맞춰도 됨
+    id 'io.spring.dependency-management' version '1.1.5'
 }
 
 group = 'com.team'
 version = '0.0.1-SNAPSHOT'
-description = 'backend'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
-configurations {
-    compileOnly {
-        extendsFrom annotationProcessor
+        languageVersion = JavaLanguageVersion.of(17)        // ✅ 핵심: 자바 17
     }
 }
 
@@ -25,35 +18,23 @@ repositories {
 }
 
 dependencies {
-    // Web & MVC
     implementation 'org.springframework.boot:spring-boot-starter-web'
-
-    // JPA
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-
-    // Security & OAuth2
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
-
-    // Validation
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-
-    // Swagger / OpenAPI
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
-
-    // DB 드라이버 – PostgreSQL
+    implementation 'io.github.cdimascio:java-dotenv:5.2.2'
+    // PostgreSQL
     runtimeOnly 'org.postgresql:postgresql'
 
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
-    // Test
+    // Swagger (springdoc)
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.security:spring-security-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
-    useJUnitPlatform()
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }
