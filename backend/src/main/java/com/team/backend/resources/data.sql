@@ -149,3 +149,32 @@ SELECT * FROM clothing_item_season cs
                   JOIN clothing_item ci ON cs.clothing_item_id = ci.id
 WHERE ci.clothing_id BETWEEN 2001 AND 2010
 ORDER BY ci.id, cs.season;
+
+
+SELECT
+    region,
+    weather_date,
+    temperature,
+    feels_like_temperature,
+    cloud_amount,
+    precipitation_probability,
+    wind_speed,
+    fetched_at
+FROM daily_weather
+WHERE region = 'Seoul'
+  AND weather_date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '4 day')
+ORDER BY weather_date ASC;
+
+SELECT tablename
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY tablename;
+
+SELECT schemaname, tablename
+FROM pg_tables
+WHERE tablename ILIKE '%weather%'
+ORDER BY schemaname, tablename;
+
+SELECT schemaname, tablename
+FROM pg_tables
+ORDER BY schemaname, tablename;
