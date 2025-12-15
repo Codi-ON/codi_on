@@ -1,8 +1,8 @@
 package com.team.backend.api.controller;
 
 import com.team.backend.api.dto.ApiResponse;
-import com.team.backend.api.dto.weather.DailyWeatherDto;
-import com.team.backend.api.dto.weather.WeeklyWeatherDto;
+import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
+import com.team.backend.api.dto.weather.WeeklyWeatherResponseDto;
 import com.team.backend.service.WeatherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,12 +47,12 @@ public class WeatherController {
     //    - 없으면 주간 데이터 받아와서 오늘 데이터까지 채우는 "스마트" 버전
     // ==============================
     @GetMapping(PATH_TODAY)   // => GET /api/weather/today
-    public ApiResponse<DailyWeatherDto> getToday(
+    public ApiResponse<DailyWeatherResponseDto> getToday(
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region,
             @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
             @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon
     ) {
-        DailyWeatherDto dto = weatherService.getTodaySmart(lat, lon, region);
+        DailyWeatherResponseDto dto = weatherService.getTodaySmart(lat, lon, region);
         return ApiResponse.success(dto);
     }
 
@@ -61,12 +61,12 @@ public class WeatherController {
     //    - 프론트에서 "그냥 조회"할 때 쓰는 API
     // ==============================
     @GetMapping(PATH_WEEKLY)   // => GET /api/weather/weekly
-    public ApiResponse<WeeklyWeatherDto> getWeeklyFromDb(
+    public ApiResponse<WeeklyWeatherResponseDto> getWeeklyFromDb(
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region,
             @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
             @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon
     ) {
-        WeeklyWeatherDto dto = weatherService.getWeeklyWeatherFromDb(region);
+        WeeklyWeatherResponseDto dto = weatherService.getWeeklyWeatherFromDb(region);
         return ApiResponse.success(dto);
     }
 
@@ -75,12 +75,12 @@ public class WeatherController {
     //    - 초기 진입 시 "데이터 없으면 채워줘" 용
     // ==============================
     @GetMapping(PATH_WEEKLY + PATH_FETCH)   // => GET /api/weather/weekly/fetch
-    public ApiResponse<WeeklyWeatherDto> fetchWeeklyIfNeeded(
+    public ApiResponse<WeeklyWeatherResponseDto> fetchWeeklyIfNeeded(
             @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
             @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon,
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region
     ) {
-        WeeklyWeatherDto dto = weatherService.fetchWeeklyIfNeeded(lat, lon, region);
+        WeeklyWeatherResponseDto dto = weatherService.fetchWeeklyIfNeeded(lat, lon, region);
         return ApiResponse.success(dto);
     }
 
@@ -89,12 +89,12 @@ public class WeatherController {
     //    - 무조건 외부 OpenWeather에서 새로 받아와서 DB 덮어쓰기
     // ==============================
     @GetMapping(PATH_WEEKLY + PATH_FETCH + PATH_FORCE) // => GET /api/weather/weekly/fetch/force
-    public ApiResponse<WeeklyWeatherDto> forceFetchWeekly(
+    public ApiResponse<WeeklyWeatherResponseDto> forceFetchWeekly(
             @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
             @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon,
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region
     ) {
-        WeeklyWeatherDto dto = weatherService.getWeeklyWeather(lat, lon, region);
+        WeeklyWeatherResponseDto dto = weatherService.getWeeklyWeather(lat, lon, region);
         return ApiResponse.success(dto);
     }
 }

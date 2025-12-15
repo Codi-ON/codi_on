@@ -1,6 +1,6 @@
 package com.team.backend.service;
 
-import com.team.backend.api.dto.weather.DailyWeatherDto;
+import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.domain.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ public class ClothingRecommendationService {
     private record ComfortContext(int avgTemp, ComfortZone zone) {}
 
     private ComfortContext resolveComfortContext(double lat, double lon, String region) {
-        DailyWeatherDto today = weatherService.getTodaySmart(lat, lon, region);
+        DailyWeatherResponseDto today = weatherService.getTodaySmart(lat, lon, region);
 
         double avgTempDouble = today.getTemperature();
         int avgTemp = (int) Math.round(avgTempDouble);
