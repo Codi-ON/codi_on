@@ -1,8 +1,8 @@
 package com.team.backend.service;
 
-import com.team.backend.api.dto.weather.DailyWeatherDto;
+import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.api.dto.weather.OpenWeatherForecastDto;
-import com.team.backend.api.dto.weather.WeeklyWeatherDto;
+import com.team.backend.api.dto.weather.WeeklyWeatherResponseDto;
 import com.team.backend.domain.DailyWeather;
 import com.team.backend.repository.DailyWeatherRepository;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -18,9 +18,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -32,20 +30,18 @@ import java.util.stream.Stream;
 @Transactional
 public class WeatherService {
 
-    // ✅ .env 를 통해 주입받는 Dotenv
-    private final Dotenv dotenv;
+    private static final int DEFAULT_DAYS = 5;
 
+    private final Dotenv dotenv;
     private final RestTemplate restTemplate;
     private final DailyWeatherRepository dailyWeatherRepository;
 
-    // ✅ URL 은 application.yml 에서
     @Value("${weather.api.url}")
     private String weatherApiUrl;
 
     // ==============================
     // 0) .env 에서 API KEY 가져오기
     // ==============================
-
     private String getApiKey() {
         String key = dotenv.get("OPENWEATHER_API_KEY");
         if (key == null || key.isBlank()) {
@@ -56,118 +52,30 @@ public class WeatherService {
     }
 
     // ==============================
-    // 1) 외부 API 호출 + DB 저장
+    // 1) 프론트에서 쓰는 API용 (DB 기반)
     // ==============================
 
-    /**
-     * forecast 5일 데이터를 불러와서
-     * 오늘 기준 하루치로 집계 후 저장 + 반환
-     */
-    public DailyWeatherDto getTodayWeather(double lat, double lon, String region) {
-        OpenWeatherForecastDto forecast = callOpenWeatherForecast(lat, lon);
-
-        // forecast.list → 날짜별 하루 데이터로 변환 (최대 5일)
-        List<DailyWeather> dailyList = toDailyEntities(region, forecast, 5);
-
-        if (dailyList.isEmpty()) {
-            throw new IllegalStateException("forecast 에서 일별 데이터를 만들 수 없습니다.");
-        }
-
-        DailyWeather todayEntity = dailyList.get(0); // 첫 번째 날짜 = 오늘에 가장 가까운 날짜
-
-        LocalDate date = todayEntity.getDate();
-        dailyWeatherRepository.deleteByRegionAndDateBetween(region, date, date);
-        dailyWeatherRepository.save(todayEntity);
-
-        return DailyWeatherDto.from(todayEntity);
-    }
-
-    /**
-     * 5일치 forecast → 일별로 집계해서 DB에 저장 + Weekly DTO 반환
-     */
-    @CacheEvict(value = "weeklyWeather", key = "#region")
-    public WeeklyWeatherDto getWeeklyWeather(double lat, double lon, String region) {
-        OpenWeatherForecastDto forecast = callOpenWeatherForecast(lat, lon);
-
-        List<DailyWeather> entities = toDailyEntities(region, forecast, 5);
-
-        if (entities.isEmpty()) {
-            throw new IllegalStateException("OpenWeather forecast 에서 일별 데이터를 만들 수 없습니다.");
-        }
-
-        LocalDate start = entities.stream()
-                .map(DailyWeather::getDate)
-                .min(Comparator.naturalOrder())
-                .orElseThrow();
-
-        LocalDate end = entities.stream()
-                .map(DailyWeather::getDate)
-                .max(Comparator.naturalOrder())
-                .orElseThrow();
-
-        dailyWeatherRepository.deleteByRegionAndDateBetween(region, start, end);
-        dailyWeatherRepository.saveAll(entities);
-
-        return WeeklyWeatherDto.from(region, entities);
-    }
-
-    /**
-     * DB에 기간 데이터가 있으면 그걸 쓰고,
-     * 없으면 forecast 호출 후 저장
-     */
-    @Cacheable(value = "weeklyWeather", key = "#region")
     @Transactional(readOnly = true)
-    public WeeklyWeatherDto fetchWeeklyIfNeeded(double lat, double lon, String region) {
+    public DailyWeatherResponseDto getTodayWeatherFromDb(String region) {
         LocalDate today = LocalDate.now();
-        LocalDate end = today.plusDays(4); // 5일
+
+        DailyWeather entity = dailyWeatherRepository.findByRegionAndDate(region, today)
+                .orElseGet(() -> {
+                    log.warn("오늘({}) 데이터가 없어 최근 데이터로 대체합니다. region={}", today, region);
+                    return dailyWeatherRepository.findTopByRegionOrderByDateDesc(region)
+                            .orElseThrow(() -> new EntityNotFoundException("해당 지역(" + region + ")의 날씨 데이터가 없습니다."));
+                });
+
+        return DailyWeatherResponseDto.from(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public WeeklyWeatherResponseDto getWeeklyWeatherFromDb(String region) {
+        LocalDate today = LocalDate.now();
+        LocalDate end = today.plusDays(DEFAULT_DAYS - 1);
 
         List<DailyWeather> between =
-                dailyWeatherRepository.findByRegionAndDateBetweenOrderByDateAsc(region, today, end);
-
-        if (!between.isEmpty()) {
-            log.info("✅ 주간 날씨 데이터가 이미 DB에 존재합니다. region={}, 기간={} ~ {}", region, today, end);
-            return WeeklyWeatherDto.from(region, between);
-        }
-
-        log.info("⚠️ 주간 날씨 데이터가 DB에 없어 OpenWeather forecast 를 호출합니다. region={}, 기간={} ~ {}", region, today, end);
-        // 여기서는 @CacheEvict 걸린 getWeeklyWeather 를 사용
-        return getWeeklyWeather(lat, lon, region);
-    }
-
-    // ==============================
-    // 2) DB 조회 (프론트에서 사용하는 실제 API)
-    // ==============================
-
-    @Transactional(readOnly = true)
-    public DailyWeatherDto getTodayWeatherFromDb(String region) {
-        LocalDate today = LocalDate.now();
-
-        List<DailyWeather> todayList =
-                dailyWeatherRepository.findByRegionAndDateOrderByIdDesc(region, today);
-
-        DailyWeather entity;
-
-        if (!todayList.isEmpty()) {
-            entity = todayList.get(0);
-        } else {
-            log.warn("오늘({}) 데이터가 없어 최근 데이터로 대체합니다. region={}", today, region);
-
-            entity = dailyWeatherRepository.findTopByRegionOrderByDateDesc(region)
-                    .orElseThrow(() ->
-                            new EntityNotFoundException("해당 지역(" + region + ")의 날씨 데이터가 없습니다.")
-                    );
-        }
-
-        return DailyWeatherDto.from(entity);
-    }
-
-    @Transactional(readOnly = true)
-    public WeeklyWeatherDto getWeeklyWeatherFromDb(String region) {
-        LocalDate today = LocalDate.now();
-        LocalDate end = today.plusDays(4); // 5일
-
-        List<DailyWeather> between =
-                dailyWeatherRepository.findByRegionAndDateBetweenOrderByDateAsc(region, today, end);
+                dailyWeatherRepository.findAllByRegionAndDateBetweenOrderByDateAsc(region, today, end);
 
         if (between.isEmpty()) {
             throw new EntityNotFoundException(
@@ -175,11 +83,98 @@ public class WeatherService {
             );
         }
 
-        return WeeklyWeatherDto.from(region, between);
+        List<DailyWeatherResponseDto> days = between.stream()
+                .map(DailyWeatherResponseDto::from)
+                .toList();
+
+        return WeeklyWeatherResponseDto.of(region, days);
     }
 
     // ==============================
-    // 3) OpenWeather 호출 + 변환
+    // 2) 스마트 오늘 조회 (DB 우선, 없으면 fetch로 채움)
+    // ==============================
+
+    public DailyWeatherResponseDto getTodaySmart(double lat, double lon, String region) {
+        LocalDate today = LocalDate.now();
+
+        Optional<DailyWeather> todayOpt = dailyWeatherRepository.findByRegionAndDate(region, today);
+        if (todayOpt.isPresent()) {
+            return DailyWeatherResponseDto.from(todayOpt.get());
+        }
+
+        log.info("⚠️ 오늘({}) {} 데이터가 없어 주간 날씨를 새로 가져옵니다.", today, region);
+        fetchWeeklyIfNeeded(lat, lon, region);
+
+        return dailyWeatherRepository.findByRegionAndDate(region, today)
+                .map(DailyWeatherResponseDto::from)
+                .orElseGet(() -> {
+                    log.warn("❗ 주간 날씨를 저장했는데도 오늘({}) 데이터가 없어 최근 데이터로 대체합니다. region={}", today, region);
+                    return getTodayWeatherFromDb(region);
+                });
+    }
+
+    // ==============================
+    // 3) 주간 날씨 fetch (DB에 없으면 외부 호출 + 저장)
+    // ==============================
+
+    @Cacheable(value = "weeklyWeather", key = "#region")
+    @Transactional(readOnly = true)
+    public WeeklyWeatherResponseDto fetchWeeklyIfNeeded(double lat, double lon, String region) {
+        LocalDate today = LocalDate.now();
+        LocalDate end = today.plusDays(DEFAULT_DAYS - 1);
+
+        long count = dailyWeatherRepository.countByRegionAndDateBetween(region, today, end);
+        if (count >= DEFAULT_DAYS) {
+            log.info("✅ 주간 날씨 데이터가 이미 DB에 존재합니다. region={}, 기간={} ~ {}", region, today, end);
+            return getWeeklyWeatherFromDb(region);
+        }
+
+        log.info("⚠️ 주간 날씨 데이터가 부족하여 OpenWeather forecast 를 호출합니다. region={}, 기간={} ~ {}", region, today, end);
+        // 아래 메서드는 @CacheEvict로 캐시를 비움
+        return getWeeklyWeather(lat, lon, region);
+    }
+
+    // ==============================
+    // 4) 주간 날씨 강제 fetch (무조건 외부 호출 + upsert)
+    // ==============================
+
+    @CacheEvict(value = "weeklyWeather", key = "#region")
+    public WeeklyWeatherResponseDto getWeeklyWeather(double lat, double lon, String region) {
+        OpenWeatherForecastDto forecast = callOpenWeatherForecast(lat, lon);
+
+        List<DailyWeather> entities = toDailyEntities(region, forecast, DEFAULT_DAYS);
+        if (entities.isEmpty()) {
+            throw new IllegalStateException("OpenWeather forecast 에서 일별 데이터를 만들 수 없습니다.");
+        }
+
+        upsertDailyWeathers(entities);
+
+        // DB에서 다시 읽어서 정렬/일관성 보장
+        return getWeeklyWeatherFromDb(region);
+    }
+
+    // ==============================
+    // 5) 필요시: 오늘만 외부 호출해서 갱신하고 싶을 때
+    // ==============================
+
+    public DailyWeatherResponseDto getTodayWeather(double lat, double lon, String region) {
+        OpenWeatherForecastDto forecast = callOpenWeatherForecast(lat, lon);
+
+        List<DailyWeather> dailyList = toDailyEntities(region, forecast, DEFAULT_DAYS);
+        if (dailyList.isEmpty()) {
+            throw new IllegalStateException("forecast 에서 일별 데이터를 만들 수 없습니다.");
+        }
+
+        DailyWeather todayEntity = dailyList.get(0);
+        upsertDailyWeathers(List.of(todayEntity));
+
+        return dailyWeatherRepository.findByRegionAndDate(region, todayEntity.getDate())
+                .map(DailyWeatherResponseDto::from)
+                .orElseThrow(() -> new IllegalStateException("오늘 날씨 upsert 후 조회에 실패했습니다."));
+    }
+
+    // ==============================
+    // 6) OpenWeather 호출
     // ==============================
 
     private OpenWeatherForecastDto callOpenWeatherForecast(double lat, double lon) {
@@ -190,7 +185,7 @@ public class WeatherService {
                     .fromHttpUrl(weatherApiUrl)   // e.g. https://api.openweathermap.org/data/2.5/forecast
                     .queryParam("lat", lat)
                     .queryParam("lon", lon)
-                    .queryParam("appid", getApiKey())   // ✅ .env 에서 읽은 키 사용
+                    .queryParam("appid", getApiKey())
                     .queryParam("units", "metric")
                     .build()
                     .toUri();
@@ -222,14 +217,13 @@ public class WeatherService {
     }
 
     // ==============================
-    // 4) forecast.list → DailyWeather 리스트로 집계
+    // 7) forecast.list → 날짜별 DailyWeather 집계
     // ==============================
 
     private List<DailyWeather> toDailyEntities(String region,
                                                OpenWeatherForecastDto forecast,
                                                int maxDays) {
 
-        // 1) dt(초) → LocalDate 로 묶기
         Map<LocalDate, List<OpenWeatherForecastDto.ForecastItem>> byDate =
                 forecast.getList().stream()
                         .collect(Collectors.groupingBy(
@@ -240,7 +234,6 @@ public class WeatherService {
                                 Collectors.toList()
                         ));
 
-        // 2) 날짜별로 집계해서 DailyWeather 로 변환
         return byDate.entrySet().stream()
                 .limit(maxDays)
                 .map(entry -> aggregateDay(region, entry.getKey(), entry.getValue()))
@@ -254,6 +247,7 @@ public class WeatherService {
         // 평균 기온
         double avgTemp = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                .filter(Objects::nonNull)
                 .mapToDouble(OpenWeatherForecastDto.Main::getTemp)
                 .average()
                 .orElse(0.0);
@@ -261,20 +255,41 @@ public class WeatherService {
         // 최저/최고 기온
         double minTemp = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                .filter(Objects::nonNull)
                 .mapToDouble(OpenWeatherForecastDto.Main::getTempMin)
                 .min()
                 .orElse(avgTemp);
 
         double maxTemp = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                .filter(Objects::nonNull)
                 .mapToDouble(OpenWeatherForecastDto.Main::getTempMax)
                 .max()
                 .orElse(avgTemp);
+
+        // ✅ 체감온도 평균
+        double feelsLikeAvg = items.stream()
+                .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                .filter(Objects::nonNull)
+                .mapToDouble(OpenWeatherForecastDto.Main::getFeelsLike)
+                .average()
+                .orElse(avgTemp);
+
+        // ✅ 구름양 평균(0~100)
+        int cloudAvg = (int) Math.round(
+                items.stream()
+                        .map(OpenWeatherForecastDto.ForecastItem::getClouds)
+                        .filter(Objects::nonNull)
+                        .mapToInt(OpenWeatherForecastDto.Clouds::getAll)
+                        .average()
+                        .orElse(0.0)
+        );
 
         // 평균 습도
         int humidity = (int) Math.round(
                 items.stream()
                         .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                        .filter(Objects::nonNull)
                         .mapToInt(OpenWeatherForecastDto.Main::getHumidity)
                         .average()
                         .orElse(0.0)
@@ -288,7 +303,7 @@ public class WeatherService {
                 .average()
                 .orElse(0.0);
 
-        // 강수 확률: 해당 날짜 예보 중 pop 최대값
+        // 강수 확률: 해당 날짜 예보 중 pop 최대값 (0~1 → 0~100)
         int precipitationProbability = (int) Math.round(
                 items.stream()
                         .mapToDouble(OpenWeatherForecastDto.ForecastItem::getPop)
@@ -308,7 +323,7 @@ public class WeatherService {
                 .entrySet().stream()
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
-                .orElse(null);
+                .orElse("UNKNOWN"); // ✅ 엔티티 sky NOT NULL 보호
 
         return DailyWeather.builder()
                 .region(region)
@@ -316,39 +331,64 @@ public class WeatherService {
                 .temperature(avgTemp)
                 .minTemperature(minTemp)
                 .maxTemperature(maxTemp)
+                .feelsLikeTemperature(feelsLikeAvg)
+                .cloudAmount(cloudAvg)
                 .sky(sky)
                 .precipitationProbability(precipitationProbability)
                 .humidity(humidity)
                 .windSpeed(windSpeed)
+                // fetchedAt은 upsert에서 세팅(일괄 동일시각)
                 .build();
     }
 
     // ==============================
-    // 5) 스마트 오늘 조회
+    // 8) (region, date) 기준 upsert
     // ==============================
 
-    public DailyWeatherDto getTodaySmart(double lat, double lon, String region) {
-        LocalDate today = LocalDate.now();
+    private void upsertDailyWeathers(List<DailyWeather> incomingList) {
+        LocalDateTime now = LocalDateTime.now();
 
-        List<DailyWeather> todayList =
-                dailyWeatherRepository.findByRegionAndDateOrderByIdDesc(region, today);
+        for (DailyWeather incoming : incomingList) {
+            String region = incoming.getRegion();
+            LocalDate date = incoming.getDate();
 
-        if (!todayList.isEmpty()) {
-            return DailyWeatherDto.from(todayList.get(0));
+            DailyWeather entity = dailyWeatherRepository.findByRegionAndDate(region, date)
+                    .orElseGet(() -> DailyWeather.builder()
+                            .region(region)
+                            .date(date)
+                            .temperature(incoming.getTemperature())
+                            .minTemperature(incoming.getMinTemperature())
+                            .maxTemperature(incoming.getMaxTemperature())
+                            .feelsLikeTemperature(incoming.getFeelsLikeTemperature())
+                            .cloudAmount(incoming.getCloudAmount())
+                            .sky(incoming.getSky())
+                            .precipitationProbability(incoming.getPrecipitationProbability())
+                            .humidity(incoming.getHumidity())
+                            .windSpeed(incoming.getWindSpeed())
+                            .fetchedAt(now)
+                            .build()
+                    );
+
+            // 이미 있으면 updateFrom으로 갱신
+            if (entity.getId() != null) {
+                entity.updateFrom(
+                        incoming.getTemperature(),
+                        incoming.getMinTemperature(),
+                        incoming.getMaxTemperature(),
+                        incoming.getFeelsLikeTemperature(),
+                        incoming.getCloudAmount(),
+                        incoming.getSky(),
+                        incoming.getPrecipitationProbability(),
+                        incoming.getHumidity(),
+                        incoming.getWindSpeed(),
+                        now
+                );
+            } else {
+                // 신규 생성도 fetchedAt 보장 (Builder에 넣었지만 방어적으로)
+                // (필요하면 여기서도 세팅 가능)
+            }
+
+            dailyWeatherRepository.save(entity);
         }
-
-        log.info("⚠️ 오늘({}) {} 데이터가 없어 주간 날씨를 새로 가져옵니다.", today, region);
-
-        getWeeklyWeather(lat, lon, region);
-
-        todayList =
-                dailyWeatherRepository.findByRegionAndDateOrderByIdDesc(region, today);
-
-        if (!todayList.isEmpty()) {
-            return DailyWeatherDto.from(todayList.get(0));
-        }
-
-        log.warn("❗ 주간 날씨를 새로 저장했는데도 오늘({}) 데이터가 없어 최근 데이터로 대체합니다. region={}", today, region);
-        return getTodayWeatherFromDb(region);
     }
 }
