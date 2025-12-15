@@ -118,7 +118,6 @@ public class WeatherService {
     // ==============================
 
     @Cacheable(value = "weeklyWeather", key = "#region")
-    @Transactional(readOnly = true)
     public WeeklyWeatherResponseDto fetchWeeklyIfNeeded(double lat, double lon, String region) {
         LocalDate today = LocalDate.now();
         LocalDate end = today.plusDays(DEFAULT_DAYS - 1);
