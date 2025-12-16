@@ -1,11 +1,8 @@
 package com.team.backend.api.dto.clothingItem;
 
-import com.team.backend.domain.ClothingCategory;
 import com.team.backend.domain.ClothingItem;
-import com.team.backend.domain.SeasonType;
-import com.team.backend.domain.ThicknessLevel;
-import lombok.Builder;
-import lombok.Getter;
+import com.team.backend.domain.enums.*;
+import lombok.*;
 
 import java.util.Set;
 
@@ -13,37 +10,46 @@ import java.util.Set;
 @Builder
 public class ClothingItemResponseDto {
 
-    private Long id;
-    private Long clothingId;
-    private ClothingCategory category;
-    private String name;
-    private String imageUrl;
+    private final Long id;
+    private final Long clothingId;
+    private final String name;
 
-    private ThicknessLevel thicknessLevel;
-    private Set<SeasonType> seasons;
+    private final ClothingCategory category;
+    private final ThicknessLevel thicknessLevel;
+    private final UsageType usageType;
+    private final Set<SeasonType> seasons;
 
-    private Integer suitableMinTemp;
-    private Integer suitableMaxTemp;
+    private final Integer suitableMinTemp;
+    private final Integer suitableMaxTemp;
 
-    private String color;
-    private String styleTag;
+    private final Integer cottonPercentage;
+    private final Integer polyesterPercentage;
+    private final Integer etcFiberPercentage;
 
-    private int selectedCount;
+    private final String color;
+    private final String styleTag;
+    private final String imageUrl;
 
-    public static ClothingItemResponseDto from(ClothingItem item) {
+    private final Integer selectedCount;
+
+    public static ClothingItemResponseDto from(ClothingItem e) {
         return ClothingItemResponseDto.builder()
-                .id(item.getId())
-                .clothingId(item.getClothingId())
-                .category(item.getCategory())
-                .name(item.getName())
-                .imageUrl(item.getImageUrl())
-                .thicknessLevel(item.getThicknessLevel())
-                .seasons(item.getSeasons())
-                .suitableMinTemp(item.getSuitableMinTemp())
-                .suitableMaxTemp(item.getSuitableMaxTemp())
-                .color(item.getColor())
-                .styleTag(item.getStyleTag())
-                .selectedCount(item.getSelectedCount())
+                .id(e.getId())
+                .clothingId(e.getClothingId())
+                .name(e.getName())
+                .category(e.getCategory())
+                .thicknessLevel(e.getThicknessLevel())
+                .usageType(e.getUsageType())
+                .seasons(e.getSeasons())
+                .suitableMinTemp(e.getSuitableMinTemp())
+                .suitableMaxTemp(e.getSuitableMaxTemp())
+                .cottonPercentage(e.getCottonPercentage())
+                .polyesterPercentage(e.getPolyesterPercentage())
+                .etcFiberPercentage(e.getEtcFiberPercentage())
+                .color(e.getColor())
+                .styleTag(e.getStyleTag())
+                .imageUrl(e.getImageUrl())
+                .selectedCount(e.getSelectedCount())
                 .build();
     }
 }
