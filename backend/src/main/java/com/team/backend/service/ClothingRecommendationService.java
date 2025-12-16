@@ -1,15 +1,21 @@
+// src/main/java/com/team/backend/service/ClothingRecommendationService.java
 package com.team.backend.service;
 
+import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
+import com.team.backend.api.dto.clothingItem.ClothingItemSearchRequestDto;
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
-import com.team.backend.domain.*;
+import com.team.backend.domain.ClothingItem;
+import com.team.backend.domain.enums.ClothingCategory;
+import com.team.backend.domain.enums.ComfortZone;
+import com.team.backend.domain.enums.SeasonType;
+import com.team.backend.repository.ClothingItemRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -18,16 +24,13 @@ import java.util.Set;
 public class ClothingRecommendationService {
 
     private final WeatherService weatherService;
-    private final ClothingItemService clothingItemService;
+    private final ClothingItemRepository clothingItemRepository;
 
-    // ===== 내부 컨텍스트 =====
     private record ComfortContext(int avgTemp, ComfortZone zone) {}
 
     private ComfortContext resolveComfortContext(double lat, double lon, String region) {
         DailyWeatherResponseDto today = weatherService.getTodaySmart(lat, lon, region);
-
-        double avgTempDouble = today.getTemperature();
-        int avgTemp = (int) Math.round(avgTempDouble);
+        int avgTemp = (int) Math.round(today.getTemperature());
         ComfortZone zone = ComfortZone.from(avgTemp);
 
         log.info("🌡 [CONTEXT] region={}, lat={}, lon={}, avgTemp={}, zone={}",
@@ -36,7 +39,6 @@ public class ClothingRecommendationService {
         return new ComfortContext(avgTemp, zone);
     }
 
-    // ===== ComfortZone → 오늘 계절 후보 매핑 =====
     private EnumSet<SeasonType> resolveSeasons(ComfortZone zone) {
         return switch (zone) {
             case VERY_COLD, COLD -> EnumSet.of(SeasonType.WINTER, SeasonType.AUTUMN);
@@ -46,49 +48,49 @@ public class ClothingRecommendationService {
         };
     }
 
-    /**
-     * 👗 옷이 오늘 계절 후보에 맞는지 체크
-     *  - 옷에 seasons 가 비어있으면(또는 null) → “모든 계절용”으로 취급해서 통과
-     *  - 하나라도 겹치는 Season 이 있으면 true
-     */
     private boolean matchesSeason(ClothingItem item, Set<SeasonType> todaySeasons) {
         Set<SeasonType> itemSeasons = item.getSeasons();
-        if (itemSeasons == null || itemSeasons.isEmpty()) {
-            return true; // 계절 미지정 → 아무 계절이나 입을 수 있는 걸로
-        }
-        for (SeasonType season : itemSeasons) {
-            if (todaySeasons.contains(season)) {
-                return true;
-            }
+        if (itemSeasons == null || itemSeasons.isEmpty()) return true; // 미지정 = all season
+        for (SeasonType s : itemSeasons) {
+            if (todaySeasons.contains(s)) return true;
         }
         return false;
     }
 
-    // ===== 실제 추천 메서드들 =====
-
-    /**
-     * ✅ 오늘 날씨 기준 전체 추천
-     */
-    public List<ClothingItem> recommendToday(String region, double lat, double lon) {
+    @Transactional(readOnly = true)
+    public List<ClothingItemResponseDto> recommendToday(String region, double lat, double lon, int limit) {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        // 1차: 온도 범위 기준 후보 (suitableMin/Max)
-        List<ClothingItem> candidates =
-                clothingItemService.recommendByTemperature(ctx.avgTemp());
+        ClothingItemSearchRequestDto req = ClothingItemSearchRequestDto.builder()
+                .temp(ctx.avgTemp())
+                .sort("popular")
+                .limit(limit)
+                .build();
 
-        // 2차: ComfortZone 룰 + 계절 필터
-        return candidates.stream()
-                .filter(ctx.zone()::matches)                // 두께 + OUTER 룰
-                .filter(item -> matchesSeason(item, todaySeasons)) // 계절 매칭
-                .sorted((a, b) -> b.getSelectedCount() - a.getSelectedCount())
-                .toList();
+        List<Long> ids = clothingItemRepository.searchCandidateIds(req, PageRequest.of(0, req.resolvedLimit()));
+        if (ids.isEmpty()) return List.of();
+
+        List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
+
+        Map<Long, ClothingItem> map = new HashMap<>();
+        for (ClothingItem e : rows) map.put(e.getId(), e);
+
+        List<ClothingItemResponseDto> result = new ArrayList<>();
+        for (Long id : ids) {
+            ClothingItem item = map.get(id);
+            if (item == null) continue;
+
+            if (!ctx.zone().matches(item)) continue;
+            if (!matchesSeason(item, todaySeasons)) continue;
+
+            result.add(ClothingItemResponseDto.from(item));
+        }
+        return result;
     }
 
-    /**
-     * ✅ 오늘 날씨 + 카테고리 기준 추천
-     */
-    public List<ClothingItem> recommendTodayByCategory(
+    @Transactional(readOnly = true)
+    public List<ClothingItemResponseDto> recommendTodayByCategory(
             ClothingCategory category,
             String region,
             double lat,
@@ -98,16 +100,31 @@ public class ClothingRecommendationService {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        // 1차: 카테고리 + 온도 조건
-        List<ClothingItem> candidates =
-                clothingItemService.recommendByCategoryAndTemperature(category, ctx.avgTemp());
-
-        // 2차: ComfortZone 룰 + 계절 필터 + 인기순 + limit
-        return candidates.stream()
-                .filter(ctx.zone()::matches)
-                .filter(item -> matchesSeason(item, todaySeasons))
-                .sorted((a, b) -> b.getSelectedCount() - a.getSelectedCount())
+        ClothingItemSearchRequestDto req = ClothingItemSearchRequestDto.builder()
+                .category(category)
+                .temp(ctx.avgTemp())
+                .sort("popular")
                 .limit(limit)
-                .toList();
+                .build();
+
+        List<Long> ids = clothingItemRepository.searchCandidateIds(req, PageRequest.of(0, req.resolvedLimit()));
+        if (ids.isEmpty()) return List.of();
+
+        List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
+
+        Map<Long, ClothingItem> map = new HashMap<>();
+        for (ClothingItem e : rows) map.put(e.getId(), e);
+
+        List<ClothingItemResponseDto> result = new ArrayList<>();
+        for (Long id : ids) {
+            ClothingItem item = map.get(id);
+            if (item == null) continue;
+
+            if (!ctx.zone().matches(item)) continue;
+            if (!matchesSeason(item, todaySeasons)) continue;
+
+            result.add(ClothingItemResponseDto.from(item));
+        }
+        return result;
     }
 }

@@ -1,41 +1,46 @@
 package com.team.backend.repository;
 
-import com.team.backend.domain.ClothingCategory;
 import com.team.backend.domain.ClothingItem;
-import com.team.backend.domain.ThicknessLevel;
-import org.springframework.data.jpa.repository.JpaRepository;
+import com.team.backend.domain.enums.ClothingCategory;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface ClothingItemRepository extends JpaRepository<ClothingItem, Long> {
+public interface ClothingItemRepository extends JpaRepository<ClothingItem, Long>, ClothingItemRepositoryCustom {
 
-    // 특정 ML/외부 시스템 ID로 조회 (필요 시)
+    // ==============================
+    // 0) 외부 비즈니스 키
+    // ==============================
     Optional<ClothingItem> findByClothingId(Long clothingId);
 
-    // 카테고리별 옷 리스트
-    List<ClothingItem> findByCategory(ClothingCategory category);
+    boolean existsByClothingId(Long clothingId);
 
-    // 두께별 옷 리스트
-    List<ClothingItem> findByThicknessLevel(ThicknessLevel thicknessLevel);
+    // ==============================
+    // 1) 인기순 (Top N을 Pageable로 유연하게)
+    // ==============================
+    List<ClothingItem> findAllByOrderBySelectedCountDesc(Pageable pageable);
 
-    // 온도 범위에 맞는 옷 (예: 오늘 기온이 10도면, 5~15도 사이 옷 추천)
-    List<ClothingItem> findBySuitableMinTempLessThanEqualAndSuitableMaxTempGreaterThanEqual(
-            Integer currentTempMin,
-            Integer currentTempMax
-    );
+    List<ClothingItem> findAllByCategoryOrderBySelectedCountDesc(ClothingCategory category, Pageable pageable);
 
-    // 카테고리 + 온도 조건 같이 쓰고 싶을 때
-    List<ClothingItem> findByCategoryAndSuitableMinTempLessThanEqualAndSuitableMaxTempGreaterThanEqual(
-            ClothingCategory category,
-            Integer currentTempMin,
-            Integer currentTempMax
-    );
+    // ==============================
+    // 2) seasons까지 한 번에 로딩 (N+1 방지)
+    // - searchCandidateIds로 ID 먼저 뽑고 여기로 재조회하는 패턴에서 사용
+    // ==============================
+    @EntityGraph(attributePaths = "seasons")
+    @Query("select c from ClothingItem c where c.id in :ids")
+    List<ClothingItem> findAllWithSeasonsByIdIn(@Param("ids") List<Long> ids);
 
-    // 많이 선택된 순으로 상위 N개 (N은 Service 단에서 PageRequest로 자를 수도 있음)
-    List<ClothingItem> findTop10ByOrderBySelectedCountDesc();
+    // ==============================
+    // 3) 선택 카운트 원자 증가 (동시성 안전)
+    // ==============================
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update ClothingItem c set c.selectedCount = c.selectedCount + 1 where c.id = :id")
+    int incrementSelectedCount(@Param("id") Long id);
 
-    // 카테고리별 인기순
-    List<ClothingItem> findTop10ByCategoryOrderBySelectedCountDesc(ClothingCategory category);
-
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update ClothingItem c set c.selectedCount = c.selectedCount + 1 where c.clothingId = :clothingId")
+    int incrementSelectedCountByClothingId(@Param("clothingId") Long clothingId);
 }
