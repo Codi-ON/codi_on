@@ -1,4 +1,4 @@
-package com.team.backend.domain;
+package com.team.backend.domain.enums;
 
 public enum ThicknessLevel {
     THICK,

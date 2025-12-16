@@ -1,15 +1,16 @@
 // domain/ComfortZone.java
-package com.team.backend.domain;
+package com.team.backend.domain.enums;
 
+import com.team.backend.domain.ClothingItem;
 import lombok.Getter;
 
 import java.util.EnumSet;
 import java.util.Set;
 
-import static com.team.backend.domain.ClothingCategory.OUTER;
-import static com.team.backend.domain.ThicknessLevel.NORMAL;
-import static com.team.backend.domain.ThicknessLevel.THICK;
-import static com.team.backend.domain.ThicknessLevel.THIN;
+import static com.team.backend.domain.enums.ClothingCategory.OUTER;
+import static com.team.backend.domain.enums.ThicknessLevel.NORMAL;
+import static com.team.backend.domain.enums.ThicknessLevel.THICK;
+import static com.team.backend.domain.enums.ThicknessLevel.THIN;
 
 @Getter
 public enum ComfortZone {

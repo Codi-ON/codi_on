@@ -1,158 +1,167 @@
+// src/main/java/com/team/backend/service/ClothingItemService.java
 package com.team.backend.service;
 
-import com.team.backend.domain.ClothingCategory;
+import com.team.backend.api.dto.clothingItem.*;
 import com.team.backend.domain.ClothingItem;
-import com.team.backend.domain.ThicknessLevel;
+import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.repository.ClothingItemRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ClothingItemService {
 
+    private static final int DEFAULT_LIMIT = 20;
+    private static final int MAX_LIMIT = 50;
+
     private final ClothingItemRepository clothingItemRepository;
 
     // ==============================
-    // 1. 기본 CRUD / 조회
+    // Create
     // ==============================
+    public ClothingItemResponseDto create(ClothingItemCreateRequestDto req) {
+        if (req.getClothingId() == null) throw new IllegalArgumentException("clothingId는 필수입니다.");
+        if (clothingItemRepository.existsByClothingId(req.getClothingId())) {
+            throw new IllegalArgumentException("이미 존재하는 clothingId 입니다. clothingId=" + req.getClothingId());
+        }
 
+        ClothingItem entity = ClothingItem.builder()
+                .clothingId(req.getClothingId())
+                .name(req.getName())
+                .category(req.getCategory())
+                .thicknessLevel(req.getThicknessLevel())
+                .usageType(req.getUsageType())
+                .suitableMinTemp(req.getSuitableMinTemp())
+                .suitableMaxTemp(req.getSuitableMaxTemp())
+                .cottonPercentage(req.getCottonPercentage())
+                .polyesterPercentage(req.getPolyesterPercentage())
+                .etcFiberPercentage(req.getEtcFiberPercentage())
+                .seasons(req.getSeasons() == null ? new HashSet<>() : new HashSet<>(req.getSeasons()))
+                .color(req.getColor())
+                .styleTag(req.getStyleTag())
+                .imageUrl(req.getImageUrl())
+                .selectedCount(0)
+                .build();
+
+        ClothingItem saved = clothingItemRepository.save(entity);
+        return ClothingItemResponseDto.from(saved);
+    }
+
+    // ==============================
+    // Read
+    // ==============================
     @Transactional(readOnly = true)
-    public ClothingItem getById(Long id) {
-        return clothingItemRepository.findById(id)
+    public ClothingItemResponseDto getById(Long id) {
+        ClothingItem e = clothingItemRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id));
+        e.getSeasons().size(); // LAZY 초기화
+        return ClothingItemResponseDto.from(e);
     }
 
     @Transactional(readOnly = true)
-    public ClothingItem getByClothingId(Long clothingId) {
-        return clothingItemRepository.findByClothingId(clothingId)
+    public ClothingItemResponseDto getByClothingId(Long clothingId) {
+        ClothingItem e = clothingItemRepository.findByClothingId(clothingId)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId));
+        e.getSeasons().size();
+        return ClothingItemResponseDto.from(e);
     }
 
-    @Transactional(readOnly = true)
-    public List<ClothingItem> findAll() {
-        return clothingItemRepository.findAll();
+    // ==============================
+    // Update (PATCH)
+    // ==============================
+    public ClothingItemResponseDto update(Long id, ClothingItemUpdateRequestDto req) {
+        ClothingItem e = clothingItemRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id));
+
+        e.updateCore(req.getName(), req.getCategory(), req.getThicknessLevel(), req.getUsageType());
+        e.updateTempRange(req.getSuitableMinTemp(), req.getSuitableMaxTemp());
+        e.updateMaterials(req.getCottonPercentage(), req.getPolyesterPercentage(), req.getEtcFiberPercentage());
+        e.updateMeta(req.getColor(), req.getStyleTag(), req.getImageUrl());
+
+        if (req.getSeasons() != null) {
+            e.replaceSeasons(req.getSeasons()); // 전체 교체 전략
+        }
+
+        return ClothingItemResponseDto.from(e);
     }
 
-    public ClothingItem save(ClothingItem clothingItem) {
-        return clothingItemRepository.save(clothingItem);
-    }
-
+    // ==============================
+    // Delete
+    // ==============================
     public void delete(Long id) {
         if (!clothingItemRepository.existsById(id)) {
-            throw new EntityNotFoundException("옷을 찾을 수 없습니다. id=" + id);
+            throw new EntityNotFoundException("삭제할 옷을 찾을 수 없습니다. id=" + id);
         }
         clothingItemRepository.deleteById(id);
     }
 
     // ==============================
-    // 2. 조건별 조회 (카테고리 / 두께 / 온도)
+    // Search (프론트 클릭/필터)
+    // - 후보 id만 먼저(Custom) → seasons 포함 재조회(EntityGraph)
     // ==============================
-
     @Transactional(readOnly = true)
-    public List<ClothingItem> findByCategory(ClothingCategory category) {
-        return clothingItemRepository.findByCategory(category);
-    }
+    public List<ClothingItemResponseDto> search(ClothingItemSearchRequestDto req) {
+        Pageable pageable = PageRequest.of(0, req == null ? DEFAULT_LIMIT : req.resolvedLimit());
+        List<Long> ids = clothingItemRepository.searchCandidateIds(req, pageable);
+        if (ids.isEmpty()) return List.of();
 
-    @Transactional(readOnly = true)
-    public List<ClothingItem> findByThickness(ThicknessLevel thicknessLevel) {
-        return clothingItemRepository.findByThicknessLevel(thicknessLevel);
-    }
+        List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
 
-    /**
-     * 현재 기온 하나만 넣어서, 그 기온에 맞는 옷 추천
-     * 예: currentTemp = 10 이면
-     *     suitableMinTemp <= 10 AND suitableMaxTemp >= 10 인 옷들
-     */
-    @Transactional(readOnly = true)
-    public List<ClothingItem> recommendByTemperature(Integer currentTemp) {
-        if (currentTemp == null) {
-            throw new IllegalArgumentException("currentTemp 는 null 일 수 없습니다.");
+        Map<Long, ClothingItem> map = rows.stream()
+                .collect(Collectors.toMap(ClothingItem::getId, x -> x));
+
+        List<ClothingItemResponseDto> ordered = new ArrayList<>(ids.size());
+        for (Long id : ids) {
+            ClothingItem e = map.get(id);
+            if (e != null) ordered.add(ClothingItemResponseDto.from(e));
         }
-
-        log.info("🔥 [recommendByTemperature] currentTemp={}", currentTemp);
-
-        List<ClothingItem> items =
-                clothingItemRepository
-                        .findBySuitableMinTempLessThanEqualAndSuitableMaxTempGreaterThanEqual(
-                                currentTemp, currentTemp
-                        );
-
-        log.info("🔥 [recommendByTemperature] DB 결과 개수 = {}", items.size());
-
-        return items;
+        return ordered;
     }
-    /**
-     * 카테고리 + 현재 기온 기준 추천
-     * 예: 상의 중에서 10도에 맞는 옷만.
-     */
+
+    // ==============================
+    // Popular
+    // ==============================
     @Transactional(readOnly = true)
-    public List<ClothingItem> recommendByCategoryAndTemperature(
-            ClothingCategory category,
-            Integer currentTemp
-    ) {
-        if (currentTemp == null) {
-            throw new IllegalArgumentException("currentTemp 는 null 일 수 없습니다.");
-        }
-        return clothingItemRepository
-                .findByCategoryAndSuitableMinTempLessThanEqualAndSuitableMaxTempGreaterThanEqual(
-                        category,
-                        currentTemp,
-                        currentTemp
-                );
-    }
-
-    // ==============================
-    // 3. 선택 횟수 증가 (인기/선호도 트래킹)
-    // ==============================
-
-    public void markSelected(Long clothingItemId) {
-        ClothingItem item = clothingItemRepository.findById(clothingItemId)
-                .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + clothingItemId));
-
-        item.increaseSelectedCount(); // JPA 변경 감지로 UPDATE
-    }
-
-    public void markSelectedByClothingId(Long clothingId) {
-        ClothingItem item = clothingItemRepository.findByClothingId(clothingId)
-                .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId));
-
-        item.increaseSelectedCount();
-    }
-
-    // ==============================
-    // 4. 인기순 조회
-    // ==============================
-
-    @Transactional(readOnly = true)
-    public List<ClothingItem> getTopPopularItems(int limit) {
-        PageRequest pageRequest = PageRequest.of(
-                0,
-                limit,
-                Sort.by(Sort.Direction.DESC, "selectedCount")
-        );
-        return clothingItemRepository.findAll(pageRequest).getContent();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ClothingItem> getTopPopularItemsByCategory(ClothingCategory category, int limit) {
-        return clothingItemRepository.findTop10ByCategoryOrderBySelectedCountDesc(category)
-                .stream()
-                .limit(limit)
+    public List<ClothingItemResponseDto> getPopular(int limit) {
+        int resolved = clamp(limit, DEFAULT_LIMIT, MAX_LIMIT);
+        Pageable pageable = PageRequest.of(0, resolved);
+        return clothingItemRepository.findAllByOrderBySelectedCountDesc(pageable)
+                .stream().map(ClothingItemResponseDto::from)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<ClothingItem> getTop10PopularItems() {
-        return clothingItemRepository.findTop10ByOrderBySelectedCountDesc();
+    public List<ClothingItemResponseDto> getPopularByCategory(ClothingCategory category, int limit) {
+        int resolved = clamp(limit, DEFAULT_LIMIT, MAX_LIMIT);
+        Pageable pageable = PageRequest.of(0, resolved);
+        return clothingItemRepository.findAllByCategoryOrderBySelectedCountDesc(category, pageable)
+                .stream().map(ClothingItemResponseDto::from)
+                .toList();
+    }
+
+    // ==============================
+    // SelectedCount (동시성 안전: update 쿼리)
+    // ==============================
+    public void markSelected(Long id) {
+        int updated = clothingItemRepository.incrementSelectedCount(id);
+        if (updated == 0) throw new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id);
+    }
+
+    public void markSelectedByClothingId(Long clothingId) {
+        int updated = clothingItemRepository.incrementSelectedCountByClothingId(clothingId);
+        if (updated == 0) throw new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId);
+    }
+
+    private int clamp(int v, int def, int max) {
+        int x = (v <= 0 ? def : v);
+        return Math.min(Math.max(x, 1), max);
     }
 }

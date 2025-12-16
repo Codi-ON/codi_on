@@ -1,4 +1,4 @@
-package com.team.backend.domain;
+package com.team.backend.domain.enums;
 
 public enum SeasonType {
     SPRING,   // 봄
