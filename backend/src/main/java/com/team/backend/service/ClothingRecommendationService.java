@@ -3,12 +3,14 @@ package com.team.backend.service;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemSearchRequestDto;
+import com.team.backend.api.dto.recommendation.RecommendationEventLogWriteRequestDto;
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.domain.enums.ComfortZone;
 import com.team.backend.domain.enums.SeasonType;
 import com.team.backend.repository.ClothingItemRepository;
+import com.team.backend.repository.log.RecommendationEventLogWriter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +27,7 @@ public class ClothingRecommendationService {
 
     private final WeatherService weatherService;
     private final ClothingItemRepository clothingItemRepository;
+    private final RecommendationEventLogWriter eventLogWriter;
 
     private record ComfortContext(int avgTemp, ComfortZone zone) {}
 
@@ -69,7 +72,17 @@ public class ClothingRecommendationService {
                 .build();
 
         List<Long> ids = clothingItemRepository.searchCandidateIds(req, PageRequest.of(0, req.resolvedLimit()));
-        if (ids.isEmpty()) return List.of();
+        if (ids.isEmpty()) {
+            // ✅ 결과 0이어도 로그는 남기는 게 보통 더 좋음(분석 가능)
+            eventLogWriter.write(
+                    RecommendationEventLogWriteRequestDto.builder()
+                            .eventType("RECO_TODAY_EMPTY")
+                            .payloadJson("{\"region\":\"" + region + "\",\"lat\":" + lat + ",\"lon\":" + lon +
+                                    ",\"limit\":" + limit + ",\"temp\":" + ctx.avgTemp() + ",\"zone\":\"" + ctx.zone() + "\"}")
+                            .build()
+            );
+            return List.of();
+        }
 
         List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
 
@@ -86,9 +99,19 @@ public class ClothingRecommendationService {
 
             result.add(ClothingItemResponseDto.from(item));
         }
+
+        // ✅ ✅ ✅ 여기! “결과 만든 다음, return 직전 1번”
+        eventLogWriter.write(
+                RecommendationEventLogWriteRequestDto.builder()
+                        .eventType("RECO_TODAY_GENERATED")
+                        .payloadJson("{\"region\":\"" + region + "\",\"lat\":" + lat + ",\"lon\":" + lon +
+                                ",\"limit\":" + limit + ",\"temp\":" + ctx.avgTemp() +
+                                ",\"zone\":\"" + ctx.zone() + "\",\"resultSize\":" + result.size() + "}")
+                        .build()
+        );
+
         return result;
     }
-
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> recommendTodayByCategory(
             ClothingCategory category,
