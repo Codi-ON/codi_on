@@ -1,4 +1,4 @@
-package com.team.backend.domain;
+package com.team.backend.domain.enums;
 
 public enum ClothingCategory {
     TOP,        // 상의 (티셔츠, 셔츠, 후드티 등)
