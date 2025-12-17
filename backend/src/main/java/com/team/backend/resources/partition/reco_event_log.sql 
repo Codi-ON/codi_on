@@ -1,68 +1,35 @@
+-- recommendation_event_log: 월별 RANGE 파티셔닝 (2025-12, 2026-01 + default)
+
 BEGIN;
 
--- 1) 기존 테이블 백업 이름으로 변경
-ALTER TABLE public.recommendation_event_log
-    RENAME TO recommendation_event_log_old;
+-- 0) 혹시 남아있던 이전 테이블/파티션 깨끗하게 제거
+DROP TABLE IF EXISTS public.recommendation_event_log CASCADE;
 
--- 2) 파티션 부모 테이블 생성 (PK에 created_at 포함!)
+-- 1) 부모(파티션 루트) 테이블 생성
 CREATE TABLE public.recommendation_event_log (
-                                                 id          BIGSERIAL,
-                                                 created_at  TIMESTAMP NOT NULL,
-                                                 event_type  VARCHAR(50) NOT NULL,
-                                                 payload     JSONB,
-                                                 PRIMARY KEY (created_at, id)
+    id                BIGSERIAL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id           BIGINT,
+    session_id        UUID,
+    recommendation_id BIGINT,
+    event_type        VARCHAR(50) NOT NULL,
+    payload           JSONB,
+    PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
--- 3) 이번달 파티션 예시 (원하는 월로 바꿔)
+-- 2) 2025-12 파티션
 CREATE TABLE public.recommendation_event_log_202512
     PARTITION OF public.recommendation_event_log
         FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
 
--- 4) 혹시 범위 밖 데이터 들어올 때 대비 (권장)
+-- 3) 2026-01 파티션 (원하면 유지, 아니면 지워도 됨)
+CREATE TABLE public.recommendation_event_log_202601
+    PARTITION OF public.recommendation_event_log
+        FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+
+-- 4) 기본(default) 파티션 – 범위 밖 데이터 보호용
 CREATE TABLE public.recommendation_event_log_default
     PARTITION OF public.recommendation_event_log
         DEFAULT;
 
--- 5) 기존 데이터 옮기기
-INSERT INTO public.recommendation_event_log (id, created_at, event_type, payload)
-SELECT id, created_at, event_type, payload
-FROM public.recommendation_event_log_old;
-
--- 6) 시퀀스 값 맞추기 (id가 계속 이어지게)
-SELECT setval(
-               pg_get_serial_sequence('public.recommendation_event_log', 'id'),
-               (SELECT COALESCE(MAX(id), 0) FROM public.recommendation_event_log)
-       );
-
--- 7) 백업 테이블 삭제(원하면 COMMIT 전에 검증하고 지워)
-DROP TABLE public.recommendation_event_log_old;
-
 COMMIT;
----- 6개월치 생성 쿼리문---
-DO $$
-    DECLARE
-        start_date date := date_trunc('month', now())::date;
-        i int;
-        from_ts timestamp;
-        to_ts timestamp;
-        part_name text;
-    BEGIN
-        -- DEFAULT 파티션 (범위 밖 데이터 안전망)
-        EXECUTE 'CREATE TABLE IF NOT EXISTS public.recommendation_event_log_default
-           PARTITION OF public.recommendation_event_log DEFAULT';
-
-        -- 이번달(0) + 다음달(5)
-        FOR i IN 0..5 LOOP
-                from_ts := (start_date + (i || ' month')::interval);
-                to_ts   := (start_date + ((i+1) || ' month')::interval);
-
-                part_name := format('public.recommendation_event_log_%s', to_char(from_ts, 'YYYYMM'));
-
-                EXECUTE format(
-                        'CREATE TABLE IF NOT EXISTS %s
-                           PARTITION OF public.recommendation_event_log
-                           FOR VALUES FROM (%L) TO (%L);',
-                        part_name, from_ts, to_ts
-                        );
-            END LOOP;
-    END $$;
