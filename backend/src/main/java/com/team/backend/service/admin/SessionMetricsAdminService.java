@@ -1,17 +1,14 @@
-// src/main/java/com/team/backend/service/SessionMetricsAdminService.java
+// src/main/java/com/team/backend/service/admin/SessionMetricsAdminService.java
 package com.team.backend.service.admin;
 
-import com.team.backend.api.dto.session.SessionHourlyUsageResponseDto;
-import com.team.backend.api.dto.session.SessionDailyTrendResponseDto;
-
-import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
-import com.team.backend.api.dto.session.SessionMetricsSummaryResponseDto;
+import com.team.backend.api.dto.session.*;
 import com.team.backend.repository.log.SessionLogMetricsJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Service
@@ -19,22 +16,24 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class SessionMetricsAdminService {
 
+    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
+
     private final SessionLogMetricsJdbcRepository sessionLogMetricsJdbcRepository;
 
-    /**
-     * 관리자 대시보드용 세션 지표 전체 조회
-     *  - 요약 + 일별 추이 + 시간대별 사용량
-     */
     public SessionMetricsDashboardResponseDto getDashboard(OffsetDateTime from, OffsetDateTime to) {
 
+        // KST 기준: from=00:00:00, to=23:59:59.999999999 (date-only 범위로 맞춤)
+        OffsetDateTime fromAt = from.toLocalDate().atStartOfDay().atOffset(KST);
+        OffsetDateTime toAt = to.toLocalDate().plusDays(1).atStartOfDay().atOffset(KST).minusNanos(1);
+
         SessionMetricsSummaryResponseDto summary =
-                sessionLogMetricsJdbcRepository.findSummary(from, to);
+                sessionLogMetricsJdbcRepository.findSummary(fromAt, toAt);
 
         List<SessionDailyTrendResponseDto> dailyTrend =
-                sessionLogMetricsJdbcRepository.findDailyTrend(from, to);
+                sessionLogMetricsJdbcRepository.findDailyTrend(fromAt, toAt);
 
         List<SessionHourlyUsageResponseDto> hourlyUsage =
-                sessionLogMetricsJdbcRepository.findHourlyUsage(from, to);
+                sessionLogMetricsJdbcRepository.findHourlyUsage(fromAt, toAt);
 
         return SessionMetricsDashboardResponseDto.builder()
                 .summary(summary)
@@ -42,4 +41,6 @@ public class SessionMetricsAdminService {
                 .hourlyUsage(hourlyUsage)
                 .build();
     }
+
+
 }
