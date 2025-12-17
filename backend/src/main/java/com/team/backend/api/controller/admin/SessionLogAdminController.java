@@ -3,7 +3,12 @@ package com.team.backend.api.controller.admin;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.session.SessionLogResponseDto;
+import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
+import com.team.backend.domain.enums.log.SessionRangeType;
+import com.team.backend.domain.session.SessionDateRange;
+import com.team.backend.domain.session.SessionRangeResolver;
 import com.team.backend.repository.SessionLogAdminService;
+import com.team.backend.service.SessionMetricsAdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +22,7 @@ import java.util.List;
 public class SessionLogAdminController {
 
     private final SessionLogAdminService sessionLogAdminService;
+    private final SessionMetricsAdminService sessionMetricsAdminService;
 
     @GetMapping("/recent")
     public ApiResponse<List<SessionLogResponseDto>> getRecent(
@@ -39,4 +45,21 @@ public class SessionLogAdminController {
                 sessionLogAdminService.getByCreatedAtBetween(from, to, limit)
         );
     }
+
+
+    @GetMapping("/admin/session-metrics")
+public ApiResponse<SessionMetricsDashboardResponseDto> getMetrics(
+        @RequestParam(required = false) SessionRangeType rangeType,
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to
+) {
+    SessionDateRange range = SessionRangeResolver.resolve(rangeType, from, to);
+
+    SessionMetricsDashboardResponseDto result =
+            sessionMetricsAdminService.getDashboard(range.from(), range.to());
+
+    return ApiResponse.success(result);
+}
 }
