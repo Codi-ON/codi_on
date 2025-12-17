@@ -10,18 +10,19 @@ BEGIN;
 DROP TABLE IF EXISTS public.session_log CASCADE;
 
 -- 1) 부모(파티션) 테이블 생성
-CREATE TABLE IF NOT EXISTS public.session_log (
-                                                  id          BIGINT GENERATED ALWAYS AS IDENTITY,
-                                                  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE IF NOT EXISTS public.session_log
+(
+    id          BIGINT GENERATED ALWAYS AS IDENTITY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     -- 최소 필드(원하면 추가 확장)
-                                                  user_id     BIGINT NULL,
-                                                  session_key VARCHAR(64) NOT NULL,
-                                                  event_type  VARCHAR(50) NOT NULL,
-                                                  payload     JSONB NULL,
+    user_id     BIGINT      NULL,
+    session_key VARCHAR(64) NOT NULL,
+    event_type  VARCHAR(50) NOT NULL,
+    payload     JSONB       NULL,
 
     -- ✅ 파티션 키 포함 필수
-                                                  PRIMARY KEY (id, created_at)
+    PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
 -- 2) 파티션 생성 (이번달/다음달 + DEFAULT)
@@ -57,22 +58,23 @@ CREATE INDEX IF NOT EXISTS idx_session_log_event_type
 
 -- 4) 스모크 테스트용 insert (원치 않으면 주석 처리)
 INSERT INTO public.session_log (created_at, user_id, session_key, event_type, payload)
-VALUES (now(), NULL, 'S_SMOKE_001', 'SMOKE_TEST', '{"ok": true}'::jsonb);
+VALUES (now(), NULL, 'S_SMOKE_001', 'SMOKE_TEST', '{
+  "ok": true
+}'::jsonb);
 
 COMMIT;
 
--- =========================================================
+
 -- 확인 쿼리(필요 시 따로 실행)
--- SELECT to_regclass('public.session_log');
--- SELECT c.relname
---   FROM pg_inherits i
---   JOIN pg_class c ON c.oid = i.inhrelid
---  WHERE i.inhparent = 'public.session_log'::regclass
---  ORDER BY 1;
+SELECT to_regclass('public.session_log');
+SELECT c.relname
+FROM pg_inherits i
+         JOIN pg_class c ON c.oid = i.inhrelid
+WHERE i.inhparent = 'public.session_log'::regclass
+ORDER BY 1;
 --
 -- INSERT가 어느 파티션에 들어갔는지 확인:
 -- SELECT tableoid::regclass AS physical_table, *
 --   FROM public.session_log
 --  ORDER BY created_at DESC
 --  LIMIT 10;
--- =========================================================
