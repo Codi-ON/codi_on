@@ -8,7 +8,7 @@ import com.team.backend.domain.enums.log.SessionRangeType;
 import com.team.backend.domain.session.SessionDateRange;
 import com.team.backend.domain.session.SessionRangeResolver;
 import com.team.backend.repository.SessionLogAdminService;
-import com.team.backend.service.SessionMetricsAdminService;
+import com.team.backend.service.Sess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
