@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/service/ClothingItemService.java
 package com.team.backend.service.clothing;
 
 import com.team.backend.api.dto.clothingItem.*;
@@ -12,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -60,18 +60,12 @@ public class ClothingItemService {
     // ==============================
     @Transactional(readOnly = true)
     public ClothingItemResponseDto getById(Long id) {
-
         ClothingItem e = clothingItemRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id));
-        int ignored = e.getSeasons().size(); // LAZY 초기화
-        return ClothingItemResponseDto.from(e);
-    }
 
-    @Transactional(readOnly = true)
-    public ClothingItemResponseDto getByClothingId(Long clothingId) {
-        ClothingItem e = clothingItemRepository.findByClothingId(clothingId)
-                .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId));
-       int ignored = e.getSeasons().size();
+        // LAZY 초기화 (seasons)
+        e.getSeasons().size();
+
         return ClothingItemResponseDto.from(e);
     }
 
@@ -88,7 +82,7 @@ public class ClothingItemService {
         e.updateMeta(req.getColor(), req.getStyleTag(), req.getImageUrl());
 
         if (req.getSeasons() != null) {
-            e.replaceSeasons(req.getSeasons()); // 전체 교체 전략
+            e.replaceSeasons(req.getSeasons());
         }
 
         return ClothingItemResponseDto.from(e);
@@ -105,19 +99,41 @@ public class ClothingItemService {
     }
 
     // ==============================
-    // Search (프론트 클릭/필터)
-    // - 후보 id만 먼저(Custom) → seasons 포함 재조회(EntityGraph)
+    // Search (옵션 A: clothingId를 search로 흡수)
+    // - clothingId 있으면 단건 조회
+    // - 아니면 후보 id만 먼저(Custom) → seasons 포함 재조회(EntityGraph)
     // ==============================
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> search(ClothingItemSearchRequestDto req) {
-        Pageable pageable = PageRequest.of(0, req == null ? DEFAULT_LIMIT : req.resolvedLimit());
+
+        // 1) clothingId 단건 조회 (비즈니스 키)
+        if (req != null && req.getClothingId() != null) {
+            Long clothingId = req.getClothingId();
+
+            ClothingItem e = clothingItemRepository.findByClothingId(clothingId)
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId
+                    ));
+
+            e.getSeasons().size();
+            return List.of(ClothingItemResponseDto.from(e));
+        }
+
+        // 2) 기존 검색 흐름 유지
+        int limit = (req == null ? DEFAULT_LIMIT : req.resolvedLimit());
+        Pageable pageable = PageRequest.of(0, clamp(limit));
+
         List<Long> ids = clothingItemRepository.searchCandidateIds(req, pageable);
-        if (ids.isEmpty()) return List.of();
+        return fetchOrderedDtos(ids);
+    }
+
+    private List<ClothingItemResponseDto> fetchOrderedDtos(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
 
         List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
 
         Map<Long, ClothingItem> map = rows.stream()
-                .collect(Collectors.toMap(ClothingItem::getId, x -> x));
+                .collect(Collectors.toMap(ClothingItem::getId, Function.identity()));
 
         List<ClothingItemResponseDto> ordered = new ArrayList<>(ids.size());
         for (Long id : ids) {
@@ -135,8 +151,9 @@ public class ClothingItemService {
         int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
         return clothingItemRepository.findAllByOrderBySelectedCountDesc(pageable)
-                .stream().map(ClothingItemResponseDto::from)
-                .toList();
+                .stream()
+                .map(ClothingItemResponseDto::from)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -144,8 +161,9 @@ public class ClothingItemService {
         int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
         return clothingItemRepository.findAllByCategoryOrderBySelectedCountDesc(category, pageable)
-                .stream().map(ClothingItemResponseDto::from)
-                .toList();
+                .stream()
+                .map(ClothingItemResponseDto::from)
+                .collect(Collectors.toList());
     }
 
     // ==============================
@@ -157,7 +175,7 @@ public class ClothingItemService {
     }
 
     private int clamp(int v) {
-        int x = (v <= 0 ? ClothingItemService.DEFAULT_LIMIT : v);
-        return Math.min(x, ClothingItemService.MAX_LIMIT);
+        int x = (v <= 0 ? DEFAULT_LIMIT : v);
+        return Math.min(x, MAX_LIMIT);
     }
 }

@@ -14,6 +14,8 @@ public class ClothingItemSearchRequestDto {
     private ClothingCategory category;
     private Integer temp;
 
+    private Long clothingId;
+
     // 하나라도 겹치면 통과(OR)
     private Set<SeasonType> seasons;
 
