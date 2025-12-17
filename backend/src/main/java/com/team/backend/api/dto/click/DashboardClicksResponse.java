@@ -10,6 +10,7 @@ public record DashboardClicksResponse(
     TopClickedItems topClickedItems
 ) {
   public record Meta(
+      String region,
       LocalDate from,
       LocalDate to,
       Instant generatedAt,

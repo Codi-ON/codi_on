@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -21,9 +20,11 @@ public class SessionMetricsAdminService {
 
     private final SessionLogMetricsJdbcRepository sessionLogMetricsJdbcRepository;
 
-    public SessionMetricsDashboardResponseDto getDashboard(LocalDate from, LocalDate to) {
-        OffsetDateTime fromAt = from.atStartOfDay().atOffset(KST);
-        OffsetDateTime toAt = to.plusDays(1).atStartOfDay().atOffset(KST).minusNanos(1);
+    public SessionMetricsDashboardResponseDto getDashboard(OffsetDateTime from, OffsetDateTime to) {
+
+        // KST 기준: from=00:00:00, to=23:59:59.999999999 (date-only 범위로 맞춤)
+        OffsetDateTime fromAt = from.toLocalDate().atStartOfDay().atOffset(KST);
+        OffsetDateTime toAt = to.toLocalDate().plusDays(1).atStartOfDay().atOffset(KST).minusNanos(1);
 
         SessionMetricsSummaryResponseDto summary =
                 sessionLogMetricsJdbcRepository.findSummary(fromAt, toAt);
@@ -40,4 +41,6 @@ public class SessionMetricsAdminService {
                 .hourlyUsage(hourlyUsage)
                 .build();
     }
+
+
 }
