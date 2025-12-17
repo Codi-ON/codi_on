@@ -13,6 +13,8 @@ import java.util.List;
 @Service
 public class DashboardClicksService {
 
+  private static final String FIXED_REGION = "Seoul"; // ✅ 입력값 제거, 응답에만 고정
+
   private final ClickAnalyticsJdbcRepository repo;
 
   public DashboardClicksService(ClickAnalyticsJdbcRepository repo) {
@@ -38,7 +40,7 @@ public class DashboardClicksService {
         .toList();
 
     return new DashboardClicksResponse(
-        new DashboardClicksResponse.Meta(from, to, Instant.now(), false),
+        new DashboardClicksResponse.Meta(FIXED_REGION, from, to, Instant.now(), false),
         new DashboardClicksResponse.DailyClickTrend(points, totalClicks),
         new DashboardClicksResponse.TopClickedItems(topN, items)
     );
