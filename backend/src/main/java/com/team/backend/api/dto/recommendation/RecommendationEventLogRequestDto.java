@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/api/dto/recommendation/RecommendationEventLogRequestDto.java
 package com.team.backend.api.dto.recommendation;
 
 import lombok.*;
@@ -9,14 +10,16 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RecommendationEventLogRowDto {
+public class RecommendationEventLogRequestDto {
     private Long id;
     private OffsetDateTime createdAt;
-
     private Long userId;
     private UUID sessionId;
     private Long recommendationId;
-
     private String eventType;
-    private String payloadJson; // jsonb -> String
+    /**
+     * DB payload(jsonb)를 그대로 text로 변환해서 담는 필드
+     * - 프론트/관리자 페이지에서 raw JSON 확인용
+     */
+    private String payloadJson;
 }
