@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.*;
 
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 @Getter
@@ -13,6 +14,15 @@ import java.util.Map;
 @Builder
 public class SessionLogRequestDto {
 
+    /**
+     * 세션 로그 발생 시각
+     * - null 이면 DB에서 now() 사용 (Repository 에서 COALESCE 처리)
+     */
+    private OffsetDateTime createdAt;
+
+    /**
+     * 로그인한 사용자 ID (비로그인 세션이면 null 허용)
+     */
     private Long userId;
 
     @NonNull
@@ -20,6 +30,12 @@ public class SessionLogRequestDto {
 
     @NonNull
     private String eventType;    // 필수 (e.g. "ENTER_HOME", "VIEW_RECO", "LOGOUT")
+
+    /**
+     * 추천 요청과 연결된 세션이면 recommendation_id 로 연결
+     * - 일반 세션이면 null
+     */
+    private Long recommendationId;
 
     /**
      * 자유 형태 메타데이터 (화면, 디바이스, 진입 경로 등)
