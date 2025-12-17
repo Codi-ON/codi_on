@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/api/controller/weather/WeatherController.java
 package com.team.backend.api.controller.weather;
 
 import com.team.backend.api.dto.ApiResponse;
@@ -5,10 +6,7 @@ import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.api.dto.weather.WeeklyWeatherResponseDto;
 import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping(WeatherController.API_PREFIX)
@@ -18,12 +16,9 @@ public class WeatherController {
     // ==============================
     // 🔗 공통 URL prefix / path 상수
     // ==============================
-    public static final String API_PREFIX   = "/api/weather";
-
-    public static final String PATH_TODAY   = "/today";          // /api/weather/today
-    public static final String PATH_WEEKLY  = "/weekly";         // /api/weather/weekly
-    public static final String PATH_FETCH   = "/fetch";          // /api/weather/weekly/fetch
-    public static final String PATH_FORCE   = "/force";          // /api/weather/weekly/fetch/force
+    public static final String API_PREFIX  = "/api/weather";
+    public static final String PATH_TODAY  = "/today";   // /api/weather/today
+    public static final String PATH_WEEKLY = "/weekly";  // /api/weather/weekly
 
     // ==============================
     // 🔗 공통 RequestParam 이름 상수
@@ -33,68 +28,33 @@ public class WeatherController {
     public static final String PARAM_LON    = "lon";
 
     // ==============================
-    // 📍 기본 좌표 / 지역 상수
+    // 📍 기본 좌표 / 지역 상수 (서울 고정 기본값)
     // ==============================
-    private static final double DEFAULT_LAT     = 37.5665;
-    private static final double DEFAULT_LON     = 126.9780;
-    private static final String DEFAULT_REGION  = "Seoul";
+    public static final double DEFAULT_LAT    = 37.5665;
+    public static final double DEFAULT_LON    = 126.9780;
+    public static final String DEFAULT_REGION = "Seoul";
 
     private final WeatherService weatherService;
 
     // ==============================
-    // 1) 오늘 날씨 조회 (프론트에서 주로 사용)
-    //    - DB에 있으면 DB 사용
-    //    - 없으면 주간 데이터 받아와서 오늘 데이터까지 채우는 "스마트" 버전
+    // 1) 오늘 날씨 (프론트)
     // ==============================
-    @GetMapping(PATH_TODAY)   // => GET /api/weather/today
+    @GetMapping(PATH_TODAY)
     public ApiResponse<DailyWeatherResponseDto> getToday(
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region,
-            @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
-            @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon
+            @RequestParam(name = PARAM_LAT, defaultValue = "" + DEFAULT_LAT) double lat,
+            @RequestParam(name = PARAM_LON, defaultValue = "" + DEFAULT_LON) double lon
     ) {
-        DailyWeatherResponseDto dto = weatherService.getTodaySmart(lat, lon, region);
-        return ApiResponse.success(dto);
+        return ApiResponse.success(weatherService.getTodaySmart(lat, lon, region));
     }
 
     // ==============================
-    // 2) 주간 날씨 조회 (DB 기준)
-    //    - 프론트에서 "그냥 조회"할 때 쓰는 API
+    // 2) 주간 날씨 (프론트: DB 기준 조회)
     // ==============================
-    @GetMapping(PATH_WEEKLY)   // => GET /api/weather/weekly
-    public ApiResponse<WeeklyWeatherResponseDto> getWeeklyFromDb(
-            @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region,
-            @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
-            @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon
-    ) {
-        WeeklyWeatherResponseDto dto = weatherService.getWeeklyWeatherFromDb(region);
-        return ApiResponse.success(dto);
-    }
-
-    // ==============================
-    // 3) 주간 날씨 fetch (DB에 없으면 외부 호출 + 저장)
-    //    - 초기 진입 시 "데이터 없으면 채워줘" 용
-    // ==============================
-    @GetMapping(PATH_WEEKLY + PATH_FETCH)   // => GET /api/weather/weekly/fetch
-    public ApiResponse<WeeklyWeatherResponseDto> fetchWeeklyIfNeeded(
-            @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
-            @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon,
+    @GetMapping(PATH_WEEKLY)
+    public ApiResponse<WeeklyWeatherResponseDto> getWeekly(
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region
     ) {
-        WeeklyWeatherResponseDto dto = weatherService.fetchWeeklyIfNeeded(lat, lon, region);
-        return ApiResponse.success(dto);
-    }
-
-    // ==============================
-    // 4) 주간 날씨 강제 fetch (관리자 / 배치용)
-    //    - 무조건 외부 OpenWeather에서 새로 받아와서 DB 덮어쓰기
-    // ==============================
-    @GetMapping(PATH_WEEKLY + PATH_FETCH + PATH_FORCE) // => GET /api/weather/weekly/fetch/force
-    public ApiResponse<WeeklyWeatherResponseDto> forceFetchWeekly(
-            @RequestParam(name = PARAM_LAT,    defaultValue = "" + DEFAULT_LAT) double lat,
-            @RequestParam(name = PARAM_LON,    defaultValue = "" + DEFAULT_LON) double lon,
-            @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region
-    ) {
-        WeeklyWeatherResponseDto dto = weatherService.getWeeklyWeather(lat, lon, region);
-        return ApiResponse.success(dto);
+        return ApiResponse.success(weatherService.getWeeklyWeatherFromDb(region));
     }
 }
