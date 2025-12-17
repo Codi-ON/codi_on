@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/service/ClothingRecommendationService.java
-package com.team.backend.service;
+package com.team.backend.service.recommendation;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemSearchRequestDto;
@@ -9,8 +9,9 @@ import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.domain.enums.ComfortZone;
 import com.team.backend.domain.enums.SeasonType;
-import com.team.backend.repository.ClothingItemRepository;
+import com.team.backend.repository.clothing.ClothingItemRepository;
 import com.team.backend.repository.log.RecommendationEventLogJdbcRepository;
+import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;

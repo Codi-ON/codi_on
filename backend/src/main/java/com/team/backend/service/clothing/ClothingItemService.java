@@ -1,10 +1,10 @@
 // src/main/java/com/team/backend/service/ClothingItemService.java
-package com.team.backend.service;
+package com.team.backend.service.clothing;
 
 import com.team.backend.api.dto.clothingItem.*;
 import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
-import com.team.backend.repository.ClothingItemRepository;
+import com.team.backend.repository.clothing.ClothingItemRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;

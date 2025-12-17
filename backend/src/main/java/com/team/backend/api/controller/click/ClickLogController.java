@@ -1,8 +1,8 @@
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.click;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.recommendation.ItemClickLogRequestDto;
-import com.team.backend.service.ClickLogService;
+import com.team.backend.service.click.ClickLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

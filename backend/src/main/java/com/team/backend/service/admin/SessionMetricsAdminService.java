@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/service/SessionMetricsAdminService.java
-package com.team.backend.service;
+package com.team.backend.service.admin;
 
 import com.team.backend.api.dto.session.SessionHourlyUsageResponseDto;
 import com.team.backend.api.dto.session.SessionDailyTrendResponseDto;

@@ -1,10 +1,10 @@
-package com.team.backend.service;
+package com.team.backend.service.weather;
 
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.api.dto.weather.OpenWeatherForecastDto;
 import com.team.backend.api.dto.weather.WeeklyWeatherResponseDto;
 import com.team.backend.domain.DailyWeather;
-import com.team.backend.repository.DailyWeatherRepository;
+import com.team.backend.repository.weather.DailyWeatherRepository;
 import io.github.cdimascio.dotenv.Dotenv;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;

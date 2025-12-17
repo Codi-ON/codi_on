@@ -1,10 +1,10 @@
 // src/main/java/com/team/backend/api/controller/ClothingItemController.java
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.clothing;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.clothingItem.*;
 import com.team.backend.domain.enums.ClothingCategory;
-import com.team.backend.service.ClothingItemService;
+import com.team.backend.service.clothing.ClothingItemService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;

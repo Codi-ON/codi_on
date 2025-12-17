@@ -1,9 +1,9 @@
 // src/main/java/com/team/backend/api/controller/SessionLogController.java
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.session;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.session.SessionLogRequestDto;
-import com.team.backend.repository.SessionLogService;
+import com.team.backend.service.session.SessionLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

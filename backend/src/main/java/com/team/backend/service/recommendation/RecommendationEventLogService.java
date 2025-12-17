@@ -1,4 +1,4 @@
-package com.team.backend.service;
+package com.team.backend.service.recommendation;
 
 import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
