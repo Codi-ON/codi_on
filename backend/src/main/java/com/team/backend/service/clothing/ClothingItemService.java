@@ -60,9 +60,10 @@ public class ClothingItemService {
     // ==============================
     @Transactional(readOnly = true)
     public ClothingItemResponseDto getById(Long id) {
+
         ClothingItem e = clothingItemRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id));
-        e.getSeasons().size(); // LAZY 초기화
+        int ignored = e.getSeasons().size(); // LAZY 초기화
         return ClothingItemResponseDto.from(e);
     }
 
@@ -70,7 +71,7 @@ public class ClothingItemService {
     public ClothingItemResponseDto getByClothingId(Long clothingId) {
         ClothingItem e = clothingItemRepository.findByClothingId(clothingId)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId));
-        e.getSeasons().size();
+       int ignored = e.getSeasons().size();
         return ClothingItemResponseDto.from(e);
     }
 
@@ -131,7 +132,7 @@ public class ClothingItemService {
     // ==============================
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> getPopular(int limit) {
-        int resolved = clamp(limit, DEFAULT_LIMIT, MAX_LIMIT);
+        int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
         return clothingItemRepository.findAllByOrderBySelectedCountDesc(pageable)
                 .stream().map(ClothingItemResponseDto::from)
@@ -140,7 +141,7 @@ public class ClothingItemService {
 
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> getPopularByCategory(ClothingCategory category, int limit) {
-        int resolved = clamp(limit, DEFAULT_LIMIT, MAX_LIMIT);
+        int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
         return clothingItemRepository.findAllByCategoryOrderBySelectedCountDesc(category, pageable)
                 .stream().map(ClothingItemResponseDto::from)
@@ -155,13 +156,8 @@ public class ClothingItemService {
         if (updated == 0) throw new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id);
     }
 
-    public void markSelectedByClothingId(Long clothingId) {
-        int updated = clothingItemRepository.incrementSelectedCountByClothingId(clothingId);
-        if (updated == 0) throw new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. clothingId=" + clothingId);
-    }
-
-    private int clamp(int v, int def, int max) {
-        int x = (v <= 0 ? def : v);
-        return Math.min(Math.max(x, 1), max);
+    private int clamp(int v) {
+        int x = (v <= 0 ? ClothingItemService.DEFAULT_LIMIT : v);
+        return Math.min(x, ClothingItemService.MAX_LIMIT);
     }
 }
