@@ -1,4 +1,4 @@
-package com.team.backend.repository;
+package com.team.backend.repository.weather;
 
 import com.team.backend.domain.DailyWeather;
 import org.springframework.data.jpa.repository.JpaRepository;

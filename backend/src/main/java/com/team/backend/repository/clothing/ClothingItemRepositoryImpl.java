@@ -1,4 +1,4 @@
-package com.team.backend.repository;
+package com.team.backend.repository.clothing;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemSearchRequestDto;
 import com.team.backend.domain.ClothingItem;

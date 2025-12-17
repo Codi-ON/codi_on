@@ -1,4 +1,4 @@
-package com.team.backend.service;
+package com.team.backend.service.click;
 
 import com.team.backend.api.dto.recommendation.ItemClickLogRequestDto;
 import com.team.backend.repository.log.ItemClickLogJdbcRepository;

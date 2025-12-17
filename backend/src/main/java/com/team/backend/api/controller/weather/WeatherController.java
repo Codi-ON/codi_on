@@ -1,9 +1,9 @@
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.weather;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.api.dto.weather.WeeklyWeatherResponseDto;
-import com.team.backend.service.WeatherService;
+import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

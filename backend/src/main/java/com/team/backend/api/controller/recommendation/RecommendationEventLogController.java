@@ -1,9 +1,9 @@
 // src/main/java/com/team/backend/api/controller/RecommendationEventLogController.java
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.recommendation;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
-import com.team.backend.service.RecommendationEventLogService;
+import com.team.backend.service.recommendation.RecommendationEventLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;

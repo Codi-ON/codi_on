@@ -1,0 +1,36 @@
+package com.team.backend.api.dto.click;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+
+public record DashboardClicksResponse(
+    Meta meta,
+    DailyClickTrend dailyClickTrend,
+    TopClickedItems topClickedItems
+) {
+  public record Meta(
+      LocalDate from,
+      LocalDate to,
+      Instant generatedAt,
+      boolean cached
+  ) {}
+
+  public record DailyClickTrend(
+      List<DailyPoint> points,
+      long totalClicks
+  ) {
+    public record DailyPoint(LocalDate date, long clicks) {}
+  }
+
+  public record TopClickedItems(
+      int topN,
+      List<ItemRank> items
+  ) {
+    public record ItemRank(
+        long clothingItemId,
+        long clicks,
+        double share
+    ) {}
+  }
+}

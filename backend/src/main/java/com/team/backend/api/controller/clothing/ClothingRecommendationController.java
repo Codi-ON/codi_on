@@ -1,9 +1,9 @@
-package com.team.backend.api.controller;
+package com.team.backend.api.controller.clothing;
 
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
 import com.team.backend.domain.enums.ClothingCategory;
-import com.team.backend.service.ClothingRecommendationService;
+import com.team.backend.service.recommendation.ClothingRecommendationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

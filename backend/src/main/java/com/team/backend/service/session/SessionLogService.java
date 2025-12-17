@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/service/SessionLogService.java
-package com.team.backend.repository;
+package com.team.backend.service.session;
 
 import com.team.backend.api.dto.session.SessionLogRequestDto;
 import com.team.backend.repository.log.SessionLogJdbcRepository;
