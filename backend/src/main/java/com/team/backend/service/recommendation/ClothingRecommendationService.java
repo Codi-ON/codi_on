@@ -1,8 +1,8 @@
-// src/main/java/com/team/backend/service/ClothingRecommendationService.java
+// src/main/java/com/team/backend/service/recommendation/ClothingRecommendationService.java
 package com.team.backend.service.recommendation;
 
+import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
-import com.team.backend.api.dto.clothingItem.ClothingItemSearchRequestDto;
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
 import com.team.backend.domain.ClothingItem;
@@ -30,11 +30,7 @@ public class ClothingRecommendationService {
     private final ClothingItemRepository clothingItemRepository;
     private final RecommendationEventLogJdbcRepository recommendationEventLogWriter;
 
-    /**
-     * 오늘 체감 온도 컨텍스트
-     */
-    private record ComfortContext(int avgTemp, ComfortZone zone) {
-    }
+    private record ComfortContext(int avgTemp, ComfortZone zone) {}
 
     private ComfortContext resolveComfortContext(double lat, double lon, String region) {
         DailyWeatherResponseDto today = weatherService.getTodaySmart(lat, lon, region);
@@ -47,9 +43,6 @@ public class ClothingRecommendationService {
         return new ComfortContext(avgTemp, zone);
     }
 
-    /**
-     * ComfortZone → 오늘 계절 후보
-     */
     private EnumSet<SeasonType> resolveSeasons(ComfortZone zone) {
         return switch (zone) {
             case VERY_COLD, COLD -> EnumSet.of(SeasonType.WINTER, SeasonType.AUTUMN);
@@ -59,42 +52,32 @@ public class ClothingRecommendationService {
         };
     }
 
-    /**
-     * 오늘 계절 후보와 아이템 시즌 매칭 여부
-     */
     private boolean matchesSeason(ClothingItem item, Set<SeasonType> todaySeasons) {
         Set<SeasonType> itemSeasons = item.getSeasons();
-        if (itemSeasons == null || itemSeasons.isEmpty()) {
-            // 시즌 미지정 = all season 취급
-            return true;
-        }
+        if (itemSeasons == null || itemSeasons.isEmpty()) return true; // all season 취급
         for (SeasonType s : itemSeasons) {
             if (todaySeasons.contains(s)) return true;
         }
         return false;
     }
 
-    /**
-     * 오늘 추천 (카테고리 전체)
-     *  - 추천 결과/컨텍스트를 recommendation_event_log 에 남김
-     */
     @Transactional
     public List<ClothingItemResponseDto> recommendToday(String region, double lat, double lon, int limit) {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        ClothingItemSearchRequestDto req = ClothingItemSearchRequestDto.builder()
+        // ✅ DTO 리팩토링 반영: Search 사용
+        ClothingItemRequestDto.Search req = ClothingItemRequestDto.Search.builder()
                 .temp(ctx.avgTemp())
                 .sort("popular")
                 .limit(limit)
                 .build();
 
         List<Long> ids = clothingItemRepository.searchCandidateIds(
-                req,
+                req.toCondition(),
                 PageRequest.of(0, req.resolvedLimit())
         );
 
-        // 후보 자체가 0개인 경우도 로그로 남겨서 분석 가능하게
         if (ids.isEmpty()) {
             recommendationEventLogWriter.write(
                     RecommendationEventLogRequestDto.builder()
@@ -115,11 +98,8 @@ public class ClothingRecommendationService {
         }
 
         List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
-
         Map<Long, ClothingItem> map = new HashMap<>();
-        for (ClothingItem e : rows) {
-            map.put(e.getId(), e);
-        }
+        for (ClothingItem e : rows) map.put(e.getId(), e);
 
         List<ClothingItemResponseDto> result = new ArrayList<>();
         for (Long id : ids) {
@@ -132,7 +112,6 @@ public class ClothingRecommendationService {
             result.add(ClothingItemResponseDto.from(item));
         }
 
-        // 추천 결과까지 포함해서 한 번에 로그 남기기
         recommendationEventLogWriter.write(
                 RecommendationEventLogRequestDto.builder()
                         .eventType("RECO_TODAY_GENERATED")
@@ -153,9 +132,6 @@ public class ClothingRecommendationService {
         return result;
     }
 
-    /**
-     * 오늘 추천 (카테고리 필터 버전)
-     */
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> recommendTodayByCategory(
             ClothingCategory category,
@@ -167,7 +143,8 @@ public class ClothingRecommendationService {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        ClothingItemSearchRequestDto req = ClothingItemSearchRequestDto.builder()
+        // ✅ DTO 리팩토링 반영: Search 사용
+        ClothingItemRequestDto.Search req = ClothingItemRequestDto.Search.builder()
                 .category(category)
                 .temp(ctx.avgTemp())
                 .sort("popular")
@@ -175,19 +152,15 @@ public class ClothingRecommendationService {
                 .build();
 
         List<Long> ids = clothingItemRepository.searchCandidateIds(
-                req,
+                req.toCondition(),
                 PageRequest.of(0, req.resolvedLimit())
         );
-        if (ids.isEmpty()) {
-            return List.of();
-        }
+
+        if (ids.isEmpty()) return List.of();
 
         List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
-
         Map<Long, ClothingItem> map = new HashMap<>();
-        for (ClothingItem e : rows) {
-            map.put(e.getId(), e);
-        }
+        for (ClothingItem e : rows) map.put(e.getId(), e);
 
         List<ClothingItemResponseDto> result = new ArrayList<>();
         for (Long id : ids) {

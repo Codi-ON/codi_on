@@ -1,25 +1,47 @@
-// src/main/java/com/team/backend/api/dto/session/SessionMetricsDashboardResponseDto.java
 package com.team.backend.api.dto.session;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Getter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class SessionMetricsDashboardResponseDto {
 
-    // 상단 요약 카드
-    private SessionMetricsSummaryResponseDto summary;
+    private Summary summary;
+    private List<DailyTrendItem> dailyTrend;
+    private List<HourlyUsageItem> hourlyUsage;
 
-    // 일별 추이 (서비스에서 dailyTrend 라고 부르므로 필드명도 dailyTrend)
-    private List<SessionDailyTrendResponseDto> dailyTrend;
+    @Getter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Summary {
+        private long totalSessions;
+        private long uniqueUsers;
+        private BigDecimal avgSessionsPerUser;
+    }
 
-    // 시간대별 사용량
-    private List<SessionHourlyUsageResponseDto> hourlyUsage;
+    @Getter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DailyTrendItem {
+        private LocalDate date;
+        private long sessionCount;
+        private long uniqueUserCount;
+    }
+
+    @Getter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class HourlyUsageItem {
+        private int hour;
+        private long sessionCount;
+    }
 }
