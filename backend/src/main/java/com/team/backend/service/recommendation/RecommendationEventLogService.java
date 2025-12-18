@@ -1,9 +1,11 @@
+// src/main/java/com/team/backend/service/recommendation/RecommendationEventLogService.java
 package com.team.backend.service.recommendation;
 
 import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
-import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
-import com.team.backend.repository.log.RecommendationEventLogJdbcRepository;
+import com.team.backend.domain.log.RecommendationEventLog;
+import com.team.backend.repository.log.RecommendationEventLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,31 +17,26 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class RecommendationEventLogService {
 
-    private final RecommendationEventLogJdbcRepository recommendationEventLogQuery;
+    private final RecommendationEventLogRepository recommendationEventLogRepository;
 
-    /**
-     * 최근 로그 N개 조회 (관리자용)
-     */
     public List<RecommendationEventLogResponseDto> getRecent(int limit) {
-        List<RecommendationEventLogRequestDto> rows = recommendationEventLogQuery.findRecent(limit);
-        return rows.stream()
+        List<RecommendationEventLog> logs =
+                recommendationEventLogRepository.findAll(PageRequest.of(0, limit)).getContent();
+
+        return logs.stream()
                 .map(RecommendationEventLogResponseDto::from)
                 .toList();
     }
 
-    /**
-     * 기간 필터 기반 로그 조회
-     * - from <= created_at < to
-     */
     public List<RecommendationEventLogResponseDto> getByCreatedAtBetween(
             OffsetDateTime from,
             OffsetDateTime to,
             int limit
     ) {
-        List<RecommendationEventLogRequestDto> rows =
-                recommendationEventLogQuery.findByCreatedAtBetween(from, to, limit);
+        List<RecommendationEventLog> logs =
+                recommendationEventLogRepository.findLogs(from, to, PageRequest.of(0, limit));
 
-        return rows.stream()
+        return logs.stream()
                 .map(RecommendationEventLogResponseDto::from)
                 .toList();
     }
