@@ -33,6 +33,7 @@ public class ClothingItemService {
             throw new IllegalArgumentException("이미 존재하는 clothingId 입니다. clothingId=" + req.getClothingId());
         }
 
+
         ClothingItem entity = ClothingItem.builder()
                 .clothingId(req.getClothingId())
                 .name(req.getName())
