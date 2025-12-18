@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-public interface RecommendationEventLogRepository extends JpaRepository<RecommendationEventLog, Long> {
+public interface RecommendationEventLogRepositoryImpl extends JpaRepository<RecommendationEventLog, Long> {
 
     // 최근 로그 N개 (관리자/디버깅용)
     List<RecommendationEventLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
