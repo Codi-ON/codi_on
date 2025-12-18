@@ -1,28 +1,61 @@
 // src/main/java/com/team/backend/api/dto/admin/dashboard/DashboardOverviewResponseDto.java
 package com.team.backend.api.dto.admin.dashboard;
 
-import com.team.backend.api.dto.click.DashboardClicksResponse;
-import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 
-@Getter
-@Builder
-@AllArgsConstructor
-public class DashboardOverviewResponseDto {
+public record DashboardOverviewResponseDto(
+        Meta meta,
+        Range range,
+        Map<String, Section> sections
+) {
+    public record Meta(
+            OffsetDateTime generatedAt,
+            String timezone
+    ) {}
 
-    private Meta meta;
-    private SessionMetricsDashboardResponseDto sessions;
-    private DashboardClicksResponse clicks;
+    public record Range(
+            OffsetDateTime from,
+            OffsetDateTime to
+    ) {}
 
-    @Getter
-    @Builder
-    @AllArgsConstructor
-    public static class Meta {
-        private OffsetDateTime generatedAt;
-        private String timezone; // "Asia/Seoul" or "+09:00"
-    }
+    public record Section(
+            String title,
+            List<Card> cards,
+            List<Chart> charts,
+            List<Table> tables
+    ) {}
+
+    public record Card(
+            String key,
+            String label,
+            Number value,
+            String unit
+    ) {}
+
+    public record Chart(
+            String key,
+            String title,
+            String xUnit,
+            String yUnit,
+            List<Series> series
+    ) {}
+
+    public record Series(
+            String name,
+            List<Point> points
+    ) {}
+
+    public record Point(
+            String x,
+            Number y
+    ) {}
+
+    public record Table(
+            String key,
+            String title,
+            List<String> columns,
+            List<Map<String, Object>> rows
+    ) {}
 }
