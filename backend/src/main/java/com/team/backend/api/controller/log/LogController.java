@@ -11,22 +11,28 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/logs")
+@RequestMapping(LogController.API_PREFIX)
 @RequiredArgsConstructor
 public class LogController {
+
+    public static final String API_PREFIX = "/api/logs";
+    public static final String PATH_CLICK = "/click";
+    public static final String PATH_SESSION = "/session";
+
+    private static final String OK_MESSAGE = "요청이 성공했습니다.";
 
     private final ClickLogService clickLogService;
     private final SessionLogService sessionLogService;
 
-    @PostMapping("/click")
+    @PostMapping(PATH_CLICK)
     public ApiResponse<Void> logClick(@RequestBody @Valid ItemClickLogRequestDto request) {
         clickLogService.logClick(request);
-        return ApiResponse.success("요청이 성공했습니다.", null);
+        return ApiResponse.success(OK_MESSAGE, null);
     }
 
-    @PostMapping("/session")
+    @PostMapping(PATH_SESSION)
     public ApiResponse<Void> logSession(@RequestBody @Valid SessionLogRequestDto request) {
-        sessionLogService.write(request); // 또는 sessionLogService.logSession(request)
-        return ApiResponse.success("요청이 성공했습니다.", null);
+        sessionLogService.write(request);
+        return ApiResponse.success(OK_MESSAGE, null);
     }
 }
