@@ -1,7 +1,7 @@
 package com.team.backend.service.click;
 
 import com.team.backend.api.dto.click.DashboardClicksResponse;
-import com.team.backend.repository.click.ClickAnalyticsJdbcRepository;
+import com.team.backend.repository.analytics.ClickAnalyticsJdbcRepository;
 import com.team.backend.repository.click.DailyClicksRow;
 import com.team.backend.repository.click.TopClickedItemRow;
 import org.springframework.stereotype.Service;
