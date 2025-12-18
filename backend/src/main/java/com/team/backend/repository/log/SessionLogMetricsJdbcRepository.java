@@ -1,8 +1,6 @@
 package com.team.backend.repository.log;
 
-import com.team.backend.api.dto.session.SessionDailyTrendResponseDto;
-import com.team.backend.api.dto.session.SessionHourlyUsageResponseDto;
-import com.team.backend.api.dto.session.SessionMetricsSummaryResponseDto;
+import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -20,7 +18,7 @@ public class SessionLogMetricsJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    public SessionMetricsSummaryResponseDto findSummary(OffsetDateTime from, OffsetDateTime to) {
+    public SessionMetricsDashboardResponseDto.Summary findSummary(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
                 SELECT
                     COUNT(*) AS total_sessions,
@@ -42,7 +40,7 @@ public class SessionLogMetricsJdbcRepository {
         return jdbc.queryForObject(
                 sql,
                 Map.of("from", from, "to", to),
-                (rs, rowNum) -> SessionMetricsSummaryResponseDto.builder()
+                (rs, rowNum) -> SessionMetricsDashboardResponseDto.Summary.builder()
                         .totalSessions(rs.getLong("total_sessions"))
                         .uniqueUsers(rs.getLong("unique_users"))
                         .avgSessionsPerUser(rs.getBigDecimal("avg_sessions_per_user"))
@@ -50,7 +48,7 @@ public class SessionLogMetricsJdbcRepository {
         );
     }
 
-    public List<SessionDailyTrendResponseDto> findDailyTrend(OffsetDateTime from, OffsetDateTime to) {
+    public List<SessionMetricsDashboardResponseDto.DailyTrendItem> findDailyTrend(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
                 SELECT
                     (created_at AT TIME ZONE 'Asia/Seoul')::date AS log_date,
@@ -63,14 +61,10 @@ public class SessionLogMetricsJdbcRepository {
                 ORDER BY log_date
                 """;
 
-        return jdbc.query(
-                sql,
-                Map.of("from", from, "to", to),
-                this::mapDailyTrend
-        );
+        return jdbc.query(sql, Map.of("from", from, "to", to), this::mapDailyTrend);
     }
 
-    public List<SessionHourlyUsageResponseDto> findHourlyUsage(OffsetDateTime from, OffsetDateTime to) {
+    public List<SessionMetricsDashboardResponseDto.HourlyUsageItem> findHourlyUsage(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
                 SELECT
                     EXTRACT(HOUR FROM (created_at AT TIME ZONE 'Asia/Seoul'))::int AS hour,
@@ -82,32 +76,22 @@ public class SessionLogMetricsJdbcRepository {
                 ORDER BY hour
                 """;
 
-        return jdbc.query(
-                sql,
-                Map.of("from", from, "to", to),
-                this::mapHourlyUsage
-        );
+        return jdbc.query(sql, Map.of("from", from, "to", to), this::mapHourlyUsage);
     }
 
-    private SessionDailyTrendResponseDto mapDailyTrend(ResultSet rs, int rowNum) throws SQLException {
+    private SessionMetricsDashboardResponseDto.DailyTrendItem mapDailyTrend(ResultSet rs, int rowNum) throws SQLException {
         LocalDate date = rs.getObject("log_date", LocalDate.class);
-        long sessionCount = rs.getLong("session_count");
-        long uniqueUserCount = rs.getLong("unique_user_count");
-
-        return SessionDailyTrendResponseDto.builder()
+        return SessionMetricsDashboardResponseDto.DailyTrendItem.builder()
                 .date(date)
-                .sessionCount(sessionCount)
-                .uniqueUserCount(uniqueUserCount)
+                .sessionCount(rs.getLong("session_count"))
+                .uniqueUserCount(rs.getLong("unique_user_count"))
                 .build();
     }
 
-    private SessionHourlyUsageResponseDto mapHourlyUsage(ResultSet rs, int rowNum) throws SQLException {
-        int hour = rs.getInt("hour");
-        long sessionCount = rs.getLong("session_count");
-
-        return SessionHourlyUsageResponseDto.builder()
-                .hour(hour)
-                .sessionCount(sessionCount)
+    private SessionMetricsDashboardResponseDto.HourlyUsageItem mapHourlyUsage(ResultSet rs, int rowNum) throws SQLException {
+        return SessionMetricsDashboardResponseDto.HourlyUsageItem.builder()
+                .hour(rs.getInt("hour"))
+                .sessionCount(rs.getLong("session_count"))
                 .build();
     }
 }
