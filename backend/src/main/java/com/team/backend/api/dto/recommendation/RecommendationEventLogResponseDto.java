@@ -1,6 +1,7 @@
 // src/main/java/com/team/backend/api/dto/recommendation/RecommendationEventLogResponseDto.java
 package com.team.backend.api.dto.recommendation;
 
+import com.team.backend.domain.log.RecommendationEventLog;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,15 +23,17 @@ public class RecommendationEventLogResponseDto {
     private String eventType;
     private String payloadJson;
 
-    public static RecommendationEventLogResponseDto from(RecommendationEventLogRequestDto row) {
-        return RecommendationEventLogResponseDto.builder()
-                .id(row.getId())
-                .createdAt(row.getCreatedAt())
-                .userId(row.getUserId())
-                .sessionId(row.getSessionId() != null ? row.getSessionId().toString() : null)
-                .recommendationId(row.getRecommendationId())
-                .eventType(row.getEventType())
-                .payloadJson(row.getPayloadJson())
-                .build();
-    }
+// RecommendationEventLogResponseDto.java
+
+public static RecommendationEventLogResponseDto from(RecommendationEventLog e) {
+    return RecommendationEventLogResponseDto.builder()
+            .id(e.getId())
+            .createdAt(e.getCreatedAt())
+            .userId(e.getUserId())
+            .sessionId(e.getSessionKey())   // 엔티티: sessionKey(String) -> DTO: sessionId(String)
+            .recommendationId(null)         // 엔티티에 컬럼 없음(현재는 null 유지가 맞음)
+            .eventType(e.getEventType())
+            .payloadJson(e.getPayload())    // 엔티티 payload(jsonb String) -> payloadJson
+            .build();
+}
 }
