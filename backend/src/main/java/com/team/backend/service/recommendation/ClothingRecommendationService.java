@@ -9,8 +9,8 @@ import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.domain.enums.ComfortZone;
 import com.team.backend.domain.enums.SeasonType;
+import com.team.backend.repository.analytics.RecommendationMetricsJdbcRepository;
 import com.team.backend.repository.clothing.ClothingItemRepository;
-import com.team.backend.repository.log.RecommendationEventLogJdbcRepository;
 import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +28,7 @@ public class ClothingRecommendationService {
 
     private final WeatherService weatherService;
     private final ClothingItemRepository clothingItemRepository;
-    private final RecommendationEventLogJdbcRepository recommendationEventLogWriter;
+    private final RecommendationMetricsJdbcRepository recommendationEventLogWriter;
 
     private record ComfortContext(int avgTemp, ComfortZone zone) {}
 

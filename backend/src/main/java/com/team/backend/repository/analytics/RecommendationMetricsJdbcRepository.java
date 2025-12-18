@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/repository/log/RecommendationEventLogJdbcRepository.java
-package com.team.backend.repository.log;
+package com.team.backend.repository.analytics;
 
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +16,7 @@ import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
-public class RecommendationEventLogJdbcRepository {
+public class RecommendationMetricsJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 

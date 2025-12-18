@@ -1,7 +1,7 @@
 package com.team.backend.service.admin;
 
 import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
-import com.team.backend.repository.log.SessionLogMetricsJdbcRepository;
+import com.team.backend.repository.analytics.SessionLogMetricsJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

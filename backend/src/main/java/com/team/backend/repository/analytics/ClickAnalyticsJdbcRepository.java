@@ -1,5 +1,7 @@
-package com.team.backend.repository.click;
+package com.team.backend.repository.analytics;
 
+import com.team.backend.repository.click.DailyClicksRow;
+import com.team.backend.repository.click.TopClickedItemRow;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 

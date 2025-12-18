@@ -1,21 +1,22 @@
-package com.team.backend.repository.log;// src/main/java/com/team/backend/repository/RecommendationEventLogRepository.java
+// src/main/java/com/team/backend/repository/log/RecommendationEventLogRepository.java
+package com.team.backend.repository.log;
 
 import com.team.backend.domain.log.RecommendationEventLog;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 
 public interface RecommendationEventLogRepository extends JpaRepository<RecommendationEventLog, Long> {
 
-    // 최근 로그 N개 (관리자/디버깅용)
-    List<RecommendationEventLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
-
-    // 기간 + 이벤트 타입 필터(추적용)
-    List<RecommendationEventLog> findByCreatedAtBetweenAndEventTypeInOrderByCreatedAtDesc(
-            OffsetDateTime from,
-            OffsetDateTime to,
-            List<String> eventTypes
-    );
+    @Query("""
+        SELECT e
+        FROM RecommendationEventLog e
+        WHERE e.createdAt >= :from
+          AND e.createdAt <  :to
+        ORDER BY e.createdAt DESC
+    """)
+    List<RecommendationEventLog> findLogs(OffsetDateTime from, OffsetDateTime to, Pageable pageable);
 }
