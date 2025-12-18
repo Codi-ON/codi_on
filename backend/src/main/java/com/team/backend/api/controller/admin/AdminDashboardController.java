@@ -2,9 +2,11 @@
 package com.team.backend.api.controller.admin;
 
 import com.team.backend.api.dto.ApiResponse;
+import com.team.backend.api.dto.admin.dashboard.DashboardOverviewResponseDto;
 import com.team.backend.api.dto.click.DashboardClicksResponse;
 import com.team.backend.api.dto.session.SessionLogResponseDto;
 import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
+import com.team.backend.service.admin.DashboardOverviewAdminService;
 import com.team.backend.service.admin.SessionLogAdminService;
 import com.team.backend.service.admin.SessionMetricsAdminService;
 import com.team.backend.service.click.DashboardClicksService;
@@ -29,6 +31,7 @@ public class AdminDashboardController {
     private final SessionLogAdminService sessionLogAdminService;
     private final SessionMetricsAdminService sessionMetricsAdminService;
     private final DashboardClicksService dashboardClicksService;
+    private final DashboardOverviewAdminService dashboardOverviewAdminService;
 
     // ==============================
     // 1) Session Metrics (Dashboard)
@@ -80,5 +83,14 @@ public class AdminDashboardController {
             @RequestParam(defaultValue = "10") int topN
     ) {
         return ApiResponse.success(dashboardClicksService.getDashboardClicks(from, to, topN));
+    }
+
+    @GetMapping("/dashboard/overview")
+    public ApiResponse<DashboardOverviewResponseDto> getDashboardOverview(
+            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "10") int topN
+    ) {
+        return ApiResponse.success(dashboardOverviewAdminService.getOverview(from, to, topN));
     }
 }
