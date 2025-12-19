@@ -20,12 +20,10 @@ public class DashboardOverviewJdbcRepository {
     public DashboardOverviewMetricsDto.Summary findSummary(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
             SELECT
-              -- session_log: 이벤트 row 수
               (SELECT COUNT(*) 
                  FROM public.session_log 
                 WHERE created_at >= :from AND created_at < :to) AS total_session_events,
 
-              -- session 수: distinct session_id
               (SELECT COUNT(DISTINCT session_id)
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to
@@ -36,23 +34,19 @@ public class DashboardOverviewJdbcRepository {
                 WHERE user_id IS NOT NULL
                   AND created_at >= :from AND created_at < :to) AS unique_users,
 
-              -- clicks
               (SELECT COUNT(*)
                  FROM public.item_click_log
                 WHERE created_at >= :from AND created_at < :to) AS total_clicks,
 
-              -- reco events
               (SELECT COUNT(*)
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to) AS total_reco_events,
 
-              -- error events (session_log 기준)
               (SELECT COUNT(*)
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to
                   AND event_type = 'ERROR') AS error_events,
 
-              -- session end rate (distinct session_id 기준)
               (SELECT COUNT(DISTINCT session_id)
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to
@@ -63,7 +57,6 @@ public class DashboardOverviewJdbcRepository {
                 WHERE created_at >= :from AND created_at < :to
                   AND event_type = 'END') AS ended_sessions,
 
-              -- reco empty / generated
               (SELECT COUNT(*)
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to
