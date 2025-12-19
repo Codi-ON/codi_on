@@ -254,7 +254,7 @@ def train():
     model_save_dir = "../artifacts"
     os.makedirs(model_save_dir, exist_ok=True)
     model.load_state_dict(best_state)
-    torch.save(model.state_dict(), os.path.join(model_save_dir, "model_relu_s100.pt"))
+    torch.save(model.state_dict(), os.path.join(model_save_dir, "model.pt"))
 
     print("\n=== Training Summary ===")
     print(f"Best epoch : {best_epoch}")
