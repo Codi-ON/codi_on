@@ -1,17 +1,36 @@
 // src/main/java/com/team/backend/api/dto/admin/dashboard/DashboardMonthlyRowResponseDto.java
 package com.team.backend.api.dto.admin.dashboard;
 
-import lombok.Builder;
+import java.util.List;
 
-@Builder
 public record DashboardMonthlyRowResponseDto(
-        String month,              // "YYYY-MM"
+        String month, // "YYYY-MM"
+
+        long totalSessionEvents,
+        long totalSessions,
+        long uniqueUsers,
+        double avgSessionsPerUser,
+
+        long totalClicks,
+        long totalRecoEvents,
+
+        long errorEvents,
+
         long startedSessions,
         long endedSessions,
-        long errorEvents,
-        long totalSessionEvents,
-        long uniqueSessionUsers,
-        long totalClicks,
-        long uniqueClickUsers,
-        long recoEventCount
-) {}
+        double sessionEndRate, // 0~100
+
+        long recoEmpty,
+        long recoGenerated,
+        double recoEmptyRate,  // 0~100
+
+        List<TopClickedItem> topClickedItems // topN
+) {
+    public record TopClickedItem(
+            int rank,
+            long clothingItemId,
+            String name,
+            long clickCount,
+            double clickRatio // 0~1
+    ) {}
+}
