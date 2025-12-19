@@ -9,7 +9,7 @@ import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.domain.enums.ComfortZone;
 import com.team.backend.domain.enums.SeasonType;
-import com.team.backend.repository.analytics.RecommendationMetricsJdbcRepository;
+import com.team.backend.repository.admin.RecommendationMetricsJdbcRepository;
 import com.team.backend.repository.clothing.ClothingItemRepository;
 import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
