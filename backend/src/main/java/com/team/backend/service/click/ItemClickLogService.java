@@ -31,7 +31,7 @@ public class ItemClickLogService {
         return itemClickLogWriterJdbcRepository.insert(
                 req.getUserId(),
                 req.getClothingItemId(),
-                req.getEventType(),
+                String.valueOf(req.getEventType()),
                 payloadJson
         );
     }
