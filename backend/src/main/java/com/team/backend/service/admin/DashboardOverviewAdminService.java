@@ -3,35 +3,29 @@ package com.team.backend.service.admin;
 
 import com.team.backend.api.dto.admin.dashboard.DashboardOverviewMetricsDto;
 import com.team.backend.api.dto.admin.dashboard.DashboardOverviewResponseDto;
+import com.team.backend.common.time.TimeRanges;
 import com.team.backend.repository.admin.DashboardOverviewJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DashboardOverviewAdminService {
 
-    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
-
     private final DashboardOverviewJdbcRepository dashboardOverviewJdbcRepository;
     private final DashboardOverviewMapper dashboardOverviewMapper;
 
     public DashboardOverviewResponseDto getOverview(LocalDate from, LocalDate to, int topN) {
+        TimeRanges.Range r = TimeRanges.kstDayRange(from, to);
 
-        OffsetDateTime fromAt = from.atStartOfDay().atOffset(KST);
-        OffsetDateTime toAt   = to.plusDays(1).atStartOfDay().atOffset(KST); // [fromAt, toAt)
-
-        var summary       = dashboardOverviewJdbcRepository.findSummary(fromAt, toAt);
-        var dailySessions = dashboardOverviewJdbcRepository.findDailySessions(fromAt, toAt);
-        var dailyClicks   = dashboardOverviewJdbcRepository.findDailyClicks(fromAt, toAt);
-        var topClicked    = dashboardOverviewJdbcRepository.findTopClickedItems(fromAt, toAt, topN);
+        var summary       = dashboardOverviewJdbcRepository.findSummary(r.fromInclusive(), r.toExclusive());
+        var dailySessions = dashboardOverviewJdbcRepository.findDailySessions(r.fromInclusive(), r.toExclusive());
+        var dailyClicks   = dashboardOverviewJdbcRepository.findDailyClicks(r.fromInclusive(), r.toExclusive());
+        var topClicked    = dashboardOverviewJdbcRepository.findTopClickedItems(r.fromInclusive(), r.toExclusive(), topN);
 
         var metrics = new DashboardOverviewMetricsDto.Metrics(
                 summary,
@@ -40,6 +34,11 @@ public class DashboardOverviewAdminService {
                 topClicked
         );
 
-        return dashboardOverviewMapper.toResponse(fromAt, toAt, "Asia/Seoul", metrics);
+        return dashboardOverviewMapper.toResponse(
+                r.fromInclusive(),
+                r.toExclusive(),
+                TimeRanges.timezone(),
+                metrics
+        );
     }
 }

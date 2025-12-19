@@ -1,7 +1,9 @@
+// src/main/java/com/team/backend/service/admin/DashboardOverviewMapper.java
 package com.team.backend.service.admin;
 
 import com.team.backend.api.dto.admin.dashboard.DashboardOverviewMetricsDto;
 import com.team.backend.api.dto.admin.dashboard.DashboardOverviewResponseDto;
+import com.team.backend.common.time.TimeRanges;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -13,14 +15,14 @@ import java.util.Map;
 public class DashboardOverviewMapper {
 
     public DashboardOverviewResponseDto toResponse(
-            OffsetDateTime from,
-            OffsetDateTime to,
+            OffsetDateTime fromInclusive,
+            OffsetDateTime toExclusive,
             String timezone,
             DashboardOverviewMetricsDto.Metrics metrics
     ) {
-        OffsetDateTime generatedAt = OffsetDateTime.now();
+        OffsetDateTime generatedAt = TimeRanges.nowKst();
 
-        List<DashboardOverviewResponseDto.Card> cards = buildCards(metrics.summary());
+        List<DashboardOverviewResponseDto.Card> cards = toCards(metrics.summary());
 
         DashboardOverviewResponseDto.Chart sessionsChart =
                 new DashboardOverviewResponseDto.Chart(
@@ -32,13 +34,19 @@ public class DashboardOverviewMapper {
                                 new DashboardOverviewResponseDto.Series(
                                         "sessionEvents",
                                         metrics.dailySessions().stream()
-                                                .map(d -> new DashboardOverviewResponseDto.Point(d.date().toString(),d.sessionCount()))
+                                                .map(d -> new DashboardOverviewResponseDto.Point(
+                                                        d.date().toString(),
+                                                        d.sessionEventCount()
+                                                ))
                                                 .toList()
                                 ),
                                 new DashboardOverviewResponseDto.Series(
                                         "uniqueUsers",
                                         metrics.dailySessions().stream()
-                                                .map(d -> new DashboardOverviewResponseDto.Point(d.date().toString(), d.uniqueUserCount()))
+                                                .map(d -> new DashboardOverviewResponseDto.Point(
+                                                        d.date().toString(),
+                                                        d.uniqueUserCount()
+                                                ))
                                                 .toList()
                                 )
                         )
@@ -54,7 +62,10 @@ public class DashboardOverviewMapper {
                                 new DashboardOverviewResponseDto.Series(
                                         "clicks",
                                         metrics.dailyClicks().stream()
-                                                .map(d -> new DashboardOverviewResponseDto.Point(d.date().toString(), d.clickCount()))
+                                                .map(d -> new DashboardOverviewResponseDto.Point(
+                                                        d.date().toString(),
+                                                        d.clickCount()
+                                                ))
                                                 .toList()
                                 )
                         )
@@ -86,15 +97,15 @@ public class DashboardOverviewMapper {
 
         return new DashboardOverviewResponseDto(
                 new DashboardOverviewResponseDto.Meta(generatedAt, timezone),
-                new DashboardOverviewResponseDto.Range(from, to),
+                new DashboardOverviewResponseDto.Range(fromInclusive, toExclusive),
                 sections
         );
     }
 
-    private static List<DashboardOverviewResponseDto.Card> buildCards(DashboardOverviewMetricsDto.Summary s) {
+    private List<DashboardOverviewResponseDto.Card> toCards(DashboardOverviewMetricsDto.Summary s) {
         return List.of(
                 new DashboardOverviewResponseDto.Card("totalSessionEvents", "세션 이벤트", s.totalSessionEvents(), "건"),
-                new DashboardOverviewResponseDto.Card("totalSessions", "세션 수", s.totalSessions(), "건"),
+                new DashboardOverviewResponseDto.Card("totalSessions", "세션 수(distinct)", s.totalSessions(), "건"),
                 new DashboardOverviewResponseDto.Card("uniqueUsers", "유니크 유저", s.uniqueUsers(), "명"),
                 new DashboardOverviewResponseDto.Card("avgSessionsPerUser", "유저당 평균 세션", s.avgSessionsPerUser(), "회"),
 
