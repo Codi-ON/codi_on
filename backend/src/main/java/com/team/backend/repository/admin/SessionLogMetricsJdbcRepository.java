@@ -1,4 +1,4 @@
-package com.team.backend.repository.analytics;
+package com.team.backend.repository.admin;
 
 import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
 import lombok.RequiredArgsConstructor;
