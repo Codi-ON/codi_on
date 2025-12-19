@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/repository/log/RecommendationEventLogJdbcRepository.java
-package com.team.backend.repository.analytics;
+package com.team.backend.repository.admin;
 
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
 import lombok.RequiredArgsConstructor;
