@@ -3,6 +3,8 @@ package com.team.backend.api.dto.session;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team.backend.domain.enums.session.SessionEventType;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.time.OffsetDateTime;
@@ -28,8 +30,9 @@ public class SessionLogRequestDto {
     @NonNull
     private String sessionKey;   // 필수
 
-    @NonNull
-    private String eventType;    // 필수 (e.g. "ENTER_HOME", "VIEW_RECO", "LOGOUT")
+
+    @NotNull
+    private SessionEventType eventType;
 
     /**
      * 추천 요청과 연결된 세션이면 recommendation_id 로 연결
@@ -42,6 +45,7 @@ public class SessionLogRequestDto {
      * - JSONB로 저장할 예정
      */
     private Map<String, Object> payload;
+
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 

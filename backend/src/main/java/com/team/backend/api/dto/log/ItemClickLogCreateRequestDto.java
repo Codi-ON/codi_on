@@ -1,8 +1,8 @@
-// src/main/java/com/team/backend/api/dto/click/ItemClickLogCreateRequestDto.java
+// src/main/java/com/team/backend/api/dto/log/ItemClickLogCreateRequestDto.java
 package com.team.backend.api.dto.log;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.validation.constraints.NotBlank;
+import com.team.backend.domain.enums.log.ItemClickEventType;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,8 +16,8 @@ public class ItemClickLogCreateRequestDto {
     @NotNull
     private Long clothingItemId;
 
-    @NotBlank
-    private String eventType; // 예: RECO_ITEM_CLICK / SEARCH_ITEM_CLICK / CLOSET_ITEM_CLICK
+    @NotNull
+    private ItemClickEventType eventType; // 고정: ITEM_CLICK
 
-    private JsonNode payload; // 어떤 키가 오든 그대로 저장(유연성 유지)
+    private JsonNode payload; // source/position/region 등은 여기로
 }

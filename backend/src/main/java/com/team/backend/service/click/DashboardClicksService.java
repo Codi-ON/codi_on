@@ -32,7 +32,7 @@ public class DashboardClicksService {
         .toList();
 
     var items = topRows.stream()
-        .map(r -> new DashboardClicksResponse.TopClickedItems.ItemRank(
+        .map(r -> new DashboardClicksResponse.TopClickedItems.TopClickedItem(
             r.getClothingItemId(),
             r.getClicks(),
             totalClicks == 0 ? 0.0 : (double) r.getClicks() / (double) totalClicks
