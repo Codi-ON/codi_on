@@ -1,4 +1,4 @@
-package com.team.backend.repository.analytics;
+package com.team.backend.repository.admin;
 
 import com.team.backend.repository.click.DailyClicksRow;
 import com.team.backend.repository.click.TopClickedItemRow;
