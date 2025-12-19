@@ -26,9 +26,9 @@ public record DashboardClicksResponse(
 
   public record TopClickedItems(
       int topN,
-      List<ItemRank> items
+      List<TopClickedItem> items
   ) {
-    public record ItemRank(
+    public record TopClickedItem(
         long clothingItemId,
         long clicks,
         double share
