@@ -40,4 +40,12 @@ public class SessionMetricsAdminService {
                 .hourlyUsage(hourlyUsage)
                 .build();
     }
+        private void validateRange(OffsetDateTime from, OffsetDateTime to) {
+        if (from == null || to == null) {
+            throw new IllegalArgumentException("from/to는 필수입니다.");
+        }
+        if (!from.isBefore(to)) {
+            throw new IllegalArgumentException("from은 to보다 과거여야 합니다.");
+        }
+    }
 }
