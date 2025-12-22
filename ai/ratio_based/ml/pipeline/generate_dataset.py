@@ -10,17 +10,35 @@ def compute_comfort_score(
     utci: float,
     r_ct: float,
     r_et: float,
+    ap: float,
     neutral_utci: float = 18.0
 ) -> float:
-
+    # 1. UTCI 편차 페널티
     utci_penalty = abs(utci - neutral_utci)
 
-    if utci > neutral_utci:
-        cloth_penalty = r_et
-    else:
-        cloth_penalty = r_ct
+    # 2. 온열/한랭 가중치
+    cold_scale = 18.0
+    heat_scale = 14.0
+    cold_ratio = np.clip(((neutral_utci - utci) / cold_scale), 0.0, 1.0)
+    heat_ratio = np.clip(((utci - neutral_utci) / heat_scale), 0.0, 1.0)
+    required_rct = 0.055 + 0.0005 * np.clip(neutral_utci - utci, 0.0, 30.0)
+    cold_penalty = np.clip(required_rct - r_ct, 0.0, None)
 
-    score = 1.0 - 0.04 * utci_penalty - 0.3 * cloth_penalty
+    # 3. 의복 물성 페널티
+    cloth_penalty = (
+        cold_ratio * cold_penalty  +
+        heat_ratio * r_et +
+        heat_ratio * (1.0 / ap)
+    )
+
+    weight_utci = 0.04
+    weight_cloth = 0.25
+    score = (
+        1.0
+        - weight_utci * utci_penalty
+        - weight_cloth * cloth_penalty
+    )
+
     return float(np.clip(score, 0.0, 1.0))
 
 
@@ -47,13 +65,15 @@ def generate_dataset() -> pd.DataFrame:
                         comfort = compute_comfort_score(
                             utci=utci,
                             r_ct=props["R_ct"],
-                            r_et=props["R_et"]
+                            r_et=props["R_et"],
+                            ap=props["AP"],
                         )
 
                         rows.append({
                             "C_ratio": c_ratio,
                             "R_ct": props["R_ct"],
                             "R_et": props["R_et"],
+                            "AP": props["AP"],
                             "Ta": Ta,
                             "RH": RH,
                             "Va": Va,
