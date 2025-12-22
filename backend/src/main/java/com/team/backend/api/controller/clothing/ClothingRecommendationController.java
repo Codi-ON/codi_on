@@ -16,39 +16,44 @@ import java.util.List;
 public class ClothingRecommendationController {
 
     // ==============================
-    // 🔗 공통 URL prefix / path 상수
+    // URL prefix / path constants
     // ==============================
-    public static final String API_PREFIX            = "/api/recommend";
-    public static final String PATH_TODAY            = "/today";
-    public static final String PATH_TODAY_BY_CATEGORY= "/today/by-category";
+    public static final String API_PREFIX              = "/api/recommend";
+    public static final String PATH_TODAY              = "/today";
+    public static final String PATH_TODAY_BY_CATEGORY  = "/today/by-category";
 
     // ==============================
-    // 🔗 공통 RequestParam 이름 상수
+    // RequestParam constants
     // ==============================
-    public static final String PARAM_REGION = "region";
-    public static final String PARAM_LAT    = "lat";
-    public static final String PARAM_LON    = "lon";
-    public static final String PARAM_LIMIT  = "limit";
+    public static final String PARAM_REGION   = "region";
+    public static final String PARAM_LAT      = "lat";
+    public static final String PARAM_LON      = "lon";
+    public static final String PARAM_LIMIT    = "limit";
     public static final String PARAM_CATEGORY = "category";
 
     // ==============================
-    // 📍 기본 좌표 / 지역 상수 (서울 고정, region은 확장성 위해 유지)
+    // Default location (Seoul)
     // ==============================
     private static final double DEFAULT_LAT    = 37.5665;
     private static final double DEFAULT_LON    = 126.9780;
     private static final String DEFAULT_REGION = "Seoul";
 
     // ==============================
-    // ✅ limit 정책
+    // limit policy
+    // - IMPORTANT:
+    //   limit = candidate pool size for ML scoring (NOT response size)
+    //   response is fixed to Top3 per category at service level
     // ==============================
-    private static final int DEFAULT_LIMIT = 20;
-    private static final int MIN_LIMIT = 1;
-    private static final int MAX_LIMIT = 50;
+    private static final int DEFAULT_LIMIT = 50;
+    private static final int MIN_LIMIT = 3;
+    private static final int MAX_LIMIT = 300;
 
     private final ClothingRecommendationService clothingRecommendationService;
 
-    // 1) 오늘 추천 (전체)
-    // GET /api/recommend/today?region=Seoul&lat=37.5665&lon=126.9780&limit=20
+    /**
+     * 1) Today's recommendation (all categories)
+     * GET /api/recommend/today?region=Seoul&lat=37.5665&lon=126.9780&limit=50
+     */
     @GetMapping(PATH_TODAY)
     public ApiResponse<List<ClothingItemResponseDto>> today(
             @RequestParam(name = PARAM_REGION, defaultValue = DEFAULT_REGION) String region,
@@ -62,8 +67,10 @@ public class ClothingRecommendationController {
         );
     }
 
-    // 2) 오늘 추천 (카테고리)
-    // GET /api/recommend/today/by-category?category=TOP&region=Seoul&lat=...&lon=...&limit=20
+    /**
+     * 2) Today's recommendation (by category)
+     * GET /api/recommend/today/by-category?category=TOP&region=Seoul&lat=...&lon=...&limit=50
+     */
     @GetMapping(PATH_TODAY_BY_CATEGORY)
     public ApiResponse<List<ClothingItemResponseDto>> todayByCategory(
             @RequestParam(name = PARAM_CATEGORY) ClothingCategory category,
@@ -81,7 +88,7 @@ public class ClothingRecommendationController {
     private int resolveLimitOrThrow(Integer limit) {
         int v = (limit == null ? DEFAULT_LIMIT : limit);
         if (v < MIN_LIMIT || v > MAX_LIMIT) {
-            throw new IllegalArgumentException("limit은 " + MIN_LIMIT + "~" + MAX_LIMIT + " 사이만 허용됩니다.");
+            throw new IllegalArgumentException("limit must be between " + MIN_LIMIT + " and " + MAX_LIMIT + ".");
         }
         return v;
     }
