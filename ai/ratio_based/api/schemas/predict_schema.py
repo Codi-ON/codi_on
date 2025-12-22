@@ -1,12 +1,25 @@
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
-# Field는 단순 주석이 아닌 입력 검증 로직
-class ComfortRequest(BaseModel):
-    c_ratio: float = Field(..., ge=0, le=100, description="면 혼방률(%)")
-    Ta: float = Field(..., description="기온(℃)")
-    RH: float = Field(..., ge=0, le=100, description="상대 습도(%)")
-    Va: float = Field(..., ge=0.5, description="풍속(m/s)")
-    cloud: float = Field(..., ge=0, le=100, description="구름량(%)")
+class Context(BaseModel):
+    Ta: float = Field(..., description="Temperature")
+    RH: float = Field(..., description="Humidity (0~100)")
+    Va: float = Field(..., description="Wind speed")
+    cloud: float = Field(..., description="Cloud amount (0~100)")
 
-class ComfortResponse(BaseModel):
-    comfort_score: float = Field(..., description="comfort score(0~1)")
+class Item(BaseModel):
+    item_id: int
+    c_ratio: int = Field(..., ge=0, le=100)
+    p_ratio: int = Field(..., ge=0, le=100)
+
+class ComfortBatchRequest(BaseModel):
+    context: Context
+    items: List[Item]
+
+class Result(BaseModel):
+    item_id: int
+    comfort_score: Optional[float] = None
+    error: Optional[str] = None
+
+class ComfortBatchResult(BaseModel):
+    results: List[Result]

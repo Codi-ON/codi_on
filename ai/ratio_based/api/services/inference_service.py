@@ -1,32 +1,50 @@
-import torch
+from typing import List
+from api.schemas.predict_schema import Context, Item, Result
 
-from api.config import DEVICE
-from api.dependencies.model_loader import get_model
-from ml.pipeline.preprocess import build_feature_vector
+def _clamp_0_100(x: int) -> int:
+    if x < 0:
+        return 0
+    if x > 100:
+        return 100
+    return x
 
+def _normalize_to_100(c: int, p: int) -> tuple[int, int]:
+    c = _clamp_0_100(int(c))
+    p = _clamp_0_100(int(p))
+    s = c + p
+    if s == 100:
+        return c, p
+    if s <= 0:
+        return 50, 50
+    c2 = round((c * 100.0) / s)
+    c2 = max(0, min(100, int(c2)))
+    p2 = 100 - c2
+    return c2, p2
 
-def predict_comfort(c_ratio, Ta, RH, Va, cloud):
-    model = get_model()
+def _score(context: Context, item: Item) -> float:
+    ta = float(context.Ta)
+    rh = float(context.RH)
+    va = float(context.Va)
+    cloud = float(context.cloud)
 
-    # 모델 input은 list가 아닌 tensor 형태
-    X = build_feature_vector(c_ratio, Ta, RH, Va, cloud)
-    x_tensor = torch.tensor(X, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    base = 100.0
+    base -= abs(22.0 - ta) * 1.5
+    base -= (rh / 100.0) * 10.0
+    base -= va * 1.0
+    base -= (cloud / 100.0) * 5.0
 
-    with torch.no_grad():
-        y = model(x_tensor)
+    c, p = _normalize_to_100(item.c_ratio, item.p_ratio)
+    weighted = (base * (c / 100.0)) + (base * (p / 100.0) * 0.9)
+    return round(max(0.0, min(100.0, weighted)), 3)
 
-    return float(y)
+def predict_comfort_batch(context: Context, items: List[Item]) -> List[Result]:
+    results: List[Result] = []
 
-def _test():
-    score = predict_comfort(
-        c_ratio=60,
-        Ta=-2.0,
-        RH=60.0,
-        Va=1.5,
-        cloud=10.0
-    )
-    print(score)
+    for it in items:
+        try:
+            s = _score(context, it)
+            results.append(Result(item_id=it.item_id, comfort_score=s, error=None))
+        except Exception as e:
+            results.append(Result(item_id=getattr(it, "item_id", 0), comfort_score=None, error=str(e)))
 
-if __name__ == '__main__':
-
-    _test()
+    return results

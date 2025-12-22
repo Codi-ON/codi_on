@@ -1,8 +1,7 @@
-// src/main/java/com/team/backend/config/HttpClientConfig.java
 package com.team.backend.config;
 
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,26 +10,20 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Duration;
 
 @Configuration
-@EnableConfigurationProperties(AiProperties.class) // ✅ 이거 없으면 AiProperties 바인딩 안 됨
 public class HttpClientConfig {
 
-    // 공용 RestTemplate (기존 유지)
-    @Bean
-    public RestTemplate restTemplate(RestTemplateBuilder builder) {
-        return builder
-                .setConnectTimeout(Duration.ofSeconds(2))
-                .setReadTimeout(Duration.ofSeconds(3))
-                .build();
-    }
-
-    // ✅ AI 전용 RestTemplate (rootUri + timeout 분리)
     @Bean
     @Qualifier("aiRestTemplate")
-    public RestTemplate aiRestTemplate(RestTemplateBuilder builder, AiProperties aiProperties) {
+    public RestTemplate aiRestTemplate(
+            RestTemplateBuilder builder,
+            @Value("${ai.base-url:http://localhost:8000}") String baseUrl,
+            @Value("${ai.connect-timeout-ms:2000}") int connectTimeoutMs,
+            @Value("${ai.read-timeout-ms:7000}") int readTimeoutMs
+    ) {
         return builder
-                .rootUri(aiProperties.getBaseUrl())
-                .setConnectTimeout(Duration.ofMillis(aiProperties.getConnectTimeoutMs()))
-                .setReadTimeout(Duration.ofMillis(aiProperties.getReadTimeoutMs()))
+                .rootUri(baseUrl) // 핵심: ComfortAiClient는 path만 넘긴다
+                .setConnectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .setReadTimeout(Duration.ofMillis(readTimeoutMs))
                 .build();
     }
 }
