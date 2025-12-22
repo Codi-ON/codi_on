@@ -9,7 +9,7 @@ import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.domain.enums.ComfortZone;
 import com.team.backend.domain.enums.SeasonType;
-import com.team.backend.repository.admin.RecommendationMetricsJdbcRepository;
+import com.team.backend.domain.enums.recommendation.RecommendationEventType;
 import com.team.backend.repository.clothing.ClothingItemRepository;
 import com.team.backend.service.weather.WeatherService;
 import lombok.RequiredArgsConstructor;
@@ -28,18 +28,19 @@ public class ClothingRecommendationService {
 
     private final WeatherService weatherService;
     private final ClothingItemRepository clothingItemRepository;
-    private final RecommendationMetricsJdbcRepository recommendationEventLogWriter;
+    private final RecommendationEventLogService recommendationEventLogService;
 
-    private record ComfortContext(int avgTemp, ComfortZone zone) {}
+    // 로그가 추천 흐름을 죽이면 안 됨 → 시스템 기본값
+    private static final UUID SYSTEM_SESSION_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+    private static final String SYSTEM_SESSION_KEY = "SYSTEM";
+
+    private record ComfortContext(int avgTemp, ComfortZone zone) {
+    }
 
     private ComfortContext resolveComfortContext(double lat, double lon, String region) {
         DailyWeatherResponseDto today = weatherService.getTodaySmart(lat, lon, region);
         int avgTemp = (int) Math.round(today.getTemperature());
         ComfortZone zone = ComfortZone.from(avgTemp);
-
-        log.info("🌡 [CONTEXT] region={}, lat={}, lon={}, avgTemp={}, zone={}",
-                region, lat, lon, avgTemp, zone);
-
         return new ComfortContext(avgTemp, zone);
     }
 
@@ -54,19 +55,43 @@ public class ClothingRecommendationService {
 
     private boolean matchesSeason(ClothingItem item, Set<SeasonType> todaySeasons) {
         Set<SeasonType> itemSeasons = item.getSeasons();
-        if (itemSeasons == null || itemSeasons.isEmpty()) return true; // all season 취급
-        for (SeasonType s : itemSeasons) {
-            if (todaySeasons.contains(s)) return true;
-        }
+        if (itemSeasons == null || itemSeasons.isEmpty()) return true;
+        for (SeasonType s : itemSeasons) if (todaySeasons.contains(s)) return true;
         return false;
     }
 
-    @Transactional
+    private void safeLog(RecommendationEventType type, String payloadJson) {
+        try {
+            Map<String, Object> payloadMap = null;
+
+            if (payloadJson != null && !payloadJson.isBlank()) {
+                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+                payloadMap = om.readValue(
+                        payloadJson,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+                        }
+                );
+            }
+
+            recommendationEventLogService.write(
+                    RecommendationEventLogRequestDto.builder()
+                            .eventType(type)                 // enum
+                            .sessionId(SYSTEM_SESSION_ID)     // NOT NULL 방어
+                            .sessionKey(SYSTEM_SESSION_KEY)   // 있으면 더 좋음
+                            .payload(payloadMap)              // ✅ DTO가 Map payload면 여기로 넣어야 DB에 들어감
+                            .build()
+            );
+        } catch (org.springframework.dao.DataAccessException
+                 | IllegalArgumentException
+                 | com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.warn("[RECO_LOG_FAIL] type={} reason={}", type, e.getMessage());
+        }
+    }
+
     public List<ClothingItemResponseDto> recommendToday(String region, double lat, double lon, int limit) {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        // ✅ DTO 리팩토링 반영: Search 사용
         ClothingItemRequestDto.Search req = ClothingItemRequestDto.Search.builder()
                 .temp(ctx.avgTemp())
                 .sort("popular")
@@ -79,20 +104,11 @@ public class ClothingRecommendationService {
         );
 
         if (ids.isEmpty()) {
-            recommendationEventLogWriter.write(
-                    RecommendationEventLogRequestDto.builder()
-                            .eventType("RECO_TODAY_EMPTY")
-                            .payloadJson("""
-                                    {
-                                      "region":"%s",
-                                      "lat":%f,
-                                      "lon":%f,
-                                      "limit":%d,
-                                      "temp":%d,
-                                      "zone":"%s"
-                                    }
-                                    """.formatted(region, lat, lon, limit, ctx.avgTemp(), ctx.zone()))
-                            .build()
+            safeLog(
+                    RecommendationEventType.RECO_GENERATED, // 너 enum에 맞춰 쓰면 됨 (EMPTY 따로 없으면 GENERATED만)
+                    """
+                            {"region":"%s","lat":%f,"lon":%f,"limit":%d,"temp":%d,"zone":"%s","resultSize":0}
+                            """.formatted(region, lat, lon, limit, ctx.avgTemp(), ctx.zone())
             );
             return List.of();
         }
@@ -105,28 +121,16 @@ public class ClothingRecommendationService {
         for (Long id : ids) {
             ClothingItem item = map.get(id);
             if (item == null) continue;
-
             if (!ctx.zone().matches(item)) continue;
             if (!matchesSeason(item, todaySeasons)) continue;
-
             result.add(ClothingItemResponseDto.from(item));
         }
 
-        recommendationEventLogWriter.write(
-                RecommendationEventLogRequestDto.builder()
-                        .eventType("RECO_TODAY_GENERATED")
-                        .payloadJson("""
-                                {
-                                  "region":"%s",
-                                  "lat":%f,
-                                  "lon":%f,
-                                  "limit":%d,
-                                  "temp":%d,
-                                  "zone":"%s",
-                                  "resultSize":%d
-                                }
-                                """.formatted(region, lat, lon, limit, ctx.avgTemp(), ctx.zone(), result.size()))
-                        .build()
+        safeLog(
+                RecommendationEventType.RECO_GENERATED,
+                """
+                        {"region":"%s","lat":%f,"lon":%f,"limit":%d,"temp":%d,"zone":"%s","resultSize":%d}
+                        """.formatted(region, lat, lon, limit, ctx.avgTemp(), ctx.zone(), result.size())
         );
 
         return result;
@@ -134,16 +138,11 @@ public class ClothingRecommendationService {
 
     @Transactional(readOnly = true)
     public List<ClothingItemResponseDto> recommendTodayByCategory(
-            ClothingCategory category,
-            String region,
-            double lat,
-            double lon,
-            int limit
+            ClothingCategory category, String region, double lat, double lon, int limit
     ) {
         ComfortContext ctx = resolveComfortContext(lat, lon, region);
         Set<SeasonType> todaySeasons = resolveSeasons(ctx.zone());
 
-        // ✅ DTO 리팩토링 반영: Search 사용
         ClothingItemRequestDto.Search req = ClothingItemRequestDto.Search.builder()
                 .category(category)
                 .temp(ctx.avgTemp())
@@ -166,13 +165,10 @@ public class ClothingRecommendationService {
         for (Long id : ids) {
             ClothingItem item = map.get(id);
             if (item == null) continue;
-
             if (!ctx.zone().matches(item)) continue;
             if (!matchesSeason(item, todaySeasons)) continue;
-
             result.add(ClothingItemResponseDto.from(item));
         }
-
         return result;
     }
 }
