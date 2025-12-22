@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
@@ -11,7 +9,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - db_data:/var/lib/postgresql/data
-    # 로컬에 이미 postgres 있으면 충돌. 필요 없으면 ports 자체를 삭제.
     ports:
       - "${DB_PORT:-5432}:5432"
     networks:
@@ -24,16 +21,18 @@ services:
 
   ai:
     build:
-      context: ./ai/ratio_based
+      context: ./ai
       dockerfile: Dockerfile
     container_name: ai
     restart: always
     ports:
-      - "8000:8000"
+      - "${AI_PORT:-8000}:8000"
     networks:
       - app-network
+    # 핵심: "main:app" 가 아니라, 네 FastAPI 엔트리포인트에 맞춰야 함
+    # 아래는 가장 흔한 케이스(./api/main.py 에 app 존재) 기준
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
-      # /docs가 200이면 FastAPI 기동 OK로 간주
       test: ["CMD-SHELL", "wget -qO- http://localhost:8000/docs >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
@@ -51,45 +50,18 @@ services:
       ai:
         condition: service_healthy
     environment:
-      # 컨테이너에서는 db 서비스명으로 붙는 게 정석
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB}}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
+      # 컨테이너 내부에서는 db/ai 서비스명으로 통신
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
 
-      # OpenWeather
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
 
-      # AI endpoint
-      AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
+      AI_BASE_URL: http://ai:8000
       AI_CONNECT_TIMEOUT_MS: ${AI_CONNECT_TIMEOUT_MS:-2000}
       AI_READ_TIMEOUT_MS: ${AI_READ_TIMEOUT_MS:-7000}
-    networks:
-      - app-network
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: frontend
-    restart: always
-    depends_on:
-      - backend
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    networks:
-      - app-network
-
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: nginx
-    restart: always
-    depends_on:
-      - frontend
-      - backend
     ports:
-      - "80:80"
+      - "${BACKEND_PORT:-8080}:8080"
     networks:
       - app-network
 
