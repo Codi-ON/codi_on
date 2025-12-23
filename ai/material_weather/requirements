@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+requests
+pydantic
+python-dotenv
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
+seaborn
+torch
