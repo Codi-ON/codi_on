@@ -26,10 +26,11 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
+      # wget/curl 의존 제거 (python은 무조건 있음)
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request,json,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if json.load(r).get('status')=='ok' else 1)\""
+          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if r.status==200 else 1)\""
         ]
       interval: 5s
       timeout: 3s
@@ -56,7 +57,7 @@ services:
       # Weather
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
 
-      # AI (Spring relaxed binding -> ai.*)
+      # AI (Spring relaxed binding: AI_BASE_URL -> ai.base-url)
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}

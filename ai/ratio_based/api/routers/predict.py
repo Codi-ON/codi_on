@@ -1,24 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from api.schemas.predict_schema import ComfortBatchRequest, ComfortBatchResult
+from api.services.inference_service import predict_comfort_batch
 
-from api.schemas.predict_schema import ComfortResponse, ComfortRequest
-from api.services.inference_service import predict_comfort
+router = APIRouter(prefix="/comfort", tags=["comfort"])
 
-router = APIRouter(
-    prefix="/predict", # 엔드포인트
-    tags=["comfort"],
-)
+@router.get("/health")
+def comfort_health():
+    return {"status": "ok"}
 
-@router.post("/comfort", response_model=ComfortResponse)
-def predict(request: ComfortRequest):
-    try:
-        score = predict_comfort(
-            c_ratio=request.c_ratio,
-            Ta=request.Ta,
-            RH=request.RH,
-            Va=request.Va,
-            cloud=request.cloud,
-        )
-        return ComfortResponse(comfort_score=score)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.post("/batch", response_model=ComfortBatchResult)
+def comfort_batch(req: ComfortBatchRequest):
+    # batch는 “응답 200 유지”가 목표
+    results = predict_comfort_batch(req.context, req.items)
+    return ComfortBatchResult(results=results)
