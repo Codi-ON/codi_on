@@ -2,12 +2,11 @@ package com.team.backend.service.ai;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.team.backend.config.AiUpstreamException;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.*;
-
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -16,34 +15,19 @@ import java.util.stream.Collectors;
 @Component
 public class ComfortAiClient {
 
-    private final RestTemplate restTemplate;
+    private final RestTemplate aiRestTemplate;
 
-    private final String baseUrl;
-    private final int connectTimeoutMs;
-    private final int readTimeoutMs;
+    @Value("${ai.comfort-batch-path:/comfort/batch}")
+    private String comfortBatchPath;
 
-    public ComfortAiClient(
-            @Value("${ai.base-url:http://ai:8000}") String baseUrl,
-            @Value("${ai.connect-timeout-ms:2000}") int connectTimeoutMs,
-            @Value("${ai.read-timeout-ms:7000}") int readTimeoutMs
-    ) {
-        this.baseUrl = stripTrailingSlash(baseUrl);
-        this.connectTimeoutMs = connectTimeoutMs;
-        this.readTimeoutMs = readTimeoutMs;
-
-        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
-        f.setConnectTimeout(this.connectTimeoutMs);
-        f.setReadTimeout(this.readTimeoutMs);
-        this.restTemplate = new RestTemplate(f);
+    public ComfortAiClient(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate) {
+        this.aiRestTemplate = aiRestTemplate;
     }
 
-    /**
-     * 기존 서비스 코드 호환용
-     */
     public BatchResponse callBatch(BatchRequest request) {
         validateRequest(request);
 
-        // B안 핵심: ratio 이상해도 예외 던지지 말고 "항상 100"으로 정규화해서 보낸다
+        // 어떤 값이 와도 0~100 / 합 100으로 보정
         BatchRequest sanitized = sanitizeRequest(request);
 
         HttpHeaders headers = new HttpHeaders();
@@ -51,20 +35,19 @@ public class ComfortAiClient {
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
         HttpEntity<BatchRequest> entity = new HttpEntity<>(sanitized, headers);
-
-        String url = baseUrl + "/comfort/batch";
+        String path = normalizePath(comfortBatchPath);
 
         try {
             ResponseEntity<BatchResponse> res =
-                    restTemplate.exchange(url, HttpMethod.POST, entity, BatchResponse.class);
+                    aiRestTemplate.exchange(path, HttpMethod.POST, entity, BatchResponse.class);
 
             if (!res.getStatusCode().is2xxSuccessful() || res.getBody() == null) {
                 throw new AiUpstreamException("AI_BAD_RESPONSE", 502, "AI returned empty body");
             }
-            if (res.getBody().results == null) {
-                res.getBody().results = List.of();
-            }
-            return res.getBody();
+
+            BatchResponse body = res.getBody();
+            if (body.results == null) body.results = List.of();
+            return body;
 
         } catch (HttpStatusCodeException e) {
             throw new AiUpstreamException(
@@ -91,15 +74,12 @@ public class ComfortAiClient {
             if (it.cRatio < 0 || it.cRatio > 100 || it.pRatio < 0 || it.pRatio > 100) {
                 throw new IllegalArgumentException("c_ratio and p_ratio must be between 0 and 100");
             }
-            // sum=100 체크로 throw 금지 (B안)
         }
     }
 
     private BatchRequest sanitizeRequest(BatchRequest request) {
         Context c = request.context;
-        Context ctx = new Context(
-                nz(c.ta), nz(c.rh), nz(c.va), nz(c.cloud)
-        );
+        Context ctx = new Context(nz(c.ta), nz(c.rh), nz(c.va), nz(c.cloud));
 
         List<Item> items = request.items.stream()
                 .map(it -> {
@@ -115,19 +95,14 @@ public class ComfortAiClient {
         return (v == null || !Double.isFinite(v)) ? 0.0 : v;
     }
 
-    /**
-     * 어떤 값이 와도 "0~100" + "합 100"으로 보정
-     */
     private int[] normalizeTo100(Integer cRatio, Integer pRatio) {
         int c = clamp01_100(cRatio);
         int p = clamp01_100(pRatio);
         int sum = c + p;
 
         if (sum == 100) return new int[]{c, p};
-
         if (sum <= 0) return new int[]{50, 50};
 
-        // 비율 유지 스케일링 후, 마지막은 100 맞춤
         int c2 = (int) Math.round((c * 100.0) / sum);
         c2 = Math.max(0, Math.min(100, c2));
         int p2 = 100 - c2;
@@ -140,6 +115,11 @@ public class ComfortAiClient {
         return Math.min(x, 100);
     }
 
+    private String normalizePath(String p) {
+        if (p == null || p.isBlank()) return "/comfort/batch";
+        return p.startsWith("/") ? p : ("/" + p);
+    }
+
     private String safeBody(HttpStatusCodeException e) {
         try {
             byte[] b = e.getResponseBodyAsByteArray();
@@ -150,19 +130,10 @@ public class ComfortAiClient {
         }
     }
 
-    private String stripTrailingSlash(String s) {
-        if (s == null) return "";
-        return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
-    }
-
-    // ============================
     // DTO
-    // ============================
-
     public static class BatchRequest {
         @JsonProperty("context")
         public Context context;
-
         @JsonProperty("items")
         public List<Item> items;
 
@@ -181,13 +152,10 @@ public class ComfortAiClient {
     public static class Context {
         @JsonProperty("Ta")
         public double ta;
-
         @JsonProperty("RH")
         public double rh;
-
         @JsonProperty("Va")
         public double va;
-
         @JsonProperty("cloud")
         public double cloud;
 
@@ -203,10 +171,8 @@ public class ComfortAiClient {
     public static class Item {
         @JsonProperty("item_id")
         public Long itemId;
-
         @JsonProperty("c_ratio")
         public Integer cRatio;
-
         @JsonProperty("p_ratio")
         public Integer pRatio;
 
@@ -221,10 +187,8 @@ public class ComfortAiClient {
     public static class Result {
         @JsonProperty("item_id")
         public Long itemId;
-
         @JsonProperty("comfort_score")
         public Double comfortScore;
-
         @JsonProperty("error")
         public String error;
     }
