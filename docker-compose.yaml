@@ -11,30 +11,33 @@ services:
     volumes:
       - codion_db_data:/var/lib/postgresql/data
     healthcheck:
+      # compose의 environment 변수를 healthcheck에서 쓰려면 $$로 escape 필요
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks:
       - codion_app_network
 
   ai:
     build:
-      context: ./ai/ratio_based
-      dockerfile: Dockerfile
+      context: ./ai
+      dockerfile: ml_api/Dockerfile
     container_name: codion-ai
     ports:
       - "8000:8000"
     healthcheck:
-      # wget/curl 의존 제거 (python은 무조건 있음)
+      # wget/curl 의존 제거 (python은 컨테이너에 있다는 전제)
       test:
         [
           "CMD-SHELL",
           "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if r.status==200 else 1)\""
         ]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks:
       - codion_app_network
 
@@ -62,9 +65,18 @@ services:
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
       AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
-
     ports:
       - "8080:8080"
+    healthcheck:
+      # actuator 쓰면 /actuator/health 추천, 없으면 아래처럼 임시로
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health'); sys.exit(0 if r.status==200 else 1)\""
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
     networks:
       - codion_app_network

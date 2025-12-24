@@ -7,5 +7,7 @@ public enum RecommendationEventType {
     RECO_SHOWN,
     RECO_ITEM_SELECTED,
     RECO_FEEDBACK_SUBMITTED,
-    RECO_COMPLETED
+    RECO_COMPLETED,
+    RECO_ERROR
+
 }
