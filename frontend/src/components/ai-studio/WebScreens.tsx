@@ -397,3 +397,9 @@ export const ScreenHelp = () => (
         </div>
     </div>
 );
+ // === wrapper (기존 Screen* 코드는 그대로 둠) ===
+export default function WebScreens() {
+  // 지금은 디자인 확인용으로 한 화면만 렌더
+  // 필요하면 router/path에 따라 바꿔도 됨
+  return <ScreenSettings />;
+}
