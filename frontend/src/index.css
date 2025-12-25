@@ -1,10 +1,12 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* 프로젝트 기본 스타일(원하면 수정) */
-:root {
-  color-scheme: light;
-}
+/* Optional: app-wide smoothing */
+:root { color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; }
 
-body {
-  margin: 0;
-}
+/* Hide scrollbars on mobile frames where needed */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
