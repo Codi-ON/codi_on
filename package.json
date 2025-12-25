@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.12",
+    "msw": "^2.12.4",
+    "react-router-dom": "^7.11.0"
+  },
+  "devDependencies": {
+    "vite-tsconfig-paths": "^6.0.3"
+  }
+}
