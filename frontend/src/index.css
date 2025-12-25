@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* 프로젝트 기본 스타일(원하면 수정) */
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+}
