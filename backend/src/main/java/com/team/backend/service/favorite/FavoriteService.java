@@ -1,7 +1,7 @@
 // src/main/java/com/team/backend/service/favorite/FavoriteService.java
 package com.team.backend.service.favorite;
 
-import com.team.backend.domain.Favorite;
+import com.team.backend.domain.FavoriteItem;
 import com.team.backend.repository.favorite.FavoriteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,7 +22,7 @@ public class FavoriteService {
 
         return favoriteRepository.findAllBySessionKeyAndClothingIdIn(sessionKey, clothingIds)
                 .stream()
-                .map(Favorite::getClothingId)
+                .map(FavoriteItem::getClothingId)
                 .collect(java.util.stream.Collectors.toSet());
     }
 
@@ -33,13 +33,13 @@ public class FavoriteService {
         }
         if (clothingId == null) throw new IllegalArgumentException("clothingId is required");
 
-        Optional<Favorite> existing = favoriteRepository.findBySessionKeyAndClothingId(sessionKey, clothingId);
+        Optional<FavoriteItem> existing = favoriteRepository.findBySessionKeyAndClothingId(sessionKey, clothingId);
         if (existing.isPresent()) {
             favoriteRepository.deleteBySessionKeyAndClothingId(sessionKey, clothingId);
             return false;
         }
 
-        favoriteRepository.save(Favorite.builder()
+        favoriteRepository.save(FavoriteItem.builder()
                 .sessionKey(sessionKey.trim())
                 .clothingId(clothingId)
                 .build());
