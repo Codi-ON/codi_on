@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface FavoriteRepository extends JpaRepository<FavoriteItem, Long> {
+    List<FavoriteItem> findAllBySessionKey(String sessionKey);
 
     Optional<FavoriteItem> findBySessionKeyAndClothingId(String sessionKey, Long clothingId);
 
