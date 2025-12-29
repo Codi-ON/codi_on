@@ -10,10 +10,6 @@ public final class RecommendationAiDto {
 
     private RecommendationAiDto() {}
 
-    // =========================
-    // Request
-    // =========================
-
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class RecommendationRequest {
         @JsonProperty("items")
@@ -44,11 +40,11 @@ public final class RecommendationAiDto {
         public Integer precipitationProbability;
 
         public WeatherData() {}
-        public WeatherData(Double temperature, Double feelsLikeTemperature, Integer humidity, Integer precipitationProbability) {
-            this.temperature = temperature;
-            this.feelsLikeTemperature = feelsLikeTemperature;
-            this.humidity = humidity;
-            this.precipitationProbability = precipitationProbability;
+        public WeatherData(Double t, Double f, Integer h, Integer p) {
+            temperature = t;
+            feelsLikeTemperature = f;
+            humidity = h;
+            precipitationProbability = p;
         }
     }
 
@@ -64,16 +60,12 @@ public final class RecommendationAiDto {
         public String category;
 
         public Item() {}
-        public Item(Long clothingId, String name, String category) {
-            this.clothingId = clothingId;
+        public Item(Long id, String name, String category) {
+            this.clothingId = id;
             this.name = name;
             this.category = category;
         }
     }
-
-    // =========================
-    // Response
-    // =========================
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class RecommendationResponse {
@@ -84,7 +76,7 @@ public final class RecommendationAiDto {
         public List<Recommendation> recommendations;
 
         @JsonProperty("message")
-        public String message; // fail/error 시 대비 (AI가 넣는 경우)
+        public String message;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -92,7 +84,6 @@ public final class RecommendationAiDto {
         @JsonProperty("clothingId")
         public Long clothingId;
 
-        // AI가 material_name으로 주더라도 깨지지 않게 수용
         @JsonProperty("name")
         @JsonAlias({"material_name"})
         public String name;
