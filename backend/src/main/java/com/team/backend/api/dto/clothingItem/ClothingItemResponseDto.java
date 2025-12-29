@@ -1,38 +1,37 @@
-package com.team.backend.api.dto.clothingItem;
-
-import com.team.backend.domain.ClothingItem;
-import com.team.backend.domain.enums.*;
-import lombok.*;
-
-import java.util.Set;
-
+// src/main/java/com/team/backend/api/dto/clothingItem/ClothingItemResponseDto.java
 @Getter
 @Builder
+@AllArgsConstructor
 public class ClothingItemResponseDto {
 
-    private final Long id;
-    private final Long clothingId;
-    private final String name;
+    private Long id;
+    private Long clothingId;
+    private String name;
 
-    private final ClothingCategory category;
-    private final ThicknessLevel thicknessLevel;
-    private final UsageType usageType;
-    private final Set<SeasonType> seasons;
+    private ClothingCategory category;
+    private ThicknessLevel thicknessLevel;
+    private UsageType usageType;
+    private Set<SeasonType> seasons;
 
-    private final Integer suitableMinTemp;
-    private final Integer suitableMaxTemp;
+    private Integer suitableMinTemp;
+    private Integer suitableMaxTemp;
 
-    private final Integer cottonPercentage;
-    private final Integer polyesterPercentage;
-    private final Integer etcFiberPercentage;
+    private Integer cottonPercentage;
+    private Integer polyesterPercentage;
+    private Integer etcFiberPercentage;
 
-    private final String color;
-    private final String styleTag;
-    private final String imageUrl;
+    private String color;
+    private String styleTag;
+    private String imageUrl;
 
-    private final Integer selectedCount;
+    private Integer selectedCount;
 
+    private boolean favorited;
     public static ClothingItemResponseDto from(ClothingItem e) {
+        return from(e, false);
+    }
+
+    public static ClothingItemResponseDto from(ClothingItem e, boolean favorited) {
         return ClothingItemResponseDto.builder()
                 .id(e.getId())
                 .clothingId(e.getClothingId())
@@ -50,6 +49,7 @@ public class ClothingItemResponseDto {
                 .styleTag(e.getStyleTag())
                 .imageUrl(e.getImageUrl())
                 .selectedCount(e.getSelectedCount())
+                .favorited(favorited)
                 .build();
     }
 }

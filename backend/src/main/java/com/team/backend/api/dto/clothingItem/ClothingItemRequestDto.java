@@ -44,7 +44,7 @@ public class ClothingItemRequestDto {
         @NotNull
         private Integer suitableMaxTemp;
 
-        // optional
+        // optional (들어오면 정합성 강제)
         @Min(0) @Max(100) private Integer cottonPercentage;
         @Min(0) @Max(100) private Integer polyesterPercentage;
         @Min(0) @Max(100) private Integer etcFiberPercentage;
@@ -52,6 +52,17 @@ public class ClothingItemRequestDto {
         private String color;
         private String styleTag;
         private String imageUrl;
+
+        @AssertTrue(message = "suitableMinTemp는 suitableMaxTemp보다 클 수 없습니다.")
+        public boolean isTempRangeValid() {
+            if (suitableMinTemp == null || suitableMaxTemp == null) return true; // @NotNull이 잡음
+            return suitableMinTemp <= suitableMaxTemp;
+        }
+
+        @AssertTrue(message = "소재율은 입력 시 3개를 모두 주고, 합이 100이어야 합니다. (cotton+polyester+etc=100)")
+        public boolean isMaterialRatioValid() {
+            return MaterialRules.isValid(cottonPercentage, polyesterPercentage, etcFiberPercentage, true);
+        }
     }
 
     // ==============================
@@ -77,7 +88,7 @@ public class ClothingItemRequestDto {
         private Integer suitableMinTemp;
         private Integer suitableMaxTemp;
 
-        // optional
+        // optional (들어오면 정합성 강제)
         @Min(0) @Max(100) private Integer cottonPercentage;
         @Min(0) @Max(100) private Integer polyesterPercentage;
         @Min(0) @Max(100) private Integer etcFiberPercentage;
@@ -85,6 +96,19 @@ public class ClothingItemRequestDto {
         private String color;
         private String styleTag;
         private String imageUrl;
+
+        @AssertTrue(message = "suitableMinTemp는 suitableMaxTemp보다 클 수 없습니다.")
+        public boolean isTempRangeValid() {
+            // PATCH 특성상 둘 중 하나만 오면 여기서 판단 불가 → true
+            if (suitableMinTemp == null || suitableMaxTemp == null) return true;
+            return suitableMinTemp <= suitableMaxTemp;
+        }
+
+        @AssertTrue(message = "소재율을 수정하려면 3개를 모두 주고, 합이 100이어야 합니다. (cotton+polyester+etc=100)")
+        public boolean isMaterialRatioValid() {
+            // PATCH에서 소재율을 건드릴 때만 강제(부분 수정 금지)
+            return MaterialRules.isValid(cottonPercentage, polyesterPercentage, etcFiberPercentage, false);
+        }
     }
 
     // ==============================
@@ -163,5 +187,27 @@ public class ClothingItemRequestDto {
         private ThicknessLevel thicknessLevel;
         private String sort;
         private Integer limit;
+    }
+
+    // ==============================
+    // 내부 룰: 소재율 검증
+    // ==============================
+    private static final class MaterialRules {
+        private MaterialRules() {}
+
+        /**
+         * createStrict=true  : Create는 (입력 시) 3개 모두 + 합 100 강제
+         * createStrict=false : Update도 (입력 시) 3개 모두 + 합 100 강제 (부분 PATCH 금지)
+         */
+        static boolean isValid(Integer cotton, Integer poly, Integer etc, boolean createStrict) {
+            boolean anyProvided = cotton != null || poly != null || etc != null;
+            if (!anyProvided) return true; // 선택사항
+
+            // 하나라도 넣으면 3개를 다 받는 정책(부분 수정/부분 입력 금지)
+            if (cotton == null || poly == null || etc == null) return false;
+
+            int sum = cotton + poly + etc;
+            return sum == 100;
+        }
     }
 }
