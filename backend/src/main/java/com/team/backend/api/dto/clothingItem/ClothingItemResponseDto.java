@@ -1,3 +1,16 @@
+package com.team.backend.api.dto.clothingItem;
+
+import com.team.backend.domain.ClothingItem;
+import com.team.backend.domain.enums.ClothingCategory;
+import com.team.backend.domain.enums.SeasonType;
+import com.team.backend.domain.enums.ThicknessLevel;
+import com.team.backend.domain.enums.UsageType;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+
+import java.util.Set;
+
 // src/main/java/com/team/backend/api/dto/clothingItem/ClothingItemResponseDto.java
 @Getter
 @Builder

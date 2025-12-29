@@ -28,7 +28,7 @@ public class ClothingItemService {
     private static final int MAX_LIMIT = 50;
 
     private final ClothingItemRepository clothingItemRepository;
-    private final FavoriteService favoriteService; // ✅ 추가
+    private final FavoriteService favoriteService;
 
     // ==============================
     // Create: POST /api/clothes
@@ -58,7 +58,7 @@ public class ClothingItemService {
                 .build();
 
         ClothingItem saved = clothingItemRepository.save(entity);
-        return ClothingItemResponseDto.from(saved); // favorited는 생성시 의미 없으니 false
+        return ClothingItemResponseDto.from(saved);
     }
 
     // ==============================
@@ -91,7 +91,7 @@ public class ClothingItemService {
             e.replaceSeasons(req.getSeasons());
         }
 
-        // favorited는 sessionKey가 없으니 false로 반환(컨트롤러에서 getById 다시 호출해도 됨)
+        // sessionKey가 없으니 favorited는 포함 못함 (필요하면 컨트롤러에서 getById 다시 호출)
         return ClothingItemResponseDto.from(e);
     }
 
@@ -150,7 +150,7 @@ public class ClothingItemService {
         Map<Long, ClothingItem> map = rows.stream()
                 .collect(Collectors.toMap(ClothingItem::getId, Function.identity()));
 
-        // ✅ favorites bulk 조회 (N+1 금지)
+        // favorites bulk 조회 (N+1 금지)
         List<Long> clothingIds = rows.stream().map(ClothingItem::getClothingId).toList();
         Set<Long> favoritedIds = favoriteService.findFavoritedIds(sessionKey, clothingIds);
 

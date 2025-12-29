@@ -15,12 +15,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - codion_app_network
+    networks: [codion_app_network]
 
   ai:
     build:
-      context: ./ai/ratio_based
+      context: ../ai/ratio_based
       dockerfile: Dockerfile
     container_name: codion-ai
     ports:
@@ -34,12 +33,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - codion_app_network
+    networks: [codion_app_network]
 
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: codion-backend
     depends_on:
@@ -48,25 +46,18 @@ services:
       ai:
         condition: service_healthy
     environment:
-      # DB
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
-
-      # Weather
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
-
-      # AI (Spring relaxed binding -> ai.*)
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
       AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
-
     ports:
       - "8080:8080"
     restart: unless-stopped
-    networks:
-      - codion_app_network
+    networks: [codion_app_network]
 
 volumes:
   codion_db_data:
