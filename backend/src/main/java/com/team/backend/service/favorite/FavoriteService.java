@@ -3,6 +3,7 @@ package com.team.backend.service.favorite;
 
 import com.team.backend.domain.FavoriteItem;
 import com.team.backend.repository.favorite.FavoriteRepository;
+import com.team.backend.service.session.SessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,103 +12,80 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class FavoriteService {
 
+    private final SessionService sessionService;
     private final FavoriteRepository favoriteRepository;
 
-    /**
-     * 특정 후보 목록(clothingIds) 안에서만 favorite 여부를 bulk로 조회 (N+1 방지)
-     */
+    // =========================
+    // Write (세션 보장 필수)
+    // =========================
+
+    public void add(String sessionKey, Long clothingId) {
+        String key = sessionService.ensureSession(sessionKey); // ✅ WRITE에서만 touch/upsert
+
+        if (clothingId == null) throw new IllegalArgumentException("clothingId는 필수입니다.");
+
+        if (favoriteRepository.existsBySessionKeyAndClothingId(key, clothingId)) return;
+
+        favoriteRepository.save(
+                FavoriteItem.builder()
+                        .sessionKey(key)
+                        .clothingId(clothingId)
+                        .build()
+        );
+    }
+
+    public void remove(String sessionKey, Long clothingId) {
+        String key = sessionService.ensureSession(sessionKey); // ✅ WRITE에서만 touch/upsert
+
+        if (clothingId == null) throw new IllegalArgumentException("clothingId는 필수입니다.");
+
+        favoriteRepository.deleteBySessionKeyAndClothingId(key, clothingId);
+    }
+
+    // =========================
+    // Read (절대 ensureSession 호출 금지)
+    // =========================
+
+    @Transactional(readOnly = true)
+    public List<Long> listFavoriteClothingIds(String sessionKey) {
+        String key = sessionService.requireUuidV4(sessionKey); // ✅ 검증만 (DB write 없음)
+        return favoriteRepository.findClothingIdsBySessionKey(key);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isFavorite(String sessionKey, Long clothingId) {
+        String key = sessionService.requireUuidV4(sessionKey); // ✅ 검증만
+
+        if (clothingId == null) throw new IllegalArgumentException("clothingId는 필수입니다.");
+
+        return favoriteRepository.existsBySessionKeyAndClothingId(key, clothingId);
+    }
+
+    // =========================
+    // Bulk 조회 (merge용, optional)
+    // - 세션키가 옵션인 경우: 없으면 emptySet
+    // - 형식이 이상하면 emptySet (프론트 merge 안전)
+    // =========================
+
     @Transactional(readOnly = true)
     public Set<Long> findFavoritedIds(String sessionKey, Collection<Long> clothingIds) {
         if (sessionKey == null || sessionKey.isBlank()) return Collections.emptySet();
         if (clothingIds == null || clothingIds.isEmpty()) return Collections.emptySet();
 
-        return favoriteRepository.findAllBySessionKeyAndClothingIdIn(sessionKey.trim(), clothingIds)
-                .stream()
-                .map(FavoriteItem::getClothingId)
-                .collect(java.util.stream.Collectors.toSet());
-    }
-
-    /**
-     * 세션 전체 즐겨찾기 목록 조회 (UI에서 마이페이지/즐겨찾기 탭용)
-     * - 이 메서드가 네 코드에 이미 쓰이고 있음
-     */
-    @Transactional(readOnly = true)
-    public List<Long> listFavoriteClothingIds(String sessionKey) {
-        if (sessionKey == null || sessionKey.isBlank()) return List.of();
-
-        return favoriteRepository.findAllBySessionKey(sessionKey.trim())
-                .stream()
-                .map(FavoriteItem::getClothingId)
-                .distinct()
-                .toList();
-    }
-
-    /**
-     * (컨트롤러가 원하는 명칭) 즐겨찾기 추가
-     */
-    @Transactional
-    public void add(String sessionKey, Long clothingId) {
-        requireSession(sessionKey);
-        requireClothingId(clothingId);
-
-        // 이미 있으면 no-op (idempotent)
-        if (favoriteRepository.existsBySessionKeyAndClothingId(sessionKey.trim(), clothingId)) return;
-
-        favoriteRepository.save(FavoriteItem.builder()
-                .sessionKey(sessionKey.trim())
-                .clothingId(clothingId)
-                .build());
-    }
-
-    /**
-     * (컨트롤러가 원하는 명칭) 즐겨찾기 삭제
-     */
-    @Transactional
-    public void remove(String sessionKey, Long clothingId) {
-        requireSession(sessionKey);
-        requireClothingId(clothingId);
-
-        favoriteRepository.deleteBySessionKeyAndClothingId(sessionKey.trim(), clothingId);
-    }
-
-    /**
-     * (컨트롤러가 원하는 명칭) 즐겨찾기 여부
-     */
-    @Transactional(readOnly = true)
-    public boolean isFavorite(String sessionKey, Long clothingId) {
-        if (sessionKey == null || sessionKey.isBlank()) return false;
-        if (clothingId == null) return false;
-
-        return favoriteRepository.existsBySessionKeyAndClothingId(sessionKey.trim(), clothingId);
-    }
-
-    /**
-     * alias: 호출부가 isFavorited를 쓰면 여기로도 받음
-     */
-    @Transactional(readOnly = true)
-    public boolean isFavorited(String sessionKey, Long clothingId) {
-        return isFavorite(sessionKey, clothingId);
-    }
-
-    /**
-     * alias: 호출부가 listFavoritedClothingIds를 쓰면 여기로도 받음
-     */
-    @Transactional(readOnly = true)
-    public List<Long> listFavoritedClothingIds(String sessionKey) {
-        return listFavoriteClothingIds(sessionKey);
-    }
-
-    private void requireSession(String sessionKey) {
-        if (sessionKey == null || sessionKey.isBlank()) {
-            throw new IllegalArgumentException("X-Session-Key is required");
+        final String key;
+        try {
+            key = sessionService.requireUuidV4(sessionKey);
+        } catch (IllegalArgumentException e) {
+            return Collections.emptySet();
         }
-    }
 
-    private void requireClothingId(Long clothingId) {
-        if (clothingId == null) {
-            throw new IllegalArgumentException("clothingId is required");
-        }
+        List<FavoriteItem> rows = favoriteRepository.findAllBySessionKeyAndClothingIdIn(key, clothingIds);
+
+        Set<Long> out = new HashSet<>(rows.size());
+        for (FavoriteItem r : rows) out.add(r.getClothingId());
+        return out;
     }
 }

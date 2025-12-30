@@ -4,5 +4,6 @@ public enum SessionEventType {
     START,
     END,
     HEARTBEAT,
-    ERROR
+    ERROR,
+    OUTFIT_SAVED
 }

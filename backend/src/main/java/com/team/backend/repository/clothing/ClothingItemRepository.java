@@ -11,16 +11,17 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ClothingItemRepository extends JpaRepository<ClothingItem, Long>, ClothingItemRepositoryCustom {
+    List<ClothingItem> findAllByOrderByIdAsc(Pageable pageable);
 
     boolean existsByClothingId(Long clothingId);
 
     Optional<ClothingItem> findByClothingId(Long clothingId);
 
-    // seasons까지 같이 로딩(정렬 유지용: id in 후 map으로 재정렬)
+
     @EntityGraph(attributePaths = "seasons")
     List<ClothingItem> findAllByIdIn(List<Long> ids);
 
-    // 너가 서비스에서 쓰던 이름 유지하려면 이걸로 고정
+
     default List<ClothingItem> findAllWithSeasonsByIdIn(List<Long> ids) {
         return findAllByIdIn(ids);
     }
