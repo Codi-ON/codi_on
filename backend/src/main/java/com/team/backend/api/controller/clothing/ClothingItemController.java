@@ -13,131 +13,90 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping(ClothingItemController.API_PREFIX)
+@RequiredArgsConstructor
 public class ClothingItemController {
 
     public static final String API_PREFIX = "/api/clothes";
 
-    private static final int DEFAULT_LIMIT = 20;
-    private static final int MAX_LIMIT = 50;
+    public static final String PATH_ID = "/{id}";
+    public static final String PATH_SELECT = "/{id}/select";
+    public static final String PATH_SEARCH = "/search";
+    public static final String PATH_POPULAR = "/popular";
+    public static final String PATH_POPULAR_BY_CATEGORY = "/popular/by-category";
+
+    public static final String PARAM_LIMIT = "limit";
+    public static final String PARAM_CATEGORY = "category";
 
     private final ClothingItemService clothingItemService;
 
-    /**
-     * Create
-     * POST /api/clothes
-     */
+    // 0) 전체 조회: GET /api/clothes?limit=20
+    @GetMapping
+    public ApiResponse<List<ClothingItemResponseDto>> getAll(
+            @RequestParam(value = PARAM_LIMIT, required = false) Integer limit
+    ) {
+        return ApiResponse.success(clothingItemService.getAll(limit == null ? 0 : limit));
+    }
+
+    // 1) 생성: POST /api/clothes
     @PostMapping
     public ApiResponse<ClothingItemResponseDto> create(
-            @Valid @RequestBody ClothingItemRequestDto.Create req
+            @RequestBody @Valid ClothingItemRequestDto.Create req
     ) {
         return ApiResponse.success(clothingItemService.create(req));
     }
 
-    /**
-     * Read (by internal PK id)
-     * GET /api/clothes/{id}
-     *
-     * favorites merge를 위해 X-Session-Key 받음 (없으면 favorited=false)
-     */
-    @GetMapping("/{id}")
-    public ApiResponse<ClothingItemResponseDto> getById(
-            @RequestHeader(value = "X-Session-Key", required = false) String sessionKey,
-            @PathVariable Long id
-    ) {
-        return ApiResponse.success(clothingItemService.getById(sessionKey, id));
+    // 2) 단건 조회: GET /api/clothes/{id}
+    @GetMapping(PATH_ID)
+    public ApiResponse<ClothingItemResponseDto> getById(@PathVariable Long id) {
+        return ApiResponse.success(clothingItemService.getById(id));
     }
 
-    /**
-     * Update (PATCH)
-     * PATCH /api/clothes/{id}
-     */
-    @PatchMapping("/{id}")
-    public ApiResponse<ClothingItemResponseDto> update(
-            @PathVariable Long id,
-            @Valid @RequestBody ClothingItemRequestDto.Update req
-    ) {
-        return ApiResponse.success(clothingItemService.update(id, req));
-    }
-
-    /**
-     * Delete
-     * DELETE /api/clothes/{id}
-     */
-    @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(
-            @PathVariable Long id
-    ) {
+    // 3) 삭제: DELETE /api/clothes/{id}
+    @DeleteMapping(PATH_ID)
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         clothingItemService.delete(id);
         return ApiResponse.success(null);
     }
 
-    /**
-     * Search
-     * GET /api/clothes/search
-     *
-     * - clothingId 있으면 단건 조회
-     * - 아니면 검색 조건 기반 조회
-     * - favorites merge 위해 X-Session-Key 받음
-     *
-     * Query Params:
-     *  category, temp, clothingId, seasons(복수), usageType, thicknessLevel, sort(popular|latest), limit(<=50)
-     */
-    @GetMapping("/search")
-    public ApiResponse<List<ClothingItemResponseDto>> search(
-            @RequestHeader(value = "X-Session-Key", required = false) String sessionKey,
-            @ModelAttribute ClothingItemRequestDto.Search req
+    // 4) 수정: PATCH /api/clothes/{id}
+    @PatchMapping(PATH_ID)
+    public ApiResponse<ClothingItemResponseDto> update(
+            @PathVariable Long id,
+            @RequestBody @Valid ClothingItemRequestDto.Update req
     ) {
-        return ApiResponse.success(clothingItemService.search(sessionKey, req));
+        return ApiResponse.success(clothingItemService.update(id, req));
     }
 
-    /**
-     * Popular (전체)
-     * GET /api/clothes/popular?limit=20
-     *
-     * favorites merge 위해 X-Session-Key 받음
-     */
-    @GetMapping("/popular")
-    public ApiResponse<List<ClothingItemResponseDto>> popular(
-            @RequestHeader(value = "X-Session-Key", required = false) String sessionKey,
-            @RequestParam(name = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit
-    ) {
-        return ApiResponse.success(clothingItemService.getPopular(sessionKey, clamp(limit)));
-    }
-
-    /**
-     * Popular (카테고리별)
-     * GET /api/clothes/popular/by-category?category=TOP&limit=20
-     *
-     * favorites merge 위해 X-Session-Key 받음
-     */
-    @GetMapping("/popular/by-category")
-    public ApiResponse<List<ClothingItemResponseDto>> popularByCategory(
-            @RequestHeader(value = "X-Session-Key", required = false) String sessionKey,
-            @RequestParam("category") ClothingCategory category,
-            @RequestParam(name = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit
-    ) {
-        return ApiResponse.success(clothingItemService.getPopularByCategory(sessionKey, category, clamp(limit)));
-    }
-
-    /**
-     * SelectedCount 증가 (로그/카운트용)
-     * POST /api/clothes/{id}/select
-     *
-     * - “좋아요(favorite)”와 분리
-     * - 프론트에서 아이템 클릭 시 호출
-     */
-    @PostMapping("/{id}/select")
-    public ApiResponse<Void> markSelected(
-            @PathVariable Long id
-    ) {
+    // 5) 선택(클릭): POST /api/clothes/{id}/select
+    @PostMapping(PATH_SELECT)
+    public ApiResponse<Void> select(@PathVariable Long id) {
         clothingItemService.markSelected(id);
         return ApiResponse.success(null);
     }
 
-    private int clamp(int v) {
-        int x = (v <= 0 ? DEFAULT_LIMIT : v);
-        return Math.min(x, MAX_LIMIT);
+    // 6) 검색: GET /api/clothes/search?... (QueryString 바인딩)
+    @GetMapping(PATH_SEARCH)
+    public ApiResponse<List<ClothingItemResponseDto>> search(
+            @Valid ClothingItemRequestDto.Search req
+    ) {
+        return ApiResponse.success(clothingItemService.search(req));
+    }
+
+    // 7) 인기: GET /api/clothes/popular?limit=20
+    @GetMapping(PATH_POPULAR)
+    public ApiResponse<List<ClothingItemResponseDto>> popular(
+            @RequestParam(value = PARAM_LIMIT, required = false) Integer limit
+    ) {
+        return ApiResponse.success(clothingItemService.getPopular(limit == null ? 0 : limit));
+    }
+
+    // 8) 카테고리별 인기: GET /api/clothes/popular/by-category?category=TOP&limit=20
+    @GetMapping(PATH_POPULAR_BY_CATEGORY)
+    public ApiResponse<List<ClothingItemResponseDto>> popularByCategory(
+            @RequestParam(value = PARAM_CATEGORY) ClothingCategory category,
+            @RequestParam(value = PARAM_LIMIT, required = false) Integer limit
+    ) {
+        return ApiResponse.success(clothingItemService.getPopularByCategory(category, limit == null ? 0 : limit));
     }
 }

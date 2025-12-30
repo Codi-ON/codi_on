@@ -19,7 +19,7 @@ public class SessionController {
 
     private final SessionService sessionService;
 
-    @Operation(summary = "익명 세션키 발급", description = "로그인 없이 세션키(UUID)를 발급합니다. 이후 모든 호출에 X-Session-Key로 전달하세요.")
+    @Operation(summary = "익명 세션키 발급", description = "로그인 없이 세션키(UUID v4)를 발급합니다. 이후 X-Session-Key로 전달하세요.")
     @PostMapping
     public ApiResponse<SessionResponseDto> issue() {
         String sessionKey = sessionService.issueAnonymousSessionKey();

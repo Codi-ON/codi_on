@@ -1,34 +1,46 @@
-package com.team.backend.common.error;
+// src/main/java/com/team/backend/common/GlobalExceptionHandler.java
+package com.team.backend.common;
 
-import com.team.backend.config.AiUpstreamException;
+import com.team.backend.api.dto.ApiResponse;
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.BindException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.*;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler({
-            IllegalArgumentException.class,
-            MethodArgumentNotValidException.class,
-            HttpMessageNotReadableException.class
-    })
-    public ResponseEntity<?> badRequest(Exception e) {
-        return ResponseEntity.badRequest().body(Map.of(
-                "code", "BAD_REQUEST",
-                "message", e.getMessage() == null ? "bad request" : e.getMessage()
-        ));
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<Void>> missingHeader(MissingRequestHeaderException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail("BAD_REQUEST", e.getHeaderName() + " is required"));
     }
 
-    @ExceptionHandler(AiUpstreamException.class)
-    public ResponseEntity<?> aiUpstream(AiUpstreamException e) {
-        return ResponseEntity.status(e.getStatus()).body(Map.of(
-                "code", e.getCode(),
-                "message", e.getMessage()
-        ));
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> badRequest(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail("BAD_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<ApiResponse<Void>> validation(Exception e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail("VALIDATION_ERROR", "요청 값이 올바르지 않습니다."));
+    }
+
+    @ExceptionHandler(EntityNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> notFound(EntityNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.fail("NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> internal(Exception e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.fail("INTERNAL_ERROR", "서버 오류"));
     }
 }

@@ -24,46 +24,60 @@ public class SessionLogJdbcRepository {
     // 1) INSERT (쓰기)
     // ======================
     public void insert(SessionLogRequestDto dto) {
+        if (dto == null) throw new IllegalArgumentException("SessionLogRequestDto is null");
+
+        String sessionKey = resolveSessionKey(dto);
+
         String sql = """
             INSERT INTO public.session_log (
-                user_id,
-                session_id,
+                occurred_at,
+                session_key,
                 event_type,
-                payload
+                payload,
+                created_at
             )
             VALUES (
-                :userId,
-                :sessionId,
+                now(),
+                :sessionKey,
                 :eventType,
                 CASE
                     WHEN :payloadJson IS NULL THEN NULL
                     ELSE CAST(:payloadJson AS jsonb)
-                END
+                END,
+                now()
             )
             """;
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("userId", dto.getUserId())            // null 허용
-                .addValue("sessionId", dto.getSessionKey())     // NOT NULL
-                .addValue("eventType", dto.getEventType())      // NOT NULL
-                .addValue("payloadJson", dto.getPayloadJson()); // null 허용
+                .addValue("sessionKey", sessionKey)
+                .addValue("eventType", dto.getEventType().name())
+                .addValue("payloadJson", dto.getPayloadJson());
 
         jdbc.update(sql, params);
+    }
+
+    private String resolveSessionKey(SessionLogRequestDto dto) {
+        if (dto.getSessionKey() != null && !dto.getSessionKey().isBlank()) {
+            return dto.getSessionKey().trim();
+        }
+        if (dto.getSessionId() != null) {
+            return dto.getSessionId().toString();
+        }
+        throw new IllegalArgumentException("X-Session-Key is required");
     }
 
     // ======================
     // 2) SELECT (대시보드용 조회)
     // ======================
 
-    // 최근 N개
     public List<SessionLogResponseDto> findRecent(Integer limit) {
         int resolved = resolveLimit(limit, 1, 200);
 
         String sql = """
             SELECT id,
                    created_at,
-                   user_id,
-                   session_id,
+                   NULL::bigint AS user_id,
+                   session_key,
                    event_type,
                    CASE
                        WHEN payload IS NULL THEN NULL
@@ -77,7 +91,6 @@ public class SessionLogJdbcRepository {
         return jdbc.query(sql, Map.of("limit", resolved), this::mapRow);
     }
 
-    // 기간 + N개
     public List<SessionLogResponseDto> findByCreatedAtBetween(
             OffsetDateTime from,
             OffsetDateTime to,
@@ -88,8 +101,8 @@ public class SessionLogJdbcRepository {
         String sql = """
             SELECT id,
                    created_at,
-                   user_id,
-                   session_id,
+                   NULL::bigint AS user_id,
+                   session_key,
                    event_type,
                    CASE
                        WHEN payload IS NULL THEN NULL
@@ -104,18 +117,10 @@ public class SessionLogJdbcRepository {
 
         return jdbc.query(
                 sql,
-                Map.of(
-                        "from",  from,
-                        "to",    to,
-                        "limit", resolved
-                ),
+                Map.of("from", from, "to", to, "limit", resolved),
                 this::mapRow
         );
     }
-
-    // ======================
-    // 내부 helper
-    // ======================
 
     private int resolveLimit(Integer limit, int min, int max) {
         int v = (limit == null ? max : limit);
@@ -129,8 +134,7 @@ public class SessionLogJdbcRepository {
                 .id(rs.getLong("id"))
                 .createdAt(rs.getObject("created_at", OffsetDateTime.class))
                 .userId((Long) rs.getObject("user_id"))
-                // Response DTO 필드명이 sessionKey 라고 가정
-                .sessionKey(rs.getString("session_id"))
+                .sessionKey(rs.getString("session_key"))
                 .eventType(rs.getString("event_type"))
                 .payloadJson(rs.getString("payload_json"))
                 .build();

@@ -6,12 +6,10 @@ import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
 import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.repository.clothing.ClothingItemRepository;
-import com.team.backend.service.favorite.FavoriteService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +26,25 @@ public class ClothingItemService {
     private static final int MAX_LIMIT = 50;
 
     private final ClothingItemRepository clothingItemRepository;
-    private final FavoriteService favoriteService;
+
+    // ==============================
+    // 0) 전체 조회: GET /api/clothes
+    // - 옵션 B 정책: favorited는 항상 false (프론트에서 favorites로 merge)
+    // ==============================
+    @Transactional(readOnly = true)
+    public List<ClothingItemResponseDto> getAll(int limit) {
+        int resolved = clamp(limit);
+
+        Pageable pageable = PageRequest.of(0, resolved, Sort.by(Sort.Direction.DESC, "id"));
+        List<ClothingItem> rows = clothingItemRepository.findAll(pageable).getContent();
+
+        // seasons lazy 방지
+        rows.forEach(e -> e.getSeasons().size());
+
+        return rows.stream()
+                .map(e -> ClothingItemResponseDto.from(e, false))
+                .toList();
+    }
 
     // ==============================
     // Create: POST /api/clothes
@@ -63,16 +79,15 @@ public class ClothingItemService {
 
     // ==============================
     // Read: GET /api/clothes/{id}
+    // - 옵션 B 정책: favorited=false
     // ==============================
     @Transactional(readOnly = true)
-    public ClothingItemResponseDto getById(String sessionKey, Long id) {
+    public ClothingItemResponseDto getById(Long id) {
         ClothingItem e = clothingItemRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("ClothingItem을 찾을 수 없습니다. id=" + id));
 
         e.getSeasons().size();
-
-        boolean fav = favoriteService.isFavorited(sessionKey, e.getClothingId());
-        return ClothingItemResponseDto.from(e, fav);
+        return ClothingItemResponseDto.from(e, false);
     }
 
     // ==============================
@@ -90,8 +105,6 @@ public class ClothingItemService {
         if (req.getSeasons() != null) {
             e.replaceSeasons(req.getSeasons());
         }
-
-        // sessionKey가 없으니 favorited는 포함 못함 (필요하면 컨트롤러에서 getById 다시 호출)
         return ClothingItemResponseDto.from(e);
     }
 
@@ -107,9 +120,10 @@ public class ClothingItemService {
 
     // ==============================
     // Search: GET /api/clothes/search
+    // - 옵션 B 정책: favorited=false
     // ==============================
     @Transactional(readOnly = true)
-    public List<ClothingItemResponseDto> search(String sessionKey, ClothingItemRequestDto.Search req) {
+    public List<ClothingItemResponseDto> search(ClothingItemRequestDto.Search req) {
 
         // 1) clothingId 단건 조회 (비즈니스 키)
         if (req != null && req.getClothingId() != null) {
@@ -121,9 +135,7 @@ public class ClothingItemService {
                     ));
 
             e.getSeasons().size();
-
-            boolean fav = favoriteService.isFavorited(sessionKey, e.getClothingId());
-            return List.of(ClothingItemResponseDto.from(e, fav));
+            return List.of(ClothingItemResponseDto.from(e, false));
         }
 
         // 2) 검색 흐름
@@ -139,10 +151,10 @@ public class ClothingItemService {
                         : req.toCondition();
 
         List<Long> ids = clothingItemRepository.searchCandidateIds(cond, pageable);
-        return fetchOrderedDtosWithFavorites(sessionKey, ids);
+        return fetchOrderedDtos(ids);
     }
 
-    private List<ClothingItemResponseDto> fetchOrderedDtosWithFavorites(String sessionKey, List<Long> ids) {
+    private List<ClothingItemResponseDto> fetchOrderedDtos(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
 
         List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
@@ -150,55 +162,42 @@ public class ClothingItemService {
         Map<Long, ClothingItem> map = rows.stream()
                 .collect(Collectors.toMap(ClothingItem::getId, Function.identity()));
 
-        // favorites bulk 조회 (N+1 금지)
-        List<Long> clothingIds = rows.stream().map(ClothingItem::getClothingId).toList();
-        Set<Long> favoritedIds = favoriteService.findFavoritedIds(sessionKey, clothingIds);
-
         List<ClothingItemResponseDto> ordered = new ArrayList<>(ids.size());
         for (Long id : ids) {
             ClothingItem e = map.get(id);
             if (e == null) continue;
-
-            boolean fav = favoritedIds.contains(e.getClothingId());
-            ordered.add(ClothingItemResponseDto.from(e, fav));
+            ordered.add(ClothingItemResponseDto.from(e, false));
         }
         return ordered;
     }
 
     // ==============================
     // Popular
+    // - 옵션 B 정책: favorited=false
     // ==============================
     @Transactional(readOnly = true)
-    public List<ClothingItemResponseDto> getPopular(String sessionKey, int limit) {
+    public List<ClothingItemResponseDto> getPopular(int limit) {
         int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
 
         List<ClothingItem> rows = clothingItemRepository.findAllByOrderBySelectedCountDesc(pageable);
-
-        Set<Long> favoritedIds = favoriteService.findFavoritedIds(
-                sessionKey,
-                rows.stream().map(ClothingItem::getClothingId).toList()
-        );
+        rows.forEach(e -> e.getSeasons().size());
 
         return rows.stream()
-                .map(e -> ClothingItemResponseDto.from(e, favoritedIds.contains(e.getClothingId())))
+                .map(e -> ClothingItemResponseDto.from(e, false))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<ClothingItemResponseDto> getPopularByCategory(String sessionKey, ClothingCategory category, int limit) {
+    public List<ClothingItemResponseDto> getPopularByCategory(ClothingCategory category, int limit) {
         int resolved = clamp(limit);
         Pageable pageable = PageRequest.of(0, resolved);
 
         List<ClothingItem> rows = clothingItemRepository.findAllByCategoryOrderBySelectedCountDesc(category, pageable);
-
-        Set<Long> favoritedIds = favoriteService.findFavoritedIds(
-                sessionKey,
-                rows.stream().map(ClothingItem::getClothingId).toList()
-        );
+        rows.forEach(e -> e.getSeasons().size());
 
         return rows.stream()
-                .map(e -> ClothingItemResponseDto.from(e, favoritedIds.contains(e.getClothingId())))
+                .map(e -> ClothingItemResponseDto.from(e, false))
                 .toList();
     }
 
