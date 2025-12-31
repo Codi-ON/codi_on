@@ -1,29 +1,56 @@
-import { useEffect, useState } from 'react';
-import type { ClosetItem } from '@/shared/ui/mock';
-import { getClosetItems } from '../repo/closetRepo';
+// src/lib/hooks/useCloset.ts
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { closetRepo } from "@/lib/repo/closetRepo";
+import { getUserMessage } from "@/lib/errors";
+import type { ClothingItem } from "@/shared/domain/clothing";
 
-export function useCloset() {
-  const [data, setData] = useState<ClosetItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
+export function useClothes(limit = 30) {
+    const [items, setItems] = useState<ClothingItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
+    const refresh = useCallback(async () => {
         setLoading(true);
-        const res = await getClosetItems();
-        if (mounted) setData(res);
-      } catch (e) {
-        if (mounted) setError(e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+        setError(null);
+        try {
+            const list = await closetRepo.getClothes({ limit });
+            setItems(Array.isArray(list) ? list : []);
+        } catch (e) {
+            setItems([]);
+            setError(getUserMessage(e));
+        } finally {
+            setLoading(false);
+        }
+    }, [limit]);
 
-  return { data, loading, error };
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
+    const toggleFavorite = useCallback(
+        async (clothingId: number) => {
+            const current = items.find((x) => x.clothingId === clothingId);
+            if (!current) return;
+
+            const next = !current.favorited;
+
+            // optimistic update
+            setItems((prev) =>
+                prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: next } : x))
+            );
+
+            try {
+                await closetRepo.toggleFavorite(clothingId, next);
+            } catch (e) {
+                // rollback
+                setItems((prev) =>
+                    prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: !next } : x))
+                );
+                setError(getUserMessage(e));
+            }
+        },
+        [items]
+    );
+
+    return { items, loading, error, refresh, toggleFavorite };
 }
