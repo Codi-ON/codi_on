@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/common/GlobalExceptionHandler.java
 package com.team.backend.common;
 
 import com.team.backend.api.dto.ApiResponse;
@@ -16,12 +15,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<ApiResponse<Void>> missingHeader(MissingRequestHeaderException e) {
+        // ex) X-Session-Key 없을 때 -> 무조건 400
+        String header = e.getHeaderName();
+        String msg = "X-Session-Key is required";
+        if (!"X-Session-Key".equalsIgnoreCase(header)) {
+            msg = header + " is required";
+        }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.fail("BAD_REQUEST", e.getHeaderName() + " is required"));
+                .body(ApiResponse.fail("BAD_REQUEST", msg));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> badRequest(IllegalArgumentException e) {
+        // UUID 파싱 실패/blank 등 -> 무조건 400
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail("BAD_REQUEST", e.getMessage()));
     }
