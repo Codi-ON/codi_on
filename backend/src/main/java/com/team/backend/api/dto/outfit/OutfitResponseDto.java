@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/api/dto/outfit/OutfitResponseDto.java
 package com.team.backend.api.dto.outfit;
 
 import com.team.backend.domain.outfit.OutfitHistory;
