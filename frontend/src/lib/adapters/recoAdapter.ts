@@ -1,14 +1,28 @@
-import type { RecommendationResult } from '@/shared/ui/mock';
-import type { RecommendationDto } from '../api/recoApi';
-import { toClosetItem } from './closetAdapter';
+// src/lib/adapters/recoAdapter.ts
+import type { RecommendTodayItemDto } from "@/lib/repo/recoRepo";
 
-export function toRecommendation(dto: RecommendationDto): RecommendationResult {
-  return {
-    id: dto.id,
-    weatherDate: dto.weatherDate,
-    strategy: (dto.strategy as RecommendationResult['strategy']) ?? 'RULE',
-    reason: dto.reason,
-    checklist: dto.checklist ?? [],
-    items: (dto.items ?? []).map(toClosetItem),
-  };
+export type ClosetItem = {
+    id: number;          // 화면 key용(= clothingId로 고정 추천)
+    clothingId: number;  // 저장용
+    label: "상의" | "하의" | "아우터";
+    name: string;
+    imageUrl?: string;
+    inCloset?: boolean;
+};
+
+export type RecommendationClosetList = {
+    top: ClosetItem[];
+    bottom: ClosetItem[];
+    outer: ClosetItem[];
+};
+
+export function toClosetList(items: RecommendTodayItemDto[], label: ClosetItem["label"]): ClosetItem[] {
+    return items.map((x) => ({
+        id: x.clothingId,
+        clothingId: x.clothingId,
+        label,
+        name: x.name,
+        imageUrl: x.imageUrl ?? undefined,
+        inCloset: true,
+    }));
 }

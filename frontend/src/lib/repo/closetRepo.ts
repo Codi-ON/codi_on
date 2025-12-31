@@ -1,12 +1,17 @@
-import { env } from '../env';
-import { MOCK_CLOSET } from '@/shared/ui/mock';
-import { fetchClosetItems } from '../api/closetApi';
-import { toClosetItem } from '../adapters/closetAdapter';
-import type { ClosetItem } from '@/shared/ui/mock';
+// src/lib/repo/closetRepo.ts
+import { clothesApi, type GetClothesParams } from "@/lib/api/closetApi";
+import { clothesAdapter } from "@/lib/adapters/closetAdapter";
+import { favoritesApi } from "@/lib/api/favoritesApi";
+import type { ClothingItem } from "@/shared/domain/clothing";
 
-export async function getClosetItems(): Promise<ClosetItem[]> {
-  if (env.useMock) return MOCK_CLOSET;
+export const closetRepo = {
+  async getClothes(params: GetClothesParams = {}): Promise<ClothingItem[]> {
+    const dtos = await clothesApi.getClothes(params);
+    return clothesAdapter.toUiList(dtos ?? []);
+  },
 
-  const dtos = await fetchClosetItems();
-  return dtos.map(toClosetItem);
-}
+  async toggleFavorite(clothingId: number, next: boolean): Promise<void> {
+    if (next) await favoritesApi.add(clothingId);
+    else await favoritesApi.remove(clothingId);
+  },
+};
