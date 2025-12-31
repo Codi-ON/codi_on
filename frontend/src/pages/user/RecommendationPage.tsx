@@ -78,9 +78,17 @@ const RecommendationPage: React.FC = () => {
             inCloset: x.inCloset ?? true,
         });
 
-        const top = safeArray<RecoItemDto>(dto.top).filter((x) => typeof x?.clothingId === "number").map((x) => toClosetItem(x, "상의"));
-        const bottom = safeArray<RecoItemDto>(dto.bottom).filter((x) => typeof x?.clothingId === "number").map((x) => toClosetItem(x, "하의"));
-        const outer = safeArray<RecoItemDto>(dto.outer).filter((x) => typeof x?.clothingId === "number").map((x) => toClosetItem(x, "아우터"));
+        const top = safeArray<RecoItemDto>(dto.top)
+            .filter((x) => typeof x?.clothingId === "number")
+            .map((x) => toClosetItem(x, "상의"));
+
+        const bottom = safeArray<RecoItemDto>(dto.bottom)
+            .filter((x) => typeof x?.clothingId === "number")
+            .map((x) => toClosetItem(x, "하의"));
+
+        const outer = safeArray<RecoItemDto>(dto.outer)
+            .filter((x) => typeof x?.clothingId === "number")
+            .map((x) => toClosetItem(x, "아우터"));
 
         return { top, bottom, outer };
     };
@@ -110,12 +118,18 @@ const RecommendationPage: React.FC = () => {
         })();
     }, [recoList, payload]);
 
-    // 인덱스가 길이를 넘어가면 0으로 보정
+    // ✅ 인덱스 보정 (outer 0개 케이스 포함)
     useEffect(() => {
         if (!recoList) return;
+
         if (topIdx >= recoList.top.length) setTopIdx(0);
         if (bottomIdx >= recoList.bottom.length) setBottomIdx(0);
-        if (outerIdx >= recoList.outer.length) setOuterIdx(0);
+
+        if (recoList.outer.length === 0) {
+            if (outerIdx !== 0) setOuterIdx(0);
+        } else if (outerIdx >= recoList.outer.length) {
+            setOuterIdx(0);
+        }
     }, [recoList, topIdx, bottomIdx, outerIdx]);
 
     const selectedOutfit = useMemo(() => {
@@ -155,7 +169,9 @@ const RecommendationPage: React.FC = () => {
 
             const clothingIds = [topId, bottomId, outerId].filter((v): v is number => typeof v === "number");
 
+            // ✅ 백엔드 계약: items[{clothingId, sortOrder}] 로 변환은 repo에서 처리
             await outfitRepo.saveTodayOutfit(clothingIds);
+
             goCalendar();
         } catch (e: any) {
             setSaveError(e?.message ?? "오늘 아웃핏 저장에 실패했습니다.");
@@ -252,6 +268,7 @@ const RecommendationPage: React.FC = () => {
         onPrev: () => void;
         onNext: () => void;
     }) => {
+        if (!list.length) return null;
         const item = list[index];
 
         return (
@@ -311,9 +328,6 @@ const RecommendationPage: React.FC = () => {
                                     <span key={i} className={cn("w-2.5 h-2.5 rounded-full", i === index ? "bg-orange-500" : "bg-slate-200")} />
                                 ))}
                             </div>
-
-                            {/* 디버그 필요하면 여기서 확인 가능 */}
-                            {/* <div className="mt-2 text-[10px] text-slate-400">clothingId: {item.clothingId}</div> */}
                         </div>
                     </div>
                 </div>
@@ -351,13 +365,17 @@ const RecommendationPage: React.FC = () => {
                                 onPrev={() => setBottomIdx((p) => (p - 1 + recoList.bottom.length) % recoList.bottom.length)}
                                 onNext={() => setBottomIdx((p) => (p + 1) % recoList.bottom.length)}
                             />
-                            <Chooser
-                                title="아우터"
-                                list={recoList.outer}
-                                index={outerIdx}
-                                onPrev={() => setOuterIdx((p) => (p - 1 + recoList.outer.length) % recoList.outer.length)}
-                                onNext={() => setOuterIdx((p) => (p + 1) % recoList.outer.length)}
-                            />
+
+                            {/* ✅ 아우터는 있을 때만 렌더(outer 0개 크래시 제거) */}
+                            {recoList.outer.length > 0 && (
+                                <Chooser
+                                    title="아우터"
+                                    list={recoList.outer}
+                                    index={outerIdx}
+                                    onPrev={() => setOuterIdx((p) => (p - 1 + recoList.outer.length) % recoList.outer.length)}
+                                    onNext={() => setOuterIdx((p) => (p + 1) % recoList.outer.length)}
+                                />
+                            )}
                         </div>
                     </Card>
 

@@ -1,8 +1,13 @@
-// src/lib/repo/outfitRepo.ts
-import { sessionApi } from "@/lib/http";
+import { outfitApi, SaveTodayOutfitRequest } from "@/lib/api/outfitApi";
 
 export const outfitRepo = {
-    saveTodayOutfit(clothingIds: number[]) {
-        return sessionApi.post<void>("/api/outfits/today", { clothingIds });
+    saveTodayOutfit: async (clothingIds: number[]) => {
+        const items = clothingIds.map((id, idx) => ({
+            clothingId: id,
+            sortOrder: idx + 1,
+        }));
+
+        const body: SaveTodayOutfitRequest = { items };
+        return outfitApi.saveToday(body);
     },
 };
