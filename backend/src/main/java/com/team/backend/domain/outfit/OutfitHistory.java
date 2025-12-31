@@ -1,7 +1,9 @@
+// src/main/java/com/team/backend/domain/outfit/OutfitHistory.java
 package com.team.backend.domain.outfit;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +21,7 @@ public class OutfitHistory {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "session_key", nullable = false, length = 64)
@@ -55,7 +56,14 @@ public class OutfitHistory {
 
     public void replaceItems(List<OutfitHistoryItem> newItems, OffsetDateTime now) {
         this.items.clear();
-        this.items.addAll(newItems);
-        this.updatedAt = now;
+
+        if (newItems != null) {
+            for (OutfitHistoryItem it : newItems) {
+                if (it == null) continue;
+                it.attachTo(this);     // 핵심: FK null 방지
+                this.items.add(it);
+            }
+        }
+        this.updatedAt = (now != null ? now : OffsetDateTime.now(KST));
     }
 }

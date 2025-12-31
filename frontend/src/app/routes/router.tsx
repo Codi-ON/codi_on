@@ -1,25 +1,22 @@
+// src/app/routes/router.tsx
 import React from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import ErrorState from "@/shared/ui/states/ErrorState";
 import { UserShell, AdminShell } from "@/app/routes/shells";
+import RouteErrorState from "@/shared/ui/states/RouteErrorState"; // ✅ 추가
 
-const err = (
-  <ErrorState
-    title="페이지 오류"
-    description="라우팅 처리 중 오류가 발생했습니다."
-  />
-);
+// ✅ 기존 ErrorState 대신 "실제 에러(스택/메시지)"를 화면에 찍는 컴포넌트로 교체
+const err = <RouteErrorState />;
 
 export const router = createBrowserRouter([
   // plain(레이아웃 없이) 페이지
   {
-  path: '/dev',
-  errorElement: err,
-  lazy: async () => {
-    const m = await import('@/pages/dev/DevRoutesPage');
-    return { Component: m.default };
+    path: "/dev",
+    errorElement: err,
+    lazy: async () => {
+      const m = await import("@/pages/dev/DevRoutesPage");
+      return { Component: m.default };
+    },
   },
-},
 
   {
     path: "/",

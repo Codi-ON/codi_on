@@ -1,16 +1,36 @@
-import { http } from '../http';
+import { publicApi } from "@/lib/http";
 
-export type WeatherDto = {
-  temp: number;
-  feelsLike: number;
-  condition: string;
+export type WeatherTodayDto = {
+  region: string;
+  date: string;
+  temperature: number;
+  minTemperature: number;
+  maxTemperature: number;
+  feelsLikeTemperature: number;
+  cloudAmount: number;
+  sky: "CLEAR" | "CLOUDS" | "RAIN" | "SNOW";
+  precipitationProbability: number;
   humidity: number;
   windSpeed: number;
-  uvIndex: string;
-  description: string;
-  signals: string[];
 };
 
-export function fetchWeather(params?: { region?: string; date?: string }) {
-  return http<WeatherDto>('/api/weather', { query: params });
-}
+export type WeatherWeeklyDto = WeatherTodayDto;
+
+export type WeatherWeeklyResponseDto = {
+  region: string;
+  days: WeatherWeeklyDto[];
+};
+
+export const weatherApi = {
+  getToday(region = "Seoul") {
+    return publicApi.get<WeatherTodayDto>("/api/weather/today", {
+      params: { region },
+    });
+  },
+
+  getWeekly(region = "Seoul") {
+    return publicApi.get<WeatherWeeklyResponseDto>("/api/weather/weekly", {
+      params: { region },
+    });
+  },
+};

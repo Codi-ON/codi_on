@@ -1,29 +1,33 @@
-import { useEffect, useState } from 'react';
-import type { RecommendationResult } from '@/shared/ui/mock';
-import { getRecommendation } from '../repo/recoRepo';
+// src/lib/hooks/useRecommendation.ts
+import { useQuery } from "@tanstack/react-query";
+import { recoRepo } from "@/lib/repo/recoRepo";
+import { toClosetList, type RecommendationClosetList } from "@/lib/adapters/recoAdapter";
 
-export function useRecommendation() {
-  const [data, setData] = useState<RecommendationResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
+type Payload = {
+  region: string;
+  lat: number;
+  lon: number;
+  limit?: number;
+};
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await getRecommendation();
-        if (mounted) setData(res);
-      } catch (e) {
-        if (mounted) setError(e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+export function useRecommendation(payload: Payload | null) {
+  return useQuery({
+    queryKey: ["recommendation", payload],
+    enabled: !!payload,
+    queryFn: async (): Promise<RecommendationClosetList> => {
+      const limit = payload?.limit ?? 50;
 
-  return { data, loading, error };
+      const [top, bottom, outer] = await Promise.all([
+        recoRepo.getTodayByCategory({ ...payload!, limit, category: "TOP" }),
+        recoRepo.getTodayByCategory({ ...payload!, limit, category: "BOTTOM" }),
+        recoRepo.getTodayByCategory({ ...payload!, limit, category: "OUTER" }),
+      ]);
+
+      return {
+        top: toClosetList(top, "상의"),
+        bottom: toClosetList(bottom, "하의"),
+        outer: toClosetList(outer, "아우터"),
+      };
+    },
+  });
 }

@@ -1,105 +1,109 @@
-// frontend/src/lib/http.ts
-import { env } from "./env";
+// src/lib/http.ts
+import axios, {
+    AxiosError,
+    AxiosHeaders,
+    AxiosInstance,
+    AxiosRequestConfig,
+    InternalAxiosRequestConfig,
+} from "axios";
+import type { ApiResponse } from "@/shared/api/apiResponse";
+import { ensureSessionKey } from "@/lib/session/sessionKey";
+import {env} from "@/lib/env.ts";
 
 export class HttpError extends Error {
-  constructor(
-    public status: number,
-    public code?: string,
-    public body?: unknown
-  ) {
-    super(code ? `HTTP ${status} (${code})` : `HTTP ${status}`);
-  }
-}
+    status?: number;
+    code?: string;
+    body?: unknown;
 
-type ApiResponse<T> = {
-  data?: T;
-  code?: string;
-  message?: string;
-};
-
-type RequestOptions = Omit<RequestInit, "headers" | "body"> & {
-  headers?: Record<string, string>;
-  query?: Record<string, string | number | boolean | undefined>;
-  body?: unknown;
-};
-
-function buildUrl(path: string, query?: RequestOptions["query"]) {
-  // path는 "/api/..." 형태로 들어오는 걸 권장
-  const base = env.apiBaseUrl || "";
-  const url = new URL(path, base || window.location.origin);
-
-  if (query) {
-    Object.entries(query).forEach(([k, v]) => {
-      if (v === undefined) return;
-      url.searchParams.set(k, String(v));
-    });
-  }
-  return url.toString();
-}
-
-async function safeRead(res: Response) {
-  const text = await res.text();
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-// ✅ ApiResponse<T> 언랩: 성공이면 data 반환, 실패면 throw
-function unwrapApiResponse<T>(status: number, body: unknown): T {
-  const b = body as ApiResponse<T> | undefined;
-
-  // fail 케이스
-  if (b && typeof b === "object" && b.code && !("data" in b && b.data !== undefined)) {
-    throw new HttpError(status, b.code, body);
-  }
-
-  // success 케이스(데이터 필수)
-  if (b && typeof b === "object" && "data" in b && b.data !== undefined) {
-    return b.data as T;
-  }
-
-  // 계약 위반 or 예상치 못한 형태
-  throw new HttpError(status, "INVALID_RESPONSE", body);
-}
-
-async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, options: RequestOptions = {}) {
-  const res = await fetch(buildUrl(path, options.query), {
-    method,
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers ?? {}),
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
-
-  const body = await safeRead(res);
-
-  // HTTP 자체가 실패면: ApiResponse 형태면 unwrap에서 code 잡고, 아니면 그대로 던짐
-  if (!res.ok) {
-    // ApiResponse.fail 형태일 수도 있으니 unwrap 시도
-    try {
-      unwrapApiResponse<T>(res.status, body);
-      // 위에서 return 안 됨
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
+    constructor(message: string, status?: number, code?: string, body?: unknown) {
+        super(message);
+        this.name = "HttpError";
+        this.status = status;
+        this.code = code;
+        this.body = body;
     }
-    throw new HttpError(res.status, "HTTP_ERROR", body);
-  }
-
-  return unwrapApiResponse<T>(res.status, body);
 }
 
-export const http = {
-  get: <T>(path: string, options?: RequestOptions) => request<T>("GET", path, options),
-  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>("POST", path, { ...(options ?? {}), body }),
-  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>("PUT", path, { ...(options ?? {}), body }),
-  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>("PATCH", path, { ...(options ?? {}), body }),
-  delete: <T>(path: string, options?: RequestOptions) => request<T>("DELETE", path, options),
+type HttpClient = {
+    get<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
+    post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>;
+    put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>;
+    patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>;
+    delete<T>(url: string, config?: AxiosRequestConfig): Promise<T>;
 };
+
+const baseURL = env.apiBaseUrl ?? "";
+
+function isApiResponse<T>(payload: unknown): payload is ApiResponse<T> {
+    return !!payload && typeof payload === "object" && "success" in (payload as any);
+}
+
+function unwrapPayload<T>(payload: unknown, status?: number): T {
+    if (isApiResponse<T>(payload)) {
+        const p = payload as ApiResponse<T>;
+        if (p.success) return p.data as T;
+        throw new HttpError(p.message ?? "요청에 실패했습니다.", status, p.code, payload);
+    }
+    return payload as T;
+}
+
+function normalizeAxiosError(err: unknown): never {
+    if (axios.isAxiosError(err)) {
+        const e = err as AxiosError;
+        const status = e.response?.status;
+        const body = e.response?.data;
+
+        if (!e.response) throw new HttpError("Network Error", undefined, "NETWORK_ERROR");
+
+        if (body && typeof body === "object") {
+            const maybe: any = body;
+            if (typeof maybe.message === "string") {
+                throw new HttpError(maybe.message, status, maybe.code, body);
+            }
+        }
+
+        throw new HttpError(e.message || "요청 처리 중 오류가 발생했습니다.", status, undefined, body);
+    }
+    throw err instanceof Error ? err : new Error("Unknown Error");
+}
+
+function createHttpClient(instance: AxiosInstance): HttpClient {
+    const request = async <T>(config: AxiosRequestConfig): Promise<T> => {
+        try {
+            const res = await instance.request(config);
+            return unwrapPayload<T>(res.data, res.status);
+        } catch (e) {
+            normalizeAxiosError(e);
+        }
+    };
+
+    return {
+        get: (url, config) => request({ ...(config ?? {}), url, method: "GET" }),
+        post: (url, data, config) => request({ ...(config ?? {}), url, data, method: "POST" }),
+        put: (url, data, config) => request({ ...(config ?? {}), url, data, method: "PUT" }),
+        patch: (url, data, config) => request({ ...(config ?? {}), url, data, method: "PATCH" }),
+        delete: (url, config) => request({ ...(config ?? {}), url, method: "DELETE" }),
+    };
+}
+
+const publicAxios = axios.create({
+    baseURL,
+    headers: { "Content-Type": "application/json" },
+});
+
+const sessionAxios = axios.create({
+    baseURL,
+    headers: { "Content-Type": "application/json" },
+});
+
+// ✅ Favorites/Outfit 등 세션 필요한 요청만 자동 주입
+sessionAxios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const key = ensureSessionKey();
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set("X-Session-Key", key);
+    config.headers = headers;
+    return config;
+});
+
+export const publicApi: HttpClient = createHttpClient(publicAxios);
+export const sessionApi: HttpClient = createHttpClient(sessionAxios);

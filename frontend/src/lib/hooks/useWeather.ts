@@ -1,29 +1,30 @@
-import { useEffect, useState } from 'react';
-import type { WeatherData } from '@/shared/ui/mock';
-import { getWeather } from '../repo/weatherRepo';
 
-export function useWeather() {
+import { useCallback, useEffect, useState } from "react";
+import { weatherRepo } from "@/lib/repo/weatherRepo";
+import type { WeatherData } from "@/shared/domain/weather";
+import { getUserMessage } from "@/lib/errors";
+
+export function useWeather(region = "Seoul") {
   const [data, setData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await weatherRepo.getWeather(region);
+      setData(res);
+    } catch (e) {
+      setError(getUserMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [region]);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await getWeather();
-        if (mounted) setData(res);
-      } catch (e) {
-        if (mounted) setError(e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    refresh();
+  }, [refresh]);
 
-  return { data, loading, error };
+  return { data, loading, error, refresh };
 }

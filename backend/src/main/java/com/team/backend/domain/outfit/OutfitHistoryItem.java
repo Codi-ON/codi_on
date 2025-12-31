@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/domain/outfit/OutfitHistoryItem.java
 package com.team.backend.domain.outfit;
 
 import jakarta.persistence.*;
@@ -16,8 +17,7 @@ public class OutfitHistoryItem {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -36,5 +36,9 @@ public class OutfitHistoryItem {
     @PrePersist
     void prePersist() {
         this.createdAt = OffsetDateTime.now(KST);
+    }
+
+    public void attachTo(OutfitHistory parent) {
+        this.outfitHistory = parent;
     }
 }

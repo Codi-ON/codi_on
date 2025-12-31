@@ -13,12 +13,8 @@ import java.util.Optional;
 public interface SessionRepository extends JpaRepository<Session, Long> {
 
     boolean existsBySessionKey(String sessionKey);
-
     Optional<Session> findBySessionKey(String sessionKey);
 
-    /**
-     * upsert + touch (write에서만 사용)
-     */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO public.session (session_key, created_at, last_seen_at)
@@ -26,22 +22,13 @@ public interface SessionRepository extends JpaRepository<Session, Long> {
         ON CONFLICT (session_key)
         DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
         """, nativeQuery = true)
-    void upsertTouch(
-            @Param("sessionKey") String sessionKey,
-            @Param("now") OffsetDateTime now
-    );
+    void upsertTouch(@Param("sessionKey") String sessionKey, @Param("now") OffsetDateTime now);
 
-    /**
-     * touch only (read에서 사용, upsert 금지)
-     */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         UPDATE public.session
            SET last_seen_at = :now
          WHERE session_key = :sessionKey
         """, nativeQuery = true)
-    int touchIfExists(
-            @Param("sessionKey") String sessionKey,
-            @Param("now") OffsetDateTime now
-    );
+    int touchIfExists(@Param("sessionKey") String sessionKey, @Param("now") OffsetDateTime now);
 }
