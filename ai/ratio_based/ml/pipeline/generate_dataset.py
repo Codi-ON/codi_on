@@ -35,35 +35,20 @@ def build_environment_context(weather: dict) -> dict:
         "weather_type": weather_type,
     }
 
-def build_clothing_response(cloth: dict) -> dict:
-    props = get_cloth_properties(
-        c_ratio=cloth["cotton_ratio"]
-    )
-
-    return {
-        "R_ct": props["R_ct"],
-        "R_et": props["R_et"],
-        "AP": props["AP"],
-        "thickness": cloth["thickness"],
-        "usage": cloth["usage"],
-    }
-
 def generate_dataset() -> pd.DataFrame:
     rows = []
 
     cotton_ratios = [100, 80, 60, 40, 20, 0]
-    thickness_levels = [0, 1, 2]
-    usages = ["indoor", "outdoor"]
+    thickness_levels = ["thin", "normal", "thick"]
 
-    Ta_list = range(-10, 36, 5)
-    RH_list = range(30, 91, 10)
-    Va_list = np.arange(0.5, 8.1, 1.5)
+    ta_list = range(-10, 36, 5)
+    rh_list = range(30, 91, 10)
+    va_list = np.arange(0.5, 8.1, 1.5)
     cloud_list = range(0, 91, 15)
 
     temp_ranges = [4, 9, 14]
 
-    weather_mains = ["Clear", "Clouds", "Rain", "Snow"]
-    def allowed_weather_mains(Ta: float):
+    def allowed_weather_mains(ta: float):
         mains = ["Clear", "Clouds"]
         if Ta > 0:
             mains.append("Rain")   # 0도 이상이면 비 가능
@@ -71,17 +56,22 @@ def generate_dataset() -> pd.DataFrame:
             mains.append("Snow")   # 0도 이하면 눈 가능
         return mains
 
-    for c_ratio, thickness, usage in itertools.product(
-        cotton_ratios, thickness_levels, usages
+    for c_ratio, thickness in itertools.product(
+        cotton_ratios, thickness_levels
     ):
-        clothing_response = build_clothing_response({
-            "cotton_ratio": c_ratio,
-            "thickness": thickness,
-            "usage": usage,
-        })
+        props = get_cloth_properties(
+            c_ratio=c_ratio,
+            thickness=thickness,
+        )
+
+        clothing_response = {
+            "R_ct": props["R_ct"],
+            "R_et": props["R_et"],
+            "AP": props["AP"],
+        }
 
         for Ta, RH, Va, cloud in itertools.product(
-            Ta_list, RH_list, Va_list, cloud_list
+            ta_list, rh_list, va_list, cloud_list
         ):
             for tr in temp_ranges:
                 for wm in allowed_weather_mains(Ta):
@@ -103,15 +93,15 @@ def generate_dataset() -> pd.DataFrame:
                     comfort_score = compute_comfort_score(
                         environment_context=env,
                         clothing_response=clothing_response,
+                        thickness=thickness
                     )
 
                     rows.append({
                         "C_ratio": c_ratio,
+                        "thickness": thickness,
                         "R_ct": clothing_response["R_ct"],
                         "R_et": clothing_response["R_et"],
                         "AP": clothing_response["AP"],
-                        "thickness": thickness,
-                        "usage": usage,
 
                         "Ta": Ta,
                         "RH": RH,
@@ -136,3 +126,9 @@ if __name__ == "__main__":
 
     print(f"Dataset saved: {save_file}")
     print(f"Total samples: {len(df)}")
+
+    exit()
+    csv_path = "../data/raw/dataset.csv"
+    df = pd.read_csv(csv_path)
+    print("comfort_score min:", df["UTCI"].min())
+    print("comfort_score max:", df["UTCI"].max())
