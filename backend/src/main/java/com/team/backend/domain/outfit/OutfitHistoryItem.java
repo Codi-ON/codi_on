@@ -1,44 +1,36 @@
-// src/main/java/com/team/backend/domain/outfit/OutfitHistoryItem.java
 package com.team.backend.domain.outfit;
 
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-
 @Entity
 @Table(name = "outfit_history_item")
 @Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class OutfitHistoryItem {
 
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "outfit_history_id", nullable = false)
-    private OutfitHistory outfitHistory;
-
+    // DTO에서 clothingId를 받는 구조 유지 (clothing_item.clothing_id와 매칭)
     @Column(name = "clothing_id", nullable = false)
     private Long clothingId;
 
     @Column(name = "sort_order", nullable = false)
-    private Integer sortOrder;
+    private int sortOrder;
 
-    @Column(name = "created_at", nullable = false)
-    private OffsetDateTime createdAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "outfit_history_id", nullable = false)
+    private OutfitHistory outfitHistory;
 
-    @PrePersist
-    void prePersist() {
-        this.createdAt = OffsetDateTime.now(KST);
-    }
-
-    public void attachTo(OutfitHistory parent) {
-        this.outfitHistory = parent;
+    public static OutfitHistoryItem of(OutfitHistory history, Long clothingId, int sortOrder) {
+        return OutfitHistoryItem.builder()
+                .outfitHistory(history)
+                .clothingId(clothingId)
+                .sortOrder(sortOrder)
+                .build();
     }
 }

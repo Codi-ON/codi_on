@@ -1,11 +1,11 @@
-// src/main/java/com/team/backend/domain/ClothingItem.java
 package com.team.backend.domain;
 
 import com.team.backend.domain.enums.*;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -28,6 +28,8 @@ import java.util.Set;
 @AllArgsConstructor
 @Builder
 public class ClothingItem {
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -68,7 +70,6 @@ public class ClothingItem {
     @Column(name = "etc_fiber_percentage")
     private Integer etcFiberPercentage;
 
-    // ===== 계절 태그(정규화: ElementCollection) =====
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
             name = "clothing_item_season",
@@ -82,7 +83,6 @@ public class ClothingItem {
     @Builder.Default
     private Set<SeasonType> seasons = new HashSet<>();
 
-    // ===== 메타 =====
     @Column(length = 30)
     private String color;
 
@@ -96,32 +96,35 @@ public class ClothingItem {
     @Builder.Default
     private Integer selectedCount = 0;
 
+    // ✅ timestamptz 매핑
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 
     @PrePersist
     void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(KST);
         this.createdAt = now;
         this.updatedAt = now;
+
         if (this.selectedCount == null) this.selectedCount = 0;
         if (this.seasons == null) this.seasons = new HashSet<>();
+
         validateRequired();
         validateTempRange();
     }
 
     @PreUpdate
     void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(KST);
         validateRequired();
         validateTempRange();
     }
 
     // ==============================
-    // Domain methods (실무형 업데이트)
+    // Domain methods
     // ==============================
     public void increaseSelectedCount() {
         this.selectedCount = (this.selectedCount == null ? 0 : this.selectedCount) + 1;

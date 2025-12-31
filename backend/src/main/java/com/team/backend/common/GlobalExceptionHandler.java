@@ -1,6 +1,8 @@
 package com.team.backend.common;
 
 import com.team.backend.api.dto.ApiResponse;
+import com.team.backend.common.exception.ConflictException;
+import com.team.backend.common.exception.NotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,14 +10,14 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<ApiResponse<Void>> missingHeader(MissingRequestHeaderException e) {
-        // ex) X-Session-Key 없을 때 -> 무조건 400
         String header = e.getHeaderName();
         String msg = "X-Session-Key is required";
         if (!"X-Session-Key".equalsIgnoreCase(header)) {
@@ -27,7 +29,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> badRequest(IllegalArgumentException e) {
-        // UUID 파싱 실패/blank 등 -> 무조건 400
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail("BAD_REQUEST", e.getMessage()));
     }
@@ -36,6 +37,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> validation(Exception e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail("VALIDATION_ERROR", "요청 값이 올바르지 않습니다."));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> conflict(ConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.fail("CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> notFoundCustom(NotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.fail("NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(EntityNotFoundException.class)

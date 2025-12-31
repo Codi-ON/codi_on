@@ -1,6 +1,7 @@
 // src/main/java/com/team/backend/domain/outfit/OutfitHistory.java
 package com.team.backend.domain.outfit;
 
+import com.team.backend.common.exception.ConflictException;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,7 +22,8 @@ public class OutfitHistory {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "session_key", nullable = false, length = 64)
@@ -35,6 +37,9 @@ public class OutfitHistory {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "feedback_rating")
+    private Integer feedbackRating;
 
     @OneToMany(mappedBy = "outfitHistory", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -56,14 +61,17 @@ public class OutfitHistory {
 
     public void replaceItems(List<OutfitHistoryItem> newItems, OffsetDateTime now) {
         this.items.clear();
+        this.items.addAll(newItems);
+        this.updatedAt = now;
+    }
 
-        if (newItems != null) {
-            for (OutfitHistoryItem it : newItems) {
-                if (it == null) continue;
-                it.attachTo(this);     // 핵심: FK null 방지
-                this.items.add(it);
-            }
+    public void submitFeedbackOnce(Integer rating) {
+        if (this.feedbackRating != null) {
+            throw new ConflictException("오늘 피드백은 1회만 제출할 수 있습니다.");
         }
-        this.updatedAt = (now != null ? now : OffsetDateTime.now(KST));
+        if (rating == null || (rating != -1 && rating != 0 && rating != 1)) {
+            throw new IllegalArgumentException("feedbackRating은 -1/0/1 만 허용됩니다.");
+        }
+        this.feedbackRating = rating;
     }
 }
