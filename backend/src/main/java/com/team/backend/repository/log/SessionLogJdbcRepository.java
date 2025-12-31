@@ -21,12 +21,14 @@ public class SessionLogJdbcRepository {
     private final NamedParameterJdbcTemplate jdbc;
 
     // ======================
-    // 1) INSERT (쓰기)
+    // 1) INSERT
+    // - occurred_at: 이벤트 발생 시각(앱 기준)
+    // - created_at : DB 적재 시각(기본 now())
     // ======================
     public void insert(SessionLogRequestDto dto) {
         if (dto == null) throw new IllegalArgumentException("SessionLogRequestDto is null");
 
-        String sessionKey = resolveSessionKey(dto);
+        String sessionKey = requireSessionKey(dto.getSessionKey());
 
         String sql = """
             INSERT INTO public.session_log (
@@ -37,7 +39,7 @@ public class SessionLogJdbcRepository {
                 created_at
             )
             VALUES (
-                now(),
+                :occurredAt,
                 :sessionKey,
                 :eventType,
                 CASE
@@ -49,6 +51,7 @@ public class SessionLogJdbcRepository {
             """;
 
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("occurredAt", dto.getOccurredAt() != null ? dto.getOccurredAt() : OffsetDateTime.now())
                 .addValue("sessionKey", sessionKey)
                 .addValue("eventType", dto.getEventType().name())
                 .addValue("payloadJson", dto.getPayloadJson());
@@ -56,33 +59,28 @@ public class SessionLogJdbcRepository {
         jdbc.update(sql, params);
     }
 
-    private String resolveSessionKey(SessionLogRequestDto dto) {
-        if (dto.getSessionKey() != null && !dto.getSessionKey().isBlank()) {
-            return dto.getSessionKey().trim();
-        }
-        if (dto.getSessionId() != null) {
-            return dto.getSessionId().toString();
-        }
-        throw new IllegalArgumentException("X-Session-Key is required");
+    private String requireSessionKey(String raw) {
+        if (raw == null || raw.isBlank()) throw new IllegalArgumentException("sessionKey is required");
+        return raw.trim();
     }
 
     // ======================
-    // 2) SELECT (대시보드용 조회)
+    // 2) SELECT (대시보드)
     // ======================
 
     public List<SessionLogResponseDto> findRecent(Integer limit) {
         int resolved = resolveLimit(limit, 1, 200);
 
         String sql = """
-            SELECT id,
-                   created_at,
-                   NULL::bigint AS user_id,
-                   session_key,
-                   event_type,
-                   CASE
-                       WHEN payload IS NULL THEN NULL
-                       ELSE payload::text
-                   END AS payload_json
+            SELECT
+                id,
+                created_at,
+                session_key,
+                event_type,
+                CASE
+                    WHEN payload IS NULL THEN NULL
+                    ELSE payload::text
+                END AS payload_json
             FROM public.session_log
             ORDER BY created_at DESC, id DESC
             LIMIT :limit
@@ -91,23 +89,27 @@ public class SessionLogJdbcRepository {
         return jdbc.query(sql, Map.of("limit", resolved), this::mapRow);
     }
 
+    /**
+     * created_at 기준 range
+     * - Service에서 TimeRanges의 [fromInclusive, toExclusive) 넘기면 그대로 맞음
+     */
     public List<SessionLogResponseDto> findByCreatedAtBetween(
-            OffsetDateTime from,
-            OffsetDateTime to,
+            OffsetDateTime fromInclusive,
+            OffsetDateTime toExclusive,
             Integer limit
     ) {
-        int resolved = resolveLimit(limit, 1, 500);
+        int resolved = resolveLimit(limit, 1, 1000);
 
         String sql = """
-            SELECT id,
-                   created_at,
-                   NULL::bigint AS user_id,
-                   session_key,
-                   event_type,
-                   CASE
-                       WHEN payload IS NULL THEN NULL
-                       ELSE payload::text
-                   END AS payload_json
+            SELECT
+                id,
+                created_at,
+                session_key,
+                event_type,
+                CASE
+                    WHEN payload IS NULL THEN NULL
+                    ELSE payload::text
+                END AS payload_json
             FROM public.session_log
             WHERE created_at >= :from
               AND created_at <  :to
@@ -117,10 +119,48 @@ public class SessionLogJdbcRepository {
 
         return jdbc.query(
                 sql,
-                Map.of("from", from, "to", to, "limit", resolved),
+                Map.of("from", fromInclusive, "to", toExclusive, "limit", resolved),
                 this::mapRow
         );
     }
+
+    /**
+     * occurred_at 기준 range (추천)
+     */
+    public List<SessionLogResponseDto> findByOccurredAtBetween(
+            OffsetDateTime fromInclusive,
+            OffsetDateTime toExclusive,
+            Integer limit
+    ) {
+        int resolved = resolveLimit(limit, 1, 1000);
+
+        String sql = """
+            SELECT
+                id,
+                created_at,
+                session_key,
+                event_type,
+                CASE
+                    WHEN payload IS NULL THEN NULL
+                    ELSE payload::text
+                END AS payload_json
+            FROM public.session_log
+            WHERE occurred_at >= :from
+              AND occurred_at <  :to
+            ORDER BY occurred_at DESC, id DESC
+            LIMIT :limit
+            """;
+
+        return jdbc.query(
+                sql,
+                Map.of("from", fromInclusive, "to", toExclusive, "limit", resolved),
+                this::mapRow
+        );
+    }
+
+    // ======================
+    // helpers
+    // ======================
 
     private int resolveLimit(Integer limit, int min, int max) {
         int v = (limit == null ? max : limit);
@@ -133,10 +173,11 @@ public class SessionLogJdbcRepository {
         return SessionLogResponseDto.builder()
                 .id(rs.getLong("id"))
                 .createdAt(rs.getObject("created_at", OffsetDateTime.class))
-                .userId((Long) rs.getObject("user_id"))
                 .sessionKey(rs.getString("session_key"))
                 .eventType(rs.getString("event_type"))
                 .payloadJson(rs.getString("payload_json"))
+                // userId 컬럼이 DB에 없으니 null 유지 (DTO가 userId 들고 있으면 그대로 null 세팅)
+                .userId(null)
                 .build();
     }
 }
