@@ -68,11 +68,20 @@ def test():
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}")
 
-    # pd.DataFrame({
-    #     "gt": targets.squeeze(),
-    #     "pred": predicts.squeeze(),
-    #     "error": predicts.squeeze() - targets.squeeze(),
-    # }).to_csv("../artifacts/test_predict.csv", index=False)
+    df = pd.DataFrame({
+        "gt": targets.squeeze(),
+        "pred": predicts.squeeze(),
+        "error": predicts.squeeze() - targets.squeeze(),
+    })
+    df.to_csv("../artifacts/test_predict.csv", index=False)
+
+    threshold = 0.1
+    correct_cnt = (df["error"].abs() <= threshold).sum()
+    total_cnt = len(df)
+    acc = correct_cnt / total_cnt * 100
+
+    print(f"(|error| ≤ {threshold}) : "
+          f"({correct_cnt}/{total_cnt}) = {acc:.2f}%")
 
 if __name__ == "__main__":
     test()
