@@ -32,7 +32,7 @@ def split_dataset(
     val_df = holdout_df.iloc[:val_end]
     test_df = holdout_df.iloc[val_end:]
 
-    MAX_TEST_ROWS = 100_000  # 원하는 만큼
+    MAX_TEST_ROWS = 48000  # 원하는 만큼
 
     if len(test_df) > MAX_TEST_ROWS:
         test_df = test_df.sample(
@@ -40,7 +40,6 @@ def split_dataset(
             random_state=seed
         )
 
-    # 4. save
     os.makedirs(output_dir, exist_ok=True)
 
     train_df.to_csv(os.path.join(output_dir, "train.csv"), index=False)
@@ -59,6 +58,6 @@ if __name__ == "__main__":
         csv_path=INPUT_CSV,
         output_dir=OUTPUT_DIR,
         train_utci_range=(None, 18.0),
-        val_ratio=0.1,
+        val_ratio=0.4,
         seed=42,
     )
