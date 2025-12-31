@@ -1,15 +1,12 @@
-// src/lib/http.ts
 import axios, {
     AxiosError,
     AxiosHeaders,
     AxiosInstance,
     AxiosRequestConfig,
-    InternalAxiosRequestConfig,
 } from "axios";
 import type { ApiResponse } from "@/shared/api/apiResponse";
-import { ensureSessionKey } from "@/lib/session/sessionKey";
 import {env} from "@/lib/env.ts";
-
+import { ensureSessionKey } from "@/lib/session/sessionKey"
 export class HttpError extends Error {
     status?: number;
     code?: string;
@@ -96,9 +93,8 @@ const sessionAxios = axios.create({
     headers: { "Content-Type": "application/json" },
 });
 
-// ✅ Favorites/Outfit 등 세션 필요한 요청만 자동 주입
-sessionAxios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    const key = ensureSessionKey();
+sessionAxios.interceptors.request.use((config) => {
+    const key = ensureSessionKey(); // sync string
     const headers = AxiosHeaders.from(config.headers);
     headers.set("X-Session-Key", key);
     config.headers = headers;
