@@ -52,17 +52,35 @@ def build_cloth_property_table() -> pd.DataFrame:
 
     return result_df
 
-def get_cloth_properties(c_ratio: float,
-                         table: pd.DataFrame = None) -> dict:
+def get_cloth_properties(
+        c_ratio: float,
+        thickness: str = "normal",
+        table: pd.DataFrame = None
+) -> dict:
     if table is None:
         table = build_cloth_property_table()
 
     table = table.sort_values("C_ratio")
     c_ratio = float(np.clip(c_ratio, 0, 100))
 
-    r_ct = np.interp(c_ratio, table["C_ratio"], table["R_ct"])
-    r_et = np.interp(c_ratio, table["C_ratio"], table["R_et"])
-    ap   = np.interp(c_ratio, table["C_ratio"], table["AP"])
+    base_r_ct = np.interp(c_ratio, table["C_ratio"], table["R_ct"])
+    base_r_et = np.interp(c_ratio, table["C_ratio"], table["R_et"])
+    base_ap = np.interp(c_ratio, table["C_ratio"], table["AP"])
+
+    THICKNESS_SCALE = {
+        "thin":   {"R_ct": 0.85, "R_et": 0.90, "AP": 1.15},
+        "normal": {"R_ct": 1.00, "R_et": 1.00, "AP": 1.00},
+        "thick":  {"R_ct": 1.15, "R_et": 1.10, "AP": 0.85},
+    }
+
+    if thickness not in THICKNESS_SCALE:
+        raise ValueError(f"invalid thickness: {thickness}")
+
+    scale = THICKNESS_SCALE[thickness]
+
+    r_ct = base_r_ct * scale["R_ct"]
+    r_et = base_r_et * scale["R_et"]
+    ap = base_ap * scale["AP"]
 
     return {
         "R_ct": float(r_ct),
