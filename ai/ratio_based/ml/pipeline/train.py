@@ -34,7 +34,6 @@ class ComfortDataset(Dataset):
             features = build_feature_vector(
                 c_ratio=row["C_ratio"],
                 thickness=row["thickness"],
-                usage=row["usage"],
                 Ta=row["Ta"],
                 RH=row["RH"],
                 Va=row["Va"],
