@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/api/dto/session/SessionLogResponseDto.java
 package com.team.backend.api.dto.session;
 
 import lombok.*;
