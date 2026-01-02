@@ -1,26 +1,26 @@
-// src/main/java/com/team/backend/domain/enums/outfit/FeedbackRating.java
 package com.team.backend.domain.enums.outfit;
 
 public enum FeedbackRating {
-    GOOD,
-    UNKNOWN,
-    BAD;
+    GOOD(1),
+    UNKNOWN(0),
+    BAD(-1);
 
-    public int toScore() {
-        return switch (this) {
-            case GOOD -> 1;
-            case UNKNOWN -> 0;
-            case BAD -> -1;
-        };
+    private final int score;
+
+    FeedbackRating(int score) {
+        this.score = score;
     }
 
-    public static FeedbackRating fromScore(Integer score) {
-        if (score == null) return null;
+    public int toScore() {
+        return score;
+    }
+
+    public static FeedbackRating fromScore(int score) {
         return switch (score) {
             case 1 -> GOOD;
             case 0 -> UNKNOWN;
             case -1 -> BAD;
-            default -> throw new IllegalArgumentException("rating은 -1/0/1 만 허용됩니다.");
+            default -> throw new IllegalArgumentException("Invalid feedback_rating: " + score);
         };
     }
 }

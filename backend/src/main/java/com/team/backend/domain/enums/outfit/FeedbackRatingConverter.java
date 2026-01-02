@@ -1,4 +1,5 @@
 package com.team.backend.domain.enums.outfit;
+
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
@@ -14,11 +15,6 @@ public class FeedbackRatingConverter implements AttributeConverter<FeedbackRatin
     @Override
     public FeedbackRating convertToEntityAttribute(Integer dbData) {
         if (dbData == null) return null;
-        return switch (dbData) {
-            case 1 -> FeedbackRating.GOOD;
-            case 0 -> FeedbackRating.UNKNOWN;
-            case -1 -> FeedbackRating.BAD;
-            default -> throw new IllegalArgumentException("Invalid feedback_rating: " + dbData);
-        };
+        return FeedbackRating.fromScore(dbData);
     }
 }
