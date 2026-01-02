@@ -1,19 +1,11 @@
 // src/pages/user/CalendarPage.tsx
-import React, { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { Button, Badge, SectionHeader, cn } from "@/app/DesignSystem";
 import { ChevronLeft, ChevronRight, Filter, Download, X } from "lucide-react";
-import { MOCK_HISTORY } from "@/shared/ui/mock";
 
-type HistoryEntryUI = {
-  id: string;
-  dateISO: string; // YYYY-MM-DD
-  title: string;
-  weatherTemp: number;
-  weatherIcon: string; // emoji or text
-  feedback?: string;
-  images: string[];
-};
+import { outfitApi, type TodayOutfitDto } from "@/lib/api/outfitApi";
+import { outfitAdapter, type HistoryEntryUI, type SelectedOutfit } from "@/lib/adapters/outfitAdapter";
 
 function toISO(d: Date) {
   const y = d.getFullYear();
@@ -24,15 +16,6 @@ function toISO(d: Date) {
 
 function formatMonthTitle(d: Date) {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
-}
-
-function weatherIconFromCondition(cond?: string) {
-  const c = (cond ?? "").toLowerCase();
-  if (c.includes("rain") || c.includes("비")) return "🌧️";
-  if (c.includes("snow") || c.includes("눈")) return "❄️";
-  if (c.includes("cloud") || c.includes("흐림") || c.includes("구름")) return "☁️";
-  if (c.includes("sun") || c.includes("맑")) return "☀️";
-  return "🌤️";
 }
 
 // 6*7 달력 그리드 (전월/익월 포함)
@@ -53,116 +36,210 @@ function buildCalendarGrid(base: Date) {
   return cells;
 }
 
-function toHistoryEntryUI(raw: any, idx: number): HistoryEntryUI {
-  const id = String(raw?.id ?? raw?.historyId ?? `h-${idx}`);
-  const dateISO = String(raw?.date ?? raw?.weatherDate ?? raw?.createdAt ?? "2025-12-28").slice(0, 10);
-  const title = String(raw?.styleName ?? raw?.style ?? raw?.title ?? raw?.note ?? "선택된 옷");
-
-  const weatherTemp = Number(raw?.weatherTemp ?? raw?.weather?.temp ?? raw?.weather?.temperature ?? 0);
-
-  const weatherIcon = String(
-    raw?.weatherIcon ?? weatherIconFromCondition(raw?.weather?.condition ?? raw?.weather?.description)
-  );
-
-  const feedback =
-    String(raw?.feedback ?? raw?.feedbackShort ?? raw?.comment ?? raw?.memo ?? raw?.note ?? "").trim() || undefined;
-
-  const imagesFromRaw =
-    Array.isArray(raw?.images)
-      ? raw.images
-      : Array.isArray(raw?.items)
-      ? raw.items.map((it: any) => it?.imageUrl).filter(Boolean)
-      : Array.isArray(raw?.outfit)
-      ? raw.outfit.map((it: any) => it?.imageUrl).filter(Boolean)
-      : [];
-
-  const images = imagesFromRaw.filter(Boolean).slice(0, 3);
-
-  return { id, dateISO, title, weatherTemp, weatherIcon, feedback, images };
-}
-
-function OutfitModal({
-  open,
-  onClose,
-  entry,
-}: {
+function Drawer({
+                  open,
+                  entry,
+                  onClose,
+                }: {
   open: boolean;
-  onClose: () => void;
   entry: HistoryEntryUI | null;
+  onClose: () => void;
 }) {
-  if (!open || !entry) return null;
+  // ESC close
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  const show = open && !!entry;
 
   return (
-    <div className="fixed inset-0 z-[999]">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 w-[min(920px,92vw)] -translate-x-1/2 -translate-y-1/2">
-        <div className="rounded-[28px] bg-white shadow-2xl border border-slate-200 overflow-hidden">
-          <div className="flex items-start justify-between gap-4 p-6 border-b border-slate-100">
-            <div className="min-w-0">
-              <div className="text-xs font-black text-slate-400 tracking-widest">{entry.dateISO}</div>
-              <div className="text-xl font-black text-[#0F172A] truncate">{entry.title}</div>
-              <div className="mt-2 flex items-center gap-2 text-sm font-bold text-slate-600">
-                <span className="text-lg">{entry.weatherIcon}</span>
-                <span>{entry.weatherTemp}°C</span>
-                {entry.feedback ? <Badge variant="orange">피드백</Badge> : <Badge variant="outline">피드백 없음</Badge>}
-              </div>
-            </div>
+      <div
+          className={cn(
+              "fixed inset-0 z-[999] transition",
+              show ? "pointer-events-auto" : "pointer-events-none"
+          )}
+          aria-hidden={!show}
+      >
+        {/* backdrop */}
+        <div
+            className={cn(
+                "absolute inset-0 bg-black/40 transition-opacity",
+                show ? "opacity-100" : "opacity-0"
+            )}
+            onClick={onClose}
+        />
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="shrink-0 rounded-xl p-2 hover:bg-slate-50 border border-slate-200"
-              aria-label="닫기"
-            >
-              <X size={18} />
-            </button>
-          </div>
+        {/* panel */}
+        <aside
+            className={cn(
+                "absolute right-0 top-0 h-full w-[min(520px,92vw)] bg-white border-l border-slate-200 shadow-2xl transition-transform",
+                show ? "translate-x-0" : "translate-x-full"
+            )}
+            role="dialog"
+            aria-modal="true"
+        >
+          {entry && (
+              <div className="h-full flex flex-col">
+                {/* header */}
+                <div className="p-6 border-b border-slate-100">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-slate-400 tracking-widest">{entry.dateISO}</div>
+                      <div className="mt-1 text-2xl font-black text-[#0F172A] truncate">{entry.title}</div>
 
-          <div className="p-6 space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-black text-slate-500">그날 피드백</div>
-              <div className="mt-2 text-sm font-bold text-[#0F172A]">
-                {entry.feedback ?? "아직 피드백 데이터가 없습니다."}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-black text-slate-500 mb-2">착장 아이템</div>
-              {entry.images.length > 0 ? (
-                <div className="grid grid-cols-3 gap-3">
-                  {entry.images.map((src, i) => (
-                    <div
-                      key={src + i}
-                      className="aspect-[4/5] rounded-2xl overflow-hidden border border-slate-200 bg-slate-50"
-                    >
-                      <img src={src} alt="outfit" className="w-full h-full object-cover" />
+                      <div className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-600">
+                        <span className="text-lg">{entry.weatherIcon}</span>
+                        <span>{entry.weatherTemp == null ? "-" : `${entry.weatherTemp}°C`}</span>
+                        {entry.feedback ? <Badge variant="orange">피드백</Badge> : <Badge variant="outline">피드백 없음</Badge>}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-400">
-                  이미지가 없습니다. (실데이터 연결 시 item 이미지 URL이 들어오면 자동으로 채워집니다)
-                </div>
-              )}
-            </div>
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={onClose}>
-                닫기
-              </Button>
-            </div>
-          </div>
-        </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="shrink-0 rounded-xl p-2 hover:bg-slate-50 border border-slate-200"
+                        aria-label="닫기"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* body */}
+                <div className="flex-1 overflow-auto p-6 space-y-5">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-black text-slate-500">그날 피드백</div>
+                    <div className="mt-2 text-sm font-bold text-[#0F172A]">
+                      {entry.feedback ?? "아직 피드백 데이터가 없습니다."}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-black text-slate-500 mb-2">착장 아이템</div>
+
+                    {entry.images.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-3">
+                          {entry.images.map((src, i) => (
+                              <div
+                                  key={src + i}
+                                  className="aspect-[4/5] rounded-2xl overflow-hidden border border-slate-200 bg-slate-50"
+                              >
+                                <img src={src} alt="outfit" className="w-full h-full object-cover" />
+                              </div>
+                          ))}
+                        </div>
+                    ) : (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-400">
+                          이미지가 없습니다. (백에서 imageUrl 내려오면 자동 반영)
+                        </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={onClose}>
+                      닫기
+                    </Button>
+                  </div>
+                </div>
+              </div>
+          )}
+        </aside>
       </div>
-    </div>
   );
 }
 
 const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
+type CalendarLocationState = {
+  recentlySaved?: TodayOutfitDto | null;
+  selectedOutfit?: SelectedOutfit | null;
+};
+
+type DayCellProps = {
+  date: Date;
+  baseMonth: number;
+  entry?: HistoryEntryUI;
+  onSelect: (entry: HistoryEntryUI) => void;
+};
+
+const DayCell = React.memo(function DayCell({ date, baseMonth, entry, onSelect }: DayCellProps) {
+  const iso = toISO(date);
+  const isCurrentMonth = date.getMonth() === baseMonth;
+  const dow = date.getDay();
+
+  const headTextClass = cn(
+      "text-sm font-black",
+      !isCurrentMonth && "text-slate-300",
+      isCurrentMonth && dow === 0 && "text-red-500",
+      isCurrentMonth && dow === 6 && "text-blue-500",
+      isCurrentMonth && dow !== 0 && dow !== 6 && "text-slate-600"
+  );
+
+  // ✅ “신호만”: dot + (옵션)날씨 아이콘 + (옵션)피드백 신호
+  const Signal = () => (
+      <div className="mt-2 flex items-center gap-2">
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" aria-label="기록 있음" />
+        <span className="text-sm">{entry?.weatherIcon}</span>
+        <span
+            className={cn(
+                "inline-block w-2 h-2 rounded-full",
+                entry?.feedback ? "bg-emerald-500" : "bg-slate-200"
+            )}
+            aria-label={entry?.feedback ? "피드백 있음" : "피드백 없음"}
+        />
+      </div>
+  );
+
+  return (
+      <div
+          className={cn(
+              "min-h-[128px] border-r border-b border-slate-50 p-3 transition-all",
+              !isCurrentMonth && "bg-slate-50/40"
+          )}
+      >
+        <div className="flex items-center justify-between">
+          <div className={headTextClass}>{date.getDate()}</div>
+
+          {/* 기록 있으면 우측 상단에도 dot 하나 */}
+          {entry ? (
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" aria-label="기록 있음" />
+          ) : (
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-transparent" />
+          )}
+        </div>
+
+        {entry ? (
+            <button
+                type="button"
+                onClick={() => onSelect(entry)}
+                className={cn(
+                    "mt-3 w-full rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition p-3 text-left",
+                    "focus:outline-none focus:ring-2 focus:ring-orange-200"
+                )}
+                aria-label={`${iso} 기록 상세 보기`}
+            >
+              <Signal />
+              <div className="mt-3 text-[11px] font-black text-slate-400">클릭해서 상세 보기</div>
+            </button>
+        ) : (
+            <div className="mt-3 h-[72px]" />
+        )}
+      </div>
+  );
+});
+
 export default function CalendarPage() {
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get("date");
+
+  const { state } = useLocation() as { state?: CalendarLocationState };
+  const recentlySaved = state?.recentlySaved ?? null;
+  const selectedOutfit = state?.selectedOutfit ?? null;
 
   const [base, setBase] = useState(() => {
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -172,179 +249,145 @@ export default function CalendarPage() {
     return new Date();
   });
 
-  const [selected, setSelected] = useState<HistoryEntryUI | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-
-  const historyEntries = useMemo(() => {
-    const arr = Array.isArray(MOCK_HISTORY) ? MOCK_HISTORY : [];
-    return arr.map(toHistoryEntryUI);
-  }, []);
-
-  const historyMap = useMemo(() => {
-    const m = new Map<string, HistoryEntryUI>();
-    for (const e of historyEntries) m.set(e.dateISO, e);
-    return m;
-  }, [historyEntries]);
+  const year = base.getFullYear();
+  const month = base.getMonth() + 1;
+  const baseMonth = base.getMonth();
 
   const grid = useMemo(() => buildCalendarGrid(base), [base]);
 
-  const openModal = (entry: HistoryEntryUI) => {
-    setSelected(entry);
-    setModalOpen(true);
-  };
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [historyMap, setHistoryMap] = useState<Map<string, HistoryEntryUI>>(new Map());
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<HistoryEntryUI | null>(null);
+
+  const openDrawer = useCallback((entry: HistoryEntryUI) => {
+    setSelectedEntry(entry);
+    setDrawerOpen(true);
+  }, []);
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
+
+  // ✅ 월 데이터 로드 (DTO -> UI는 adapter에서만)
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const monthly = await outfitApi.getMonthly(year, month);
+        const map = outfitAdapter.monthlyToMap(monthly);
+
+        // ✅ recentlySaved는 “?date와 무관하게” 항상 노출 가능하도록 map에 merge
+        const merged = outfitAdapter.mergeRecentlySaved(map, recentlySaved, selectedOutfit);
+
+        if (mounted) setHistoryMap(merged);
+      } catch (e: any) {
+        if (mounted) setError(e?.message ?? "월 히스토리를 불러오지 못했습니다.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [year, month, recentlySaved, selectedOutfit]);
+
+  // 월 이동 시 열린 패널은 닫고, 선택은 유지(원하면 null로 바꾸면 됨)
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [year, month]);
 
   return (
-    <div className="space-y-6 pb-24">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <SectionHeader
-          title="OOTD 캘린더"
-          subtitle="기록된 날만 표시됩니다. 기록된 날짜를 클릭하면 상세 모달로 확인할 수 있어요."
-        />
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" icon={Filter}>
-            필터
-          </Button>
-          <Button variant="outline" size="sm" icon={Download}>
-            내보내기
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-black text-navy-900">{formatMonthTitle(base)}</h2>
-          <Badge variant="outline">달력</Badge>
+      <div className="space-y-6 pb-24">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <SectionHeader
+              title="OOTD 캘린더"
+              subtitle="기록된 날에만 신호가 표시됩니다. 날짜를 클릭하면 우측 패널에서 상세를 확인할 수 있어요."
+          />
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" icon={Filter}>
+              필터
+            </Button>
+            <Button variant="outline" size="sm" icon={Download}>
+              내보내기
+            </Button>
+          </div>
         </div>
 
-        <div className="flex gap-1 bg-white border border-slate-200 p-1 rounded-xl">
-          <button
-            type="button"
-            className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
-            onClick={() => setBase(new Date(base.getFullYear(), base.getMonth() - 1, 1))}
-            aria-label="이전 달"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            type="button"
-            className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
-            onClick={() => setBase(new Date(base.getFullYear(), base.getMonth() + 1, 1))}
-            aria-label="다음 달"
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-[32px] shadow-sm overflow-hidden">
-        {/* day labels: SUN red, SAT blue */}
-        <div className="grid grid-cols-7 border-b border-slate-100">
-          {DAY_LABELS.map((d, idx) => (
-            <div
-              key={d}
-              className={cn(
-                "py-4 text-center text-[10px] font-black tracking-widest",
-                idx === 0 && "text-red-500",
-                idx === 6 && "text-blue-500",
-                idx !== 0 && idx !== 6 && "text-slate-400"
-              )}
-            >
-              {d}
+        {error && (
+            <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              {error}
             </div>
-          ))}
+        )}
+
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-black text-navy-900">{formatMonthTitle(base)}</h2>
+            {loading ? <Badge variant="slate">로딩 중</Badge> : <Badge variant="outline">달력</Badge>}
+          </div>
+
+          <div className="flex gap-1 bg-white border border-slate-200 p-1 rounded-xl">
+            <button
+                type="button"
+                className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
+                onClick={() => setBase(new Date(base.getFullYear(), base.getMonth() - 1, 1))}
+                aria-label="이전 달"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+                type="button"
+                className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
+                onClick={() => setBase(new Date(base.getFullYear(), base.getMonth() + 1, 1))}
+                aria-label="다음 달"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-7">
-          {grid.map((d, i) => {
-            const iso = toISO(d);
-            const entry = historyMap.get(iso);
-            const isCurrentMonth = d.getMonth() === base.getMonth();
-            const dow = d.getDay(); // 0 sun, 6 sat
-
-            return (
-              <div
-                key={iso + i}
-                className={cn(
-                  "min-h-[148px] border-r border-b border-slate-50 p-3 transition-all",
-                  entry ? "hover:bg-slate-50" : "bg-transparent",
-                  i % 7 === 6 && "border-r-0",
-                  !isCurrentMonth && "bg-slate-50/40"
-                )}
-              >
-                {/* date number + 기록 도트(기록된 날만 주황색 동그라미) */}
-                <div className="flex items-center justify-between">
-                  <div
+        <div className="bg-white border border-slate-200 rounded-[32px] shadow-sm overflow-hidden">
+          {/* day labels */}
+          <div className="grid grid-cols-7 border-b border-slate-100">
+            {DAY_LABELS.map((d, idx) => (
+                <div
+                    key={d}
                     className={cn(
-                      "text-sm font-black",
-                      !isCurrentMonth && "text-slate-300",
-                      isCurrentMonth && dow === 0 && "text-red-500",
-                      isCurrentMonth && dow === 6 && "text-blue-500",
-                      isCurrentMonth && dow !== 0 && dow !== 6 && "text-slate-600"
+                        "py-4 text-center text-[10px] font-black tracking-widest",
+                        idx === 0 && "text-red-500",
+                        idx === 6 && "text-blue-500",
+                        idx !== 0 && idx !== 6 && "text-slate-400"
                     )}
-                  >
-                    {d.getDate()}
-                  </div>
-
-                  {entry ? (
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500"
-                      aria-label="기록 있음"
-                      title="기록 있음"
-                    />
-                  ) : (
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-transparent" />
-                  )}
+                >
+                  {d}
                 </div>
+            ))}
+          </div>
 
-                {/* 기록이 있는 날만 카드 표시 / 기록 없는 날은 아무 텍스트도 안 보여줌 */}
-                {entry ? (
-                  <button
-                    type="button"
-                    onClick={() => openModal(entry)}
-                    className="mt-2 w-full text-left rounded-2xl border border-slate-200 bg-white hover:shadow-sm transition p-3"
-                    aria-label={`${iso} 기록 보기`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-black text-[#0F172A] truncate">{entry.title}</div>
-                      <div className="flex items-center gap-1 text-xs font-black text-slate-500 shrink-0">
-                        <span className="text-sm">{entry.weatherIcon}</span>
-                        <span>{entry.weatherTemp}°</span>
-                      </div>
-                    </div>
+          {/* cells */}
+          <div className="grid grid-cols-7">
+            {grid.map((d, i) => {
+              const iso = toISO(d);
+              const entry = historyMap.get(iso);
 
-                    <div className="mt-2 text-[11px] font-bold text-slate-500 line-clamp-2">
-                      {entry.feedback ?? "피드백 없음"}
-                    </div>
-
-                    <div className="mt-3 flex gap-2">
-                      {entry.images.length > 0 ? (
-                        entry.images.slice(0, 3).map((src, idx2) => (
-                          <div
-                            key={src + idx2}
-                            className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                          >
-                            <img src={src} alt="thumb" className="w-full h-full object-cover" />
-                          </div>
-                        ))
-                      ) : (
-                        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-400">
-                          이미지 없음
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-3 text-[11px] font-black text-slate-400">클릭해서 상세 보기</div>
-                  </button>
-                ) : (
-                  <div className="mt-3" />
-                )}
-              </div>
-            );
-          })}
+              return (
+                  <div key={iso + i} className={cn(i % 7 === 6 && "border-r-0")}>
+                    <DayCell date={d} baseMonth={baseMonth} entry={entry} onSelect={openDrawer} />
+                  </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
 
-      <OutfitModal open={modalOpen} onClose={() => setModalOpen(false)} entry={selected} />
-    </div>
+        {/* 우측 드로어 */}
+        <Drawer open={drawerOpen} entry={selectedEntry} onClose={closeDrawer} />
+      </div>
   );
 }
