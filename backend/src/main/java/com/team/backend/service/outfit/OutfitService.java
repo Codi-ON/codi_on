@@ -1,8 +1,10 @@
-package com.team.backend.service.outfit;// src/main/java/com/team/backend/service/outfit/OutfitService.java
+package com.team.backend.service.outfit;
 
 import com.team.backend.api.dto.outfit.OutfitRequestDto;
 import com.team.backend.api.dto.outfit.OutfitResponseDto;
 import com.team.backend.api.dto.session.SessionLogRequestDto;
+import com.team.backend.common.exception.ConflictException;
+import com.team.backend.domain.enums.outfit.FeedbackRating;
 import com.team.backend.domain.enums.session.SessionEventType;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
@@ -14,10 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.YearMonth;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.*;
 
 @Service
@@ -25,7 +24,7 @@ import java.util.*;
 @Transactional
 public class OutfitService {
 
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    public static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final SessionService sessionService;
     private final OutfitHistoryRepository outfitHistoryRepository;
@@ -58,27 +57,28 @@ public class OutfitService {
             items.add(OutfitHistoryItem.builder()
                     .outfitHistory(history)
                     .clothingId(src.getClothingId())
-                    .sortOrder(i + 1) // 정규화 후 1..N 재부여
+                    .sortOrder(i + 1)
                     .build());
         }
 
         history.replaceItems(items, now);
+
+        // ★ 1회 제한(신뢰성) 정책이면 resetFeedback 호출 금지
+        // history.resetFeedback(now);
+
         OutfitHistory saved = outfitHistoryRepository.save(history);
 
-        // 대시보드 로그(실패해도 기능 실패 금지)
         try {
             sessionLogJdbcRepository.insert(
                     SessionLogRequestDto.builder()
                             .userId(null)
                             .sessionKey(key)
-                            .eventType(SessionEventType.OUTFIT_SAVED) // enum 없으면 추가/기존 타입으로 교체
+                            .eventType(SessionEventType.OUTFIT_SAVED)
                             .payload(Map.of("clothingIds", clothingIds))
                             .build()
             );
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
-        // 정책: data는 Today(오늘 아웃핏) 전체 재반환
         return OutfitResponseDto.Today.from(saved);
     }
 
@@ -94,16 +94,9 @@ public class OutfitService {
                 .findBySessionKeyAndOutfitDate(key, today)
                 .orElseThrow(() -> new EntityNotFoundException("오늘 저장한 착장이 없습니다. date=" + today));
 
-        // LAZY 방지 (fetch join 아닌 경우)
         history.getItems().size();
         return OutfitResponseDto.Today.from(history);
     }
-
-    /**
-     * 월 단위 히스토리(캘린더용)
-     * - 기록 없는 날 제외
-     * - GET: validateOnly만
-     */
 
     @Transactional(readOnly = true)
     public OutfitResponseDto.MonthlyHistory getMonthlyHistory(String sessionKey, int year, int month) {
@@ -129,20 +122,21 @@ public class OutfitService {
                 dtoItems.add(OutfitResponseDto.MonthlyItem.builder()
                         .clothingId(it.getClothingId())
                         .sortOrder(it.getSortOrder())
-                        .imageUrl(null) // 다음 배치
+                        .imageUrl(null)
                         .build());
             }
+
+            Integer score = (h.getFeedbackRating() == null) ? null : h.getFeedbackRating().toScore();
 
             days.add(OutfitResponseDto.MonthlyDay.builder()
                     .date(h.getOutfitDate().toString())
                     .items(dtoItems)
-                    .feedbackScore(h.getFeedbackRating()) // Integer(-1/0/1) or null
-                    .weatherTemp(null) // 다음 배치
-                    .condition(null)   // 다음 배치
+                    .feedbackScore(score)
+                    .weatherTemp(null)
+                    .condition(null)
                     .build());
         }
 
-        // repo에서 order by 했어도 안전하게
         days.sort(Comparator.comparing(OutfitResponseDto.MonthlyDay::getDate));
 
         return OutfitResponseDto.MonthlyHistory.builder()
@@ -152,77 +146,89 @@ public class OutfitService {
                 .build();
     }
 
+    // =========================
+    // FEEDBACK (1회 제한)
+    // =========================
+    public OutfitResponseDto.Today submitTodayFeedback(String sessionKey, Integer rating) {
+        return submitFeedbackOnce(sessionKey, LocalDate.now(KST), rating);
+    }
 
-
-   public OutfitResponseDto.Today submitTodayFeedback(String sessionKey, Integer rating) {
+    public OutfitResponseDto.Today submitFeedbackOnce(String sessionKey, LocalDate date, Integer rating) {
         String key = sessionService.validateOnly(sessionKey);
         sessionService.ensureSession(key);
 
+        // 미래 차단(정책)
         LocalDate today = LocalDate.now(KST);
+        if (date.isAfter(today)) throw new ConflictException("미래 날짜에는 피드백을 남길 수 없습니다.");
+
+        OffsetDateTime now = OffsetDateTime.now(KST);
 
         OutfitHistory history = outfitHistoryRepository
-                .findBySessionKeyAndOutfitDate(key, today)
-                .orElseThrow(() -> new EntityNotFoundException("오늘 저장한 착장이 없습니다. date=" + today));
+                .findBySessionKeyAndOutfitDate(key, date)
+                .orElseThrow(() -> new EntityNotFoundException("해당 날짜에 저장한 착장이 없습니다. date=" + date));
 
-        // 1회만 + 값은 -1/0/1만 (도메인에서 검증)
-        history.submitFeedbackOnce(rating);
+        FeedbackRating enumRating = toFeedbackRating(rating);
+
+        try {
+            history.submitFeedbackOnce(enumRating, now); // ★ 엔티티 메서드 그대로 사용
+        } catch (IllegalStateException e) {
+            throw new ConflictException("이미 피드백이 제출되었습니다.");
+        }
 
         OutfitHistory saved = outfitHistoryRepository.save(history);
 
-        // 로그는 optional (실패해도 기능 성공)
         try {
             sessionLogJdbcRepository.insert(
                     SessionLogRequestDto.builder()
                             .userId(null)
                             .sessionKey(key)
-                            .eventType(SessionEventType.OUTFIT_SAVED)
-                            .payload(Map.of("rating", rating))
+                            .eventType(SessionEventType.OUTFIT_FEEDBACK_SUBMITTED)
+                            .payload(Map.of("feedbackScore", enumRating.toScore(), "date", date.toString()))
                             .build()
             );
         } catch (Exception ignored) {}
 
-        // 요구사항: 성공 시 Today(오늘 아웃핏) "전체 재반환"
         return OutfitResponseDto.Today.from(saved);
     }
+
+    private FeedbackRating toFeedbackRating(Integer score) {
+        if (score == null) throw new IllegalArgumentException("rating is required");
+        return switch (score) {
+            case 1 -> FeedbackRating.GOOD;
+            case 0 -> FeedbackRating.UNKNOWN;
+            case -1 -> FeedbackRating.BAD;
+            default -> throw new IllegalArgumentException("rating must be -1/0/1");
+        };
+    }
+
     // =========================
     // internal
     // =========================
     private List<OutfitRequestDto.Item> normalizeItems(List<OutfitRequestDto.Item> items) {
-        if (items == null || items.isEmpty()) {
-            throw new IllegalArgumentException("items는 1개 이상 필요합니다.");
-        }
+        if (items == null || items.isEmpty()) throw new IllegalArgumentException("items는 1개 이상 필요합니다.");
 
-        // 1) 유효 clothingId만 추출
         List<OutfitRequestDto.Item> cleaned = new ArrayList<>();
         for (OutfitRequestDto.Item it : items) {
             if (it == null) continue;
-            Long clothingId = it.getClothingId();
-            if (clothingId == null) continue;
+            if (it.getClothingId() == null) continue;
             cleaned.add(it);
         }
         if (cleaned.isEmpty()) throw new IllegalArgumentException("items는 1개 이상 필요합니다.");
 
-        // 2) sortOrder 기준 정렬(없거나 0이면 뒤로)
         cleaned.sort((a, b) -> {
             int sa = (a.getSortOrder() <= 0 ? Integer.MAX_VALUE : a.getSortOrder());
             int sb = (b.getSortOrder() <= 0 ? Integer.MAX_VALUE : b.getSortOrder());
             return Integer.compare(sa, sb);
         });
 
-        // 3) clothingId 중복 제거(첫 등장만 유지)
         LinkedHashMap<Long, OutfitRequestDto.Item> uniq = new LinkedHashMap<>();
-        for (OutfitRequestDto.Item it : cleaned) {
-            uniq.putIfAbsent(it.getClothingId(), it);
-        }
-
+        for (OutfitRequestDto.Item it : cleaned) uniq.putIfAbsent(it.getClothingId(), it);
         return new ArrayList<>(uniq.values());
     }
 
     private List<Long> extractClothingIds(List<OutfitRequestDto.Item> items) {
         List<Long> ids = new ArrayList<>(items.size());
-        for (OutfitRequestDto.Item it : items) {
-            ids.add(it.getClothingId());
-        }
+        for (OutfitRequestDto.Item it : items) ids.add(it.getClothingId());
         return ids;
     }
 }

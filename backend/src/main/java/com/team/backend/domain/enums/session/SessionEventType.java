@@ -5,5 +5,6 @@ public enum SessionEventType {
     END,
     HEARTBEAT,
     ERROR,
-    OUTFIT_SAVED
+    OUTFIT_SAVED,
+    OUTFIT_FEEDBACK_SUBMITTED
 }

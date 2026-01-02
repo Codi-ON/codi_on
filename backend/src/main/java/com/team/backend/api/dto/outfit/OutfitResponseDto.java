@@ -1,5 +1,7 @@
+// src/main/java/com/team/backend/api/dto/outfit/OutfitResponseDto.java
 package com.team.backend.api.dto.outfit;
 
+import com.team.backend.domain.enums.outfit.FeedbackRating;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
 import lombok.*;
@@ -17,6 +19,7 @@ public class OutfitResponseDto {
     public static class Today {
         private String date;
         private List<Item> items;
+        private Integer feedbackScore;
 
         public static Today from(OutfitHistory history) {
             List<OutfitHistoryItem> src = new ArrayList<>(history.getItems());
@@ -30,9 +33,13 @@ public class OutfitResponseDto {
                         .build());
             }
 
+            FeedbackRating fr = history.getFeedbackRating();
+            Integer score = (fr == null) ? null : fr.toScore();
+
             return Today.builder()
                     .date(history.getOutfitDate().toString())
                     .items(items)
+                    .feedbackScore(score)
                     .build();
         }
 
@@ -66,11 +73,7 @@ public class OutfitResponseDto {
     public static class MonthlyDay {
         private String date;
         private List<MonthlyItem> items;
-
-
         private Integer feedbackScore;
-
-
         private Double weatherTemp;
         private String condition;
     }

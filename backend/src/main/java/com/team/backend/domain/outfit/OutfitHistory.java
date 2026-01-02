@@ -1,77 +1,67 @@
-// src/main/java/com/team/backend/domain/outfit/OutfitHistory.java
-package com.team.backend.domain.outfit;
 
-import com.team.backend.common.exception.ConflictException;
+package com.team.backend.domain.outfit;
+import com.team.backend.domain.enums.outfit.FeedbackRating;
+import com.team.backend.domain.enums.outfit.FeedbackRatingConverter;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.*;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(
-        name = "outfit_history",
-        uniqueConstraints = @UniqueConstraint(name = "uq_outfit_history", columnNames = {"session_key", "outfit_date"})
-)
 @Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
+@Table(name = "outfit_history")
 public class OutfitHistory {
-
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "session_key", nullable = false, length = 64)
+    @Column(name = "session_key", nullable = false)
     private String sessionKey;
 
     @Column(name = "outfit_date", nullable = false)
     private LocalDate outfitDate;
 
-    @Column(name = "created_at", nullable = false)
+    @Convert(converter = FeedbackRatingConverter.class)
+    @Column(name = "feedback_rating")
+    private FeedbackRating feedbackRating;
+
+    @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
-
-    @Column(name = "feedback_rating")
-    private Integer feedbackRating;
 
     @OneToMany(mappedBy = "outfitHistory", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OutfitHistoryItem> items = new ArrayList<>();
 
-    @PrePersist
-    void prePersist() {
-        OffsetDateTime now = OffsetDateTime.now(KST);
-        this.createdAt = now;
-        this.updatedAt = now;
-        if (this.sessionKey != null) this.sessionKey = this.sessionKey.trim();
-    }
-
-    @PreUpdate
-    void preUpdate() {
-        this.updatedAt = OffsetDateTime.now(KST);
-        if (this.sessionKey != null) this.sessionKey = this.sessionKey.trim();
-    }
-
     public void replaceItems(List<OutfitHistoryItem> newItems, OffsetDateTime now) {
         this.items.clear();
         this.items.addAll(newItems);
         this.updatedAt = now;
+        if (this.createdAt == null) this.createdAt = now;
     }
 
-    public void submitFeedbackOnce(Integer rating) {
-        if (this.feedbackRating != null) {
-            throw new ConflictException("오늘 피드백은 1회만 제출할 수 있습니다.");
-        }
-        if (rating == null || (rating != -1 && rating != 0 && rating != 1)) {
-            throw new IllegalArgumentException("feedbackRating은 -1/0/1 만 허용됩니다.");
-        }
+    // ✅ 정책: 덮어쓰기(saveToday) 시 피드백 초기화
+    public void resetFeedback(OffsetDateTime now) {
+        this.feedbackRating = null;
+        this.updatedAt = now;
+        if (this.createdAt == null) this.createdAt = now;
+    }
+
+    // ✅ 정책: 피드백 1회 제한
+    public void submitFeedbackOnce(FeedbackRating rating, OffsetDateTime now) {
+        if (rating == null) throw new IllegalArgumentException("rating is required");
+        if (this.feedbackRating != null) throw new IllegalStateException("feedback already submitted");
         this.feedbackRating = rating;
+        this.updatedAt = now;
+        if (this.createdAt == null) this.createdAt = now;
     }
 }
