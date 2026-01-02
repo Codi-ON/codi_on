@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/repository/outfit/OutfitHistoryRepository.java
 package com.team.backend.repository.outfit;
 
 import com.team.backend.domain.outfit.OutfitHistory;
@@ -13,14 +14,14 @@ public interface OutfitHistoryRepository extends JpaRepository<OutfitHistory, Lo
     Optional<OutfitHistory> findBySessionKeyAndOutfitDate(String sessionKey, LocalDate outfitDate);
 
     @Query("""
-                select distinct h
-                from OutfitHistory h
-                left join fetch h.items i
-                where h.sessionKey = :sessionKey
-                  and h.outfitDate >= :from
-                  and h.outfitDate <  :toExclusive
-                order by h.outfitDate asc
-            """)
+            select distinct h
+            from OutfitHistory h
+            left join fetch h.items i
+            where h.sessionKey = :sessionKey
+              and h.outfitDate >= :from
+              and h.outfitDate <  :toExclusive
+            order by h.outfitDate asc
+        """)
     List<OutfitHistory> findMonthlyWithItems(
             @Param("sessionKey") String sessionKey,
             @Param("from") LocalDate from,

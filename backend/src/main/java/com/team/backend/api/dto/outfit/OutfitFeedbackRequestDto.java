@@ -14,5 +14,5 @@ public class OutfitFeedbackRequestDto {
     @NotNull
     @Min(-1)
     @Max(1)
-    private Integer rating; // -1 / 0 / 1
+    private Integer rating;
 }
