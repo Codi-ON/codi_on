@@ -2,9 +2,9 @@
 package com.team.backend.api.controller.log;
 
 import com.team.backend.api.dto.ApiResponse;
-import com.team.backend.api.dto.recommendation.ItemClickLogRequestDto;
+import com.team.backend.api.dto.log.ItemClickLogCreateRequestDto;
 import com.team.backend.api.dto.session.SessionLogRequestDto;
-import com.team.backend.service.click.ClickLogService;
+import com.team.backend.service.click.ItemClickLogService;
 import com.team.backend.service.session.SessionLogService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,13 +21,16 @@ public class LogController {
 
     private static final String OK_MESSAGE = "요청이 성공했습니다.";
 
-    private final ClickLogService clickLogService;
+    private final ItemClickLogService itemClickLogService;
     private final SessionLogService sessionLogService;
 
+
+    // LogController.java 내부
+
     @PostMapping(PATH_CLICK)
-    public ApiResponse<Void> logClick(@RequestBody @Valid ItemClickLogRequestDto request) {
-        clickLogService.logClick(request);
-        return ApiResponse.success(OK_MESSAGE, null);
+    public ApiResponse<Void> logClick(@RequestBody @Valid ItemClickLogCreateRequestDto request) {
+        itemClickLogService.create(request);
+        return ApiResponse.success("클릭 로그가 저장되었습니다.", null);
     }
 
     @PostMapping(PATH_SESSION)

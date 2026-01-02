@@ -1,46 +1,48 @@
+// src/main/java/com/team/backend/service/recommendation/RecommendationEventLogService.java
 package com.team.backend.service.recommendation;
 
-import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
+import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
+import com.team.backend.domain.enums.recommendation.RecommendationEventType;
 import com.team.backend.repository.log.RecommendationEventLogJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class RecommendationEventLogService {
 
-    private final RecommendationEventLogJdbcRepository recommendationEventLogQuery;
+    private final RecommendationEventLogJdbcRepository repo;
 
-    /**
-     * 최근 로그 N개 조회 (관리자용)
-     */
-    public List<RecommendationEventLogResponseDto> getRecent(int limit) {
-        List<RecommendationEventLogRequestDto> rows = recommendationEventLogQuery.findRecent(limit);
-        return rows.stream()
-                .map(RecommendationEventLogResponseDto::from)
-                .toList();
+    public void write(RecommendationEventLogRequestDto dto) {
+        if (dto == null) throw new IllegalArgumentException("dto is null");
+        if (dto.getEventType() == null) throw new IllegalArgumentException("eventType은 필수입니다.");
+
+        boolean hasSessionId = dto.getSessionId() != null;
+        boolean hasSessionKey = dto.getSessionKey() != null && !dto.getSessionKey().isBlank();
+        if (!hasSessionId && !hasSessionKey) {
+            throw new IllegalArgumentException("sessionId 또는 sessionKey 둘 중 하나는 필수입니다.");
+        }
+
+        repo.write(dto);
     }
 
-    /**
-     * 기간 필터 기반 로그 조회
-     * - from <= created_at < to
-     */
-    public List<RecommendationEventLogResponseDto> getByCreatedAtBetween(
+    public List<RecommendationEventLogResponseDto> recent(Integer limit) {
+        return repo.findRecent(limit);
+    }
+
+    public List<RecommendationEventLogResponseDto> range(
             OffsetDateTime from,
             OffsetDateTime to,
-            int limit
+            List<RecommendationEventType> eventTypes,
+            Integer limit
     ) {
-        List<RecommendationEventLogRequestDto> rows =
-                recommendationEventLogQuery.findByCreatedAtBetween(from, to, limit);
+        if (from == null || to == null) throw new IllegalArgumentException("from/to는 필수입니다.");
+        if (!from.isBefore(to)) throw new IllegalArgumentException("from은 to보다 과거여야 합니다.");
 
-        return rows.stream()
-                .map(RecommendationEventLogResponseDto::from)
-                .toList();
+        return repo.findRange(from, to, eventTypes, limit);
     }
 }

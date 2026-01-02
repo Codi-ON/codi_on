@@ -1,24 +1,34 @@
-// common/GlobalExceptionHandler.java
-package com.team.backend.common;
+package com.team.backend.common.error;
 
-import com.team.backend.api.dto.ApiResponse;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
+import com.team.backend.config.AiUpstreamException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@Slf4j
+import java.util.Map;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 예상 못 한 모든 예외 한 번에 처리
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        log.error("Unexpected error", e);
+    @ExceptionHandler({
+            IllegalArgumentException.class,
+            MethodArgumentNotValidException.class,
+            HttpMessageNotReadableException.class
+    })
+    public ResponseEntity<?> badRequest(Exception e) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "code", "BAD_REQUEST",
+                "message", e.getMessage() == null ? "bad request" : e.getMessage()
+        ));
+    }
 
-        return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail("ERROR", "서버 오류가 발생했습니다."));
+    @ExceptionHandler(AiUpstreamException.class)
+    public ResponseEntity<?> aiUpstream(AiUpstreamException e) {
+        return ResponseEntity.status(e.getStatus()).body(Map.of(
+                "code", e.getCode(),
+                "message", e.getMessage()
+        ));
     }
 }

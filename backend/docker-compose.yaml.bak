@@ -1,0 +1,86 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: codion-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-huisun}
+      POSTGRES_USER: ${POSTGRES_USER:-huisun}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    ports:
+      - "5434:5432"
+    volumes:
+      - codion_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - codion_app_network
+
+  ai:
+    build:
+      context: ./ai
+      dockerfile: ml_api/Dockerfile
+    container_name: codion-ai
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,json,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if json.load(r).get('status')=='ok' else 1)\""
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - codion_app_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codion-backend
+    depends_on:
+      db:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    environment:
+      # DB
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
+
+      # Weather
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+
+      # AI (Spring relaxed binding: AI_BASE_URL -> ai.base-url)
+      AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
+      AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
+      AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
+      AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # actuator 쓰면 /actuator/health 추천, 없으면 아래처럼 임시로
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health'); sys.exit(0 if r.status==200 else 1)\""
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - codion_app_network
+
+volumes:
+  codion_db_data:
+
+networks:
+  codion_app_network:
+    driver: bridge

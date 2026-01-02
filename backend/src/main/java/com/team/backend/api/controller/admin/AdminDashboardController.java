@@ -2,83 +2,105 @@
 package com.team.backend.api.controller.admin;
 
 import com.team.backend.api.dto.ApiResponse;
+import com.team.backend.api.dto.admin.dashboard.DashboardMonthlyResponseDto;
+import com.team.backend.api.dto.admin.dashboard.DashboardOverviewResponseDto;
 import com.team.backend.api.dto.click.DashboardClicksResponse;
-import com.team.backend.api.dto.session.SessionLogResponseDto;
-import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
-import com.team.backend.service.admin.SessionLogAdminService;
-import com.team.backend.service.admin.SessionMetricsAdminService;
+import com.team.backend.common.time.TimeRanges;
+import com.team.backend.service.admin.DashboardMonthlyAdminService;
+import com.team.backend.service.admin.DashboardOverviewAdminService;
 import com.team.backend.service.click.DashboardClicksService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-
-import static org.springframework.format.annotation.DateTimeFormat.ISO;
+import java.time.YearMonth;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/admin") // ✅ 정식 경로만
+@RequestMapping("/api/admin/dashboard")
 public class AdminDashboardController {
 
-    private static final ZoneOffset KST = ZoneOffset.ofHours(9);
+    private static final int DEFAULT_TOP_N = 10;
+    private static final int MIN_TOP_N = 1;
+    private static final int MAX_TOP_N = 50;
 
-    private final SessionLogAdminService sessionLogAdminService;
-    private final SessionMetricsAdminService sessionMetricsAdminService;
+    private final DashboardOverviewAdminService dashboardOverviewAdminService;
     private final DashboardClicksService dashboardClicksService;
+    private final DashboardMonthlyAdminService dashboardMonthlyAdminService;
 
-    // ==============================
-    // 1) Session Metrics (Dashboard)
-    // GET /api/admin/session-metrics/dashboard?from=2025-12-01&to=2025-12-22
-    // ==============================
-    @GetMapping("/session-metrics/dashboard")
-    public ApiResponse<SessionMetricsDashboardResponseDto> getSessionMetricsDashboard(
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to
+    @GetMapping("/overview")
+    public ApiResponse<DashboardOverviewResponseDto> overview(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "" + DEFAULT_TOP_N) int topN
     ) {
-        OffsetDateTime fromAt = from.atStartOfDay().atOffset(KST);
-        OffsetDateTime toAt = to.plusDays(1).atStartOfDay().atOffset(KST).minusNanos(1);
-        return ApiResponse.success(sessionMetricsAdminService.getDashboard(fromAt, toAt));
+        if (from.isAfter(to)) throw new IllegalArgumentException("from은 to보다 클 수 없습니다.");
+        int resolvedTopN = clamp(topN, MIN_TOP_N, MAX_TOP_N);
+
+        return ApiResponse.success(dashboardOverviewAdminService.getOverview(from, to, resolvedTopN));
     }
 
-    // ==============================
-    // 2) Session Logs (Recent)
-    // GET /api/admin/session-logs/recent?limit=50
-    // ==============================
-    @GetMapping("/session-logs/recent")
-    public ApiResponse<List<SessionLogResponseDto>> getRecentSessionLogs(
-            @RequestParam(defaultValue = "50") int limit
+    @GetMapping("/clicks")
+    public ApiResponse<DashboardClicksResponse> clicks(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "" + DEFAULT_TOP_N) int topN
     ) {
-        return ApiResponse.success(sessionLogAdminService.getRecent(limit));
+        if (from.isAfter(to)) throw new IllegalArgumentException("from은 to보다 클 수 없습니다.");
+        int resolvedTopN = clamp(topN, MIN_TOP_N, MAX_TOP_N);
+
+        return ApiResponse.success(dashboardClicksService.getDashboardClicks(from, to, resolvedTopN));
     }
 
-    // ==============================
-    // 3) Session Logs (Range)
-    // GET /api/admin/session-logs/range?from=2025-12-01&to=2025-12-22&limit=100
-    // ==============================
-    @GetMapping("/session-logs/range")
-    public ApiResponse<List<SessionLogResponseDto>> getSessionLogsRange(
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to,
-            @RequestParam(defaultValue = "100") int limit
+    /**
+     * 예)
+     * /monthly?fromMonth=2025-01&toMonth=2025-12&topN=10
+     * /monthly?fromMonth=2025-01-01&toMonth=2025-12-01  (lenient)
+     */
+    @GetMapping("/monthly")
+    public ApiResponse<DashboardMonthlyResponseDto> monthly(
+            @RequestParam String fromMonth,
+            @RequestParam String toMonth,
+            @RequestParam(defaultValue = "" + DEFAULT_TOP_N) int topN
     ) {
-        return ApiResponse.success(sessionLogAdminService.getRange(from, to, limit));
+        YearMonth fromYm = TimeRanges.parseYearMonthLenient(fromMonth); // 옵션 B: 1-arg
+        YearMonth toYm   = TimeRanges.parseYearMonthLenient(toMonth);
+
+        if (fromYm.isAfter(toYm)) throw new IllegalArgumentException("fromMonth는 toMonth보다 클 수 없습니다.");
+        int resolvedTopN = clamp(topN, MIN_TOP_N, MAX_TOP_N);
+
+        return ApiResponse.success(dashboardMonthlyAdminService.getMonthly(fromYm, toYm, resolvedTopN));
     }
 
-    // ==============================
-    // 4) Dashboard Clicks
-    // GET /api/admin/dashboard/clicks?from=2025-12-01&to=2025-12-04&topN=10
-    // (region은 서울 고정이면 파라미터 제거)
-    // ==============================
-    @GetMapping("/dashboard/clicks")
-    public ApiResponse<DashboardClicksResponse> getDashboardClicks(
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to,
-            @RequestParam(defaultValue = "10") int topN
+    /**
+     * /monthly/excel?fromMonth=2025-01&toMonth=2025-12&topN=10
+     */
+    @GetMapping("/monthly/excel")
+    public ResponseEntity<byte[]> monthlyExcel(
+            @RequestParam String fromMonth,
+            @RequestParam String toMonth,
+            @RequestParam(defaultValue = "" + DEFAULT_TOP_N) int topN
     ) {
-        return ApiResponse.success(dashboardClicksService.getDashboardClicks(from, to, topN));
+        YearMonth fromYm = TimeRanges.parseYearMonthLenient(fromMonth); // 옵션 B
+        YearMonth toYm   = TimeRanges.parseYearMonthLenient(toMonth);
+
+        if (fromYm.isAfter(toYm)) throw new IllegalArgumentException("fromMonth는 toMonth보다 클 수 없습니다.");
+        int resolvedTopN = clamp(topN, MIN_TOP_N, MAX_TOP_N);
+
+        var export = dashboardMonthlyAdminService.exportMonthlyExcel(fromYm, toYm, resolvedTopN);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + export.filename() + "\"")
+                .header(HttpHeaders.CONTENT_TYPE, export.contentType())
+                .body(export.bytes());
+    }
+
+    private static int clamp(int v, int min, int max) {
+        if (v < min) return min;
+        if (v > max) return max;
+        return v;
     }
 }

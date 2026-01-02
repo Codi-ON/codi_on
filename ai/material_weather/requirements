@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+requests
+pydantic
+python-dotenv
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
+seaborn
+torch
+lightgbm>=4.0.0
+optuna

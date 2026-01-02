@@ -1,8 +1,7 @@
-// src/main/java/com/team/backend/service/admin/SessionMetricsAdminService.java
 package com.team.backend.service.admin;
 
-import com.team.backend.api.dto.session.*;
-import com.team.backend.repository.log.SessionLogMetricsJdbcRepository;
+import com.team.backend.api.dto.session.SessionMetricsDashboardResponseDto;
+import com.team.backend.repository.admin.SessionLogMetricsJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,17 +21,17 @@ public class SessionMetricsAdminService {
 
     public SessionMetricsDashboardResponseDto getDashboard(OffsetDateTime from, OffsetDateTime to) {
 
-        // KST 기준: from=00:00:00, to=23:59:59.999999999 (date-only 범위로 맞춤)
+        // date-only 범위로 정규화 (KST)
         OffsetDateTime fromAt = from.toLocalDate().atStartOfDay().atOffset(KST);
         OffsetDateTime toAt = to.toLocalDate().plusDays(1).atStartOfDay().atOffset(KST).minusNanos(1);
 
-        SessionMetricsSummaryResponseDto summary =
+        SessionMetricsDashboardResponseDto.Summary summary =
                 sessionLogMetricsJdbcRepository.findSummary(fromAt, toAt);
 
-        List<SessionDailyTrendResponseDto> dailyTrend =
+        List<SessionMetricsDashboardResponseDto.DailyTrendItem> dailyTrend =
                 sessionLogMetricsJdbcRepository.findDailyTrend(fromAt, toAt);
 
-        List<SessionHourlyUsageResponseDto> hourlyUsage =
+        List<SessionMetricsDashboardResponseDto.HourlyUsageItem> hourlyUsage =
                 sessionLogMetricsJdbcRepository.findHourlyUsage(fromAt, toAt);
 
         return SessionMetricsDashboardResponseDto.builder()
@@ -41,6 +40,12 @@ public class SessionMetricsAdminService {
                 .hourlyUsage(hourlyUsage)
                 .build();
     }
-
-
+        private void validateRange(OffsetDateTime from, OffsetDateTime to) {
+        if (from == null || to == null) {
+            throw new IllegalArgumentException("from/to는 필수입니다.");
+        }
+        if (!from.isBefore(to)) {
+            throw new IllegalArgumentException("from은 to보다 과거여야 합니다.");
+        }
+    }
 }

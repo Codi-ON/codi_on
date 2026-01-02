@@ -2,6 +2,8 @@
 package com.team.backend.repository.log;
 
 import com.team.backend.api.dto.recommendation.RecommendationEventLogRequestDto;
+import com.team.backend.api.dto.recommendation.RecommendationEventLogResponseDto;
+import com.team.backend.domain.enums.recommendation.RecommendationEventType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -13,6 +15,7 @@ import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -25,98 +28,117 @@ public class RecommendationEventLogJdbcRepository {
     // ==========
     public void write(RecommendationEventLogRequestDto dto) {
         String sql = """
-                INSERT INTO public.recommendation_event_log (
-                    created_at,
-                    user_id,
-                    session_id,
-                    recommendation_id,
-                    event_type,
-                    payload
-                )
-                VALUES (
-                    COALESCE(:createdAt, now()),
-                    :userId,
-                    :sessionId,
-                    :recommendationId,
-                    :eventType,
-                    CAST(:payloadJson AS jsonb)
-                )
-                """;
+            INSERT INTO public.recommendation_event_log (
+                created_at,
+                user_id,
+                session_id,
+                session_key,
+                recommendation_id,
+                event_type,
+                payload
+            )
+            VALUES (
+                COALESCE(:createdAt, now()),
+                :userId,
+                :sessionId,
+                :sessionKey,
+                :recommendationId,
+                :eventType,
+                CASE
+                    WHEN :payloadJson IS NULL THEN NULL
+                    ELSE CAST(:payloadJson AS jsonb)
+                END
+            )
+            """;
 
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("createdAt", dto.getCreatedAt())          // null 허용
-                .addValue("userId", dto.getUserId())                // null 허용
-                .addValue("sessionId", dto.getSessionId())          // null 허용(UUID)
-                .addValue("recommendationId", dto.getRecommendationId()) // null 허용
-                .addValue("eventType", dto.getEventType())          // NOT NULL
-                // payloadJson은 VARCHAR로 명시해서 jsonb 캐스팅만 DB에게 맡김
+        MapSqlParameterSource p = new MapSqlParameterSource()
+                .addValue("createdAt", dto.getCreatedAt())
+                .addValue("userId", dto.getUserId())
+                .addValue("sessionId", dto.getSessionId()) // UUID
+                .addValue("sessionKey", dto.getSessionKey())
+                .addValue("recommendationId", dto.getRecommendationId())
+                // ✅ enum -> DB 저장은 문자열로 (repo에서만 변환)
+                .addValue("eventType", dto.getEventType().name(), Types.VARCHAR)
                 .addValue("payloadJson", dto.getPayloadJson(), Types.VARCHAR);
 
-        jdbc.update(sql, params);
+        jdbc.update(sql, p);
     }
 
     // ======================
     // 2) READ - 최근 N개
     // ======================
-    public List<RecommendationEventLogRequestDto> findRecent(int limit) {
+    public List<RecommendationEventLogResponseDto> findRecent(Integer limit) {
         int resolved = resolveLimit(limit, 1, 200);
 
         String sql = """
-                SELECT id,
-                       created_at,
-                       user_id,
-                       session_id,
-                       recommendation_id,
-                       event_type,
-                       CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
-                FROM public.recommendation_event_log
-                ORDER BY created_at DESC, id DESC
-                LIMIT :limit
-                """;
+            SELECT
+                id,
+                created_at,
+                user_id,
+                session_id,
+                session_key,
+                recommendation_id,
+                event_type,
+                CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
+            FROM public.recommendation_event_log
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+            """;
 
-        return jdbc.query(
-                sql,
-                new MapSqlParameterSource("limit", resolved),
-                this::mapRow
-        );
+        return jdbc.query(sql, new MapSqlParameterSource("limit", resolved), this::mapRow);
     }
 
     // ===========================
-    // 3) READ - 기간 필터 조회
+    // 3) READ - 기간 + 타입 필터
     // ===========================
-    public List<RecommendationEventLogRequestDto> findByCreatedAtBetween(
+    public List<RecommendationEventLogResponseDto> findRange(
             OffsetDateTime from,
             OffsetDateTime to,
-            int limit
+            List<RecommendationEventType> eventTypes,
+            Integer limit
     ) {
         int resolved = resolveLimit(limit, 1, 500);
+        boolean hasTypes = eventTypes != null && !eventTypes.isEmpty();
 
         String sql = """
-                SELECT id,
-                       created_at,
-                       user_id,
-                       session_id,
-                       recommendation_id,
-                       event_type,
-                       CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
-                FROM public.recommendation_event_log
-                WHERE created_at >= :from
-                  AND created_at < :to
-                ORDER BY created_at DESC, id DESC
-                LIMIT :limit
-                """;
+            SELECT
+                id,
+                created_at,
+                user_id,
+                session_id,
+                session_key,
+                recommendation_id,
+                event_type,
+                CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
+            FROM public.recommendation_event_log
+            WHERE created_at >= :from
+              AND created_at <  :to
+            """ + (hasTypes ? " AND event_type IN (:eventTypes) " : "") + """
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+            """;
 
-        MapSqlParameterSource params = new MapSqlParameterSource()
+        MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("from", from)
                 .addValue("to", to)
                 .addValue("limit", resolved);
 
-        return jdbc.query(sql, params, this::mapRow);
+        if (hasTypes) {
+            // ✅ 여기서만 enum -> name() 변환
+            p.addValue(
+                    "eventTypes",
+                    eventTypes.stream()
+                            .map(RecommendationEventType::name)
+                            .collect(Collectors.toList())
+            );
+        }
+
+        return jdbc.query(sql, p, this::mapRow);
     }
 
-    // ======================
+    // -----------------------
     // 내부 헬퍼
-    // ======================
+    // -----------------------
     private int resolveLimit(Integer limit, int min, int max) {
         int v = (limit == null ? max : limit);
         if (v < min) v = min;
@@ -124,20 +146,22 @@ public class RecommendationEventLogJdbcRepository {
         return v;
     }
 
-    private RecommendationEventLogRequestDto mapRow(ResultSet rs, int rowNum) throws SQLException {
+    private RecommendationEventLogResponseDto mapRow(ResultSet rs, int rowNum) throws SQLException {
         Long id = rs.getLong("id");
         OffsetDateTime createdAt = rs.getObject("created_at", OffsetDateTime.class);
         Long userId = (Long) rs.getObject("user_id");
         UUID sessionId = (UUID) rs.getObject("session_id");
+        String sessionKey = rs.getString("session_key");
         Long recommendationId = (Long) rs.getObject("recommendation_id");
         String eventType = rs.getString("event_type");
         String payloadJson = rs.getString("payload_json");
 
-        return RecommendationEventLogRequestDto.builder()
+        return RecommendationEventLogResponseDto.builder()
                 .id(id)
                 .createdAt(createdAt)
                 .userId(userId)
-                .sessionId(sessionId)
+                .sessionId(sessionId == null ? null : sessionId.toString())
+                .sessionKey(sessionKey)
                 .recommendationId(recommendationId)
                 .eventType(eventType)
                 .payloadJson(payloadJson)

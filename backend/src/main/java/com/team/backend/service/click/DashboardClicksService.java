@@ -1,7 +1,7 @@
 package com.team.backend.service.click;
 
 import com.team.backend.api.dto.click.DashboardClicksResponse;
-import com.team.backend.repository.click.ClickAnalyticsJdbcRepository;
+import com.team.backend.repository.admin.ClickAnalyticsJdbcRepository;
 import com.team.backend.repository.click.DailyClicksRow;
 import com.team.backend.repository.click.TopClickedItemRow;
 import org.springframework.stereotype.Service;
@@ -32,7 +32,7 @@ public class DashboardClicksService {
         .toList();
 
     var items = topRows.stream()
-        .map(r -> new DashboardClicksResponse.TopClickedItems.ItemRank(
+        .map(r -> new DashboardClicksResponse.TopClickedItems.TopClickedItem(
             r.getClothingItemId(),
             r.getClicks(),
             totalClicks == 0 ? 0.0 : (double) r.getClicks() / (double) totalClicks

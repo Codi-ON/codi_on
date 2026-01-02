@@ -1,10 +1,7 @@
 // src/main/java/com/team/backend/api/dto/recommendation/RecommendationEventLogResponseDto.java
 package com.team.backend.api.dto.recommendation;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.OffsetDateTime;
 
@@ -17,20 +14,37 @@ public class RecommendationEventLogResponseDto {
     private Long id;
     private OffsetDateTime createdAt;
     private Long userId;
-    private String sessionId;        // UUID → 문자열
+
+    // DB uuid -> 문자열로 내려도 OK
+    private String sessionId;
+
+    private String sessionKey;
     private Long recommendationId;
+
     private String eventType;
+
+    // DB jsonb -> text
     private String payloadJson;
 
-    public static RecommendationEventLogResponseDto from(RecommendationEventLogRequestDto row) {
+    public static RecommendationEventLogResponseDto of(
+            Long id,
+            OffsetDateTime createdAt,
+            Long userId,
+            String sessionId,
+            String sessionKey,
+            Long recommendationId,
+            String eventType,
+            String payloadJson
+    ) {
         return RecommendationEventLogResponseDto.builder()
-                .id(row.getId())
-                .createdAt(row.getCreatedAt())
-                .userId(row.getUserId())
-                .sessionId(row.getSessionId() != null ? row.getSessionId().toString() : null)
-                .recommendationId(row.getRecommendationId())
-                .eventType(row.getEventType())
-                .payloadJson(row.getPayloadJson())
+                .id(id)
+                .createdAt(createdAt)
+                .userId(userId)
+                .sessionId(sessionId)
+                .sessionKey(sessionKey)
+                .recommendationId(recommendationId)
+                .eventType(eventType)
+                .payloadJson(payloadJson)
                 .build();
     }
 }
