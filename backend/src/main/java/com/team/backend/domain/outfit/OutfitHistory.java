@@ -1,5 +1,5 @@
-
 package com.team.backend.domain.outfit;
+
 import com.team.backend.domain.enums.outfit.FeedbackRating;
 import com.team.backend.domain.enums.outfit.FeedbackRatingConverter;
 import jakarta.persistence.*;
@@ -11,26 +11,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@Table(
+        name = "outfit_history",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_outfit_history_session_date", columnNames = {"session_key", "outfit_date"})
+        }
+)
 @Getter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-@Table(name = "outfit_history")
 public class OutfitHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "session_key", nullable = false)
+    @Column(name = "session_key", nullable = false, length = 255)
     private String sessionKey;
 
     @Column(name = "outfit_date", nullable = false)
     private LocalDate outfitDate;
-
-    @Convert(converter = FeedbackRatingConverter.class)
-    @Column(name = "feedback_rating")
-    private FeedbackRating feedbackRating;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
@@ -38,30 +39,67 @@ public class OutfitHistory {
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
+    @Convert(converter = FeedbackRatingConverter.class)
+    @Column(name = "feedback_rating")
+    private FeedbackRating feedbackRating;
+
+    // ===== weather snapshot (outfit_history에 저장된 값만 신뢰) =====
+    @Column(name = "weather_temp")
+    private Double weatherTemp;
+
+    @Column(name = "weather_condition", length = 32)
+    private String weatherCondition;
+
+    @Column(name = "weather_feels_like")
+    private Double weatherFeelsLike;
+
+    @Column(name = "weather_cloud_amount")
+    private Integer weatherCloudAmount;
+
     @OneToMany(mappedBy = "outfitHistory", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OutfitHistoryItem> items = new ArrayList<>();
 
-    public void replaceItems(List<OutfitHistoryItem> newItems, OffsetDateTime now) {
+    @PrePersist
+    void onCreate() {
+        OffsetDateTime now = OffsetDateTime.now();
+        this.createdAt = (this.createdAt == null) ? now : this.createdAt;
+        this.updatedAt = (this.updatedAt == null) ? now : this.updatedAt;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    // ===== domain behaviors =====
+
+    public void replaceItems(List<OutfitHistoryItem> newItems) {
         this.items.clear();
+        if (newItems == null) return;
         this.items.addAll(newItems);
-        this.updatedAt = now;
-        if (this.createdAt == null) this.createdAt = now;
     }
 
-    // ✅ 정책: 덮어쓰기(saveToday) 시 피드백 초기화
-    public void resetFeedback(OffsetDateTime now) {
+    public void resetFeedback() {
         this.feedbackRating = null;
-        this.updatedAt = now;
-        if (this.createdAt == null) this.createdAt = now;
     }
 
-    // ✅ 정책: 피드백 1회 제한
-    public void submitFeedbackOnce(FeedbackRating rating, OffsetDateTime now) {
+    /**
+     * 정책: 1회만 허용
+     * - 이미 feedbackRating 있으면 IllegalStateException
+     */
+    public void submitFeedbackOnce(FeedbackRating rating) {
         if (rating == null) throw new IllegalArgumentException("rating is required");
-        if (this.feedbackRating != null) throw new IllegalStateException("feedback already submitted");
+        if (this.feedbackRating != null) {
+            throw new IllegalStateException("feedback already submitted");
+        }
         this.feedbackRating = rating;
-        this.updatedAt = now;
-        if (this.createdAt == null) this.createdAt = now;
+    }
+
+    public void applyWeatherSnapshot(Double temp, String condition, Double feelsLike, Integer cloudAmount) {
+        this.weatherTemp = temp;
+        this.weatherCondition = condition;
+        this.weatherFeelsLike = feelsLike;
+        this.weatherCloudAmount = cloudAmount;
     }
 }

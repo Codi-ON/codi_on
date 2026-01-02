@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "outfit_history_item")
 @Getter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
 public class OutfitHistoryItem {

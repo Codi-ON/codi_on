@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/api/dto/outfit/OutfitResponseDto.java
 package com.team.backend.api.dto.outfit;
 
 import com.team.backend.domain.enums.outfit.FeedbackRating;
@@ -12,6 +11,9 @@ import java.util.List;
 
 public class OutfitResponseDto {
 
+    // =========================
+    // Today (저장/조회 공통)
+    // =========================
     @Getter
     @NoArgsConstructor
     @AllArgsConstructor
@@ -20,6 +22,12 @@ public class OutfitResponseDto {
         private String date;
         private List<Item> items;
         private Integer feedbackScore;
+
+        // ✅ weather snapshot (outfit_history 기준)
+        private Double weatherTemp;
+        private String condition;
+        private Double weatherFeelsLike;
+        private Integer weatherCloudAmount;
 
         public static Today from(OutfitHistory history) {
             List<OutfitHistoryItem> src = new ArrayList<>(history.getItems());
@@ -40,6 +48,10 @@ public class OutfitResponseDto {
                     .date(history.getOutfitDate().toString())
                     .items(items)
                     .feedbackScore(score)
+                    .weatherTemp(history.getWeatherTemp())
+                    .condition(history.getWeatherCondition())
+                    .weatherFeelsLike(history.getWeatherFeelsLike())
+                    .weatherCloudAmount(history.getWeatherCloudAmount())
                     .build();
         }
 
@@ -74,6 +86,8 @@ public class OutfitResponseDto {
         private String date;
         private List<MonthlyItem> items;
         private Integer feedbackScore;
+
+        // ✅ weather snapshot
         private Double weatherTemp;
         private String condition;
     }

@@ -19,6 +19,7 @@ import java.time.LocalDate;
 public class OutfitController {
 
     private static final String SESSION_HEADER = "X-Session-Key";
+
     private final OutfitService outfitService;
 
     @PostMapping("/today")
@@ -29,6 +30,7 @@ public class OutfitController {
         return ApiResponse.success(outfitService.saveToday(sessionKey, req));
     }
 
+
     @GetMapping("/today")
     public ApiResponse<OutfitResponseDto.Today> getToday(
             @RequestHeader(SESSION_HEADER) String sessionKey
@@ -36,8 +38,9 @@ public class OutfitController {
         return ApiResponse.success(outfitService.getToday(sessionKey));
     }
 
+
     @GetMapping("/monthly")
-    public ApiResponse<OutfitResponseDto.MonthlyHistory> getMonthly(
+    public ApiResponse<OutfitResponseDto.MonthlyHistory> getMonthlyHistory(
             @RequestHeader(SESSION_HEADER) String sessionKey,
             @RequestParam int year,
             @RequestParam int month
@@ -45,7 +48,7 @@ public class OutfitController {
         return ApiResponse.success(outfitService.getMonthlyHistory(sessionKey, year, month));
     }
 
-    // 날짜별 피드백 (1회 제한)
+
     @PostMapping("/{date}/feedback")
     public ApiResponse<OutfitResponseDto.Today> submitFeedbackByDate(
             @RequestHeader(SESSION_HEADER) String sessionKey,
@@ -55,12 +58,12 @@ public class OutfitController {
         return ApiResponse.success(outfitService.submitFeedbackOnce(sessionKey, date, req.getRating()));
     }
 
-    // today alias (호환 유지)
+
     @PostMapping("/today/feedback")
     public ApiResponse<OutfitResponseDto.Today> submitTodayFeedback(
             @RequestHeader(SESSION_HEADER) String sessionKey,
             @Valid @RequestBody OutfitFeedbackRequestDto req
     ) {
-        return ApiResponse.success(outfitService.submitFeedbackOnce(sessionKey, LocalDate.now(OutfitService.KST), req.getRating()));
+        return ApiResponse.success(outfitService.submitTodayFeedback(sessionKey, req.getRating()));
     }
 }
