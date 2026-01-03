@@ -16,8 +16,18 @@ const skyToLabel: Record<Sky, string> = {
   SNOW: "눈",
 };
 
+// ✅ 백엔드 "Clear/Clouds/Rain/Snow" -> 프론트 enum "CLEAR/..."
+const normalizeSky = (raw: unknown): Sky => {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "clear") return "CLEAR";
+  if (s === "clouds" || s === "cloud") return "CLOUDS";
+  if (s === "rain") return "RAIN";
+  if (s === "snow") return "SNOW";
+  return "CLOUDS";
+};
+
 const dayLabelOf = (dateISO: string) => {
-  const d = new Date(dateISO);
+  const d = new Date(`${dateISO}T00:00:00`);
   const today = new Date();
   const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const d0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -42,24 +52,24 @@ const buildSignals = (today: WeatherTodayDto) => {
 
 export const weatherAdapter = {
   toWeatherData(today: WeatherTodayDto, weekly?: WeatherWeeklyResponseDto): WeatherData {
+    const todaySky = normalizeSky((today as any).sky);
+
     const weeklyItems: WeeklyForecastItem[] =
-        weekly?.days?.map((d) => ({
-          date: d.date,
-          dayLabel: dayLabelOf(d.date),
-          icon: skyToIcon[d.sky],
-          min: d.minTemperature,
-          max: d.maxTemperature,
-          pop: d.precipitationProbability,
-          sky: d.sky,
-        })) ?? [];
+        weekly?.days?.map((d: any) => {
+          const sky = normalizeSky(d.sky);
+          return {
+            date: d.date,
+            dayLabel: dayLabelOf(d.date),
+            sky,
+            icon: skyToIcon[sky],
+            min: d.minTemperature,
+            max: d.maxTemperature,
+            pop: d.precipitationProbability,
+          };
+        }) ?? [];
 
-    const condition = skyToLabel[today.sky];
+
     const signals = buildSignals(today);
-
-    const description =
-        signals.length > 0
-            ? signals.join(" · ")
-            : "오늘은 무난한 날씨입니다.";
 
     return {
       region: today.region,
@@ -71,13 +81,26 @@ export const weatherAdapter = {
       humidity: today.humidity,
       windSpeed: today.windSpeed,
       precipitationProbability: today.precipitationProbability,
-      sky: today.sky,
+      sky: todaySky,
 
-      condition,
-      description,
+      condition: skyToLabel[todaySky],
+      description: signals.length ? signals.join(" · ") : "오늘은 무난한 날씨입니다.",
       signals,
 
-      weekly: weeklyItems, // ✅ 항상 배열
+      weekly: weeklyItems,
     };
   },
+};
+
+
+export type HistoryEntryUI = {
+  id: string;
+  dateISO: string; // YYYY-MM-DD
+  title: string;
+  weatherTemp: number | null;
+  weatherIcon: React.ReactNode;
+  images: string[];
+
+
+  feedback?: string | null; // 예: "HOT" | "OK" | "COLD" | "UNKNOWN" 또는 서버 메시지
 };
