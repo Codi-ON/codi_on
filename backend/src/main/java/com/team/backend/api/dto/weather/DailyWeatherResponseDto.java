@@ -13,17 +13,17 @@ public class DailyWeatherResponseDto {
     private final String region;
     private final LocalDate date;
 
-    private final double temperature;
-    private final double minTemperature;
-    private final double maxTemperature;
+    private final Double temperature;
+    private final Double minTemperature;
+    private final Double maxTemperature;
 
-    private final double feelsLikeTemperature; // ✅ 체감온도
-    private final int cloudAmount;             // ✅ 구름양(0~100)
+    private final Double feelsLikeTemperature;
+    private final Integer cloudAmount;
 
     private final String sky;
-    private final int precipitationProbability;
-    private final int humidity;
-    private final double windSpeed;
+    private final Integer precipitationProbability;
+    private final Integer humidity;
+    private final Double windSpeed;
 
     public static DailyWeatherResponseDto from(DailyWeather entity) {
         return DailyWeatherResponseDto.builder()

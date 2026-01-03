@@ -1,24 +1,11 @@
-// src/pages/user/TodayPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { SectionHeader, Card, Button, cn } from "../../app/DesignSystem";
 import { WeatherHeroSection } from "../../shared/ui/sections/WeatherHeroSection";
-import {
-    MapPin,
-    RefreshCw,
-    Sparkles,
-    ChevronRight,
-    CheckCircle2,
-    History,
-    ThermometerSun,
-    Activity,
-} from "lucide-react";
+import { MapPin, RefreshCw, Sparkles, ChevronRight, CheckCircle2, History, ThermometerSun, Activity } from "lucide-react";
 
-import OutfitQuickRecoModal, {
-    RecommendationClosetList,
-} from "@/pages/user/_components/OutfitQuickRecoModal";
-
+import OutfitQuickRecoModal, { RecommendationClosetList } from "@/pages/user/_components/OutfitQuickRecoModal";
 import { useWeather } from "@/lib/hooks/useWeather";
 import { normalizeWeeklyTo7, pickTomorrow, lastWeekly, WeatherData } from "@/shared/domain/weather";
 
@@ -26,6 +13,8 @@ import { fetchFavorites } from "@/state/favorites/favoritesSlice";
 import type { RootState, AppDispatch } from "@/app/store";
 import { getUserMessage } from "@/lib/errors";
 import { closetRepo } from "@/lib/repo/closetRepo";
+
+import { fmtTemp1 } from "@/shared/utils/format";
 
 // ---- TodayPage에서 필요한 최소 필드만 ----
 type ClothesItemDto = {
@@ -54,13 +43,13 @@ const TodayPage: React.FC = () => {
     // ---------------------------
     // Weather
     // ---------------------------
-    const { data: weather, loading: weatherLoading, error: weatherError, refresh: refreshWeather } =
-        useWeather(region);
+    const { data: weather, loading: weatherLoading, error: weatherError, refresh: refreshWeather } = useWeather(region);
 
     const [openReco, setOpenReco] = useState(false);
 
     const weatherVm: WeatherData | null = useMemo(() => {
         if (!weather) return null;
+        // 도메인에서 7일 정규화는 유지(다른 곳에서 쓸 수 있음)
         const weekly7 = normalizeWeeklyTo7(weather);
         return { ...weather, weekly: weekly7 };
     }, [weather]);
@@ -69,10 +58,23 @@ const TodayPage: React.FC = () => {
     useMemo(() => pickTomorrow(weekly7), [weekly7]);
     useMemo(() => lastWeekly(weekly7), [weekly7]);
 
+    // ✅ 여기서 터졌던 포인트: weatherVm null / maxTemp null
     const contextChips = useMemo(() => {
         if (!weatherVm) return ["날씨 로딩 중", "—", "—"];
-        const diff = weatherVm.maxTemp - weatherVm.minTemp;
-        return [`${weatherVm.temp}°C`, `일교차 ${diff}°C`, `체감 ${weatherVm.feelsLike}°C`];
+
+        const t = typeof weatherVm.temp === "number" ? weatherVm.temp : null;
+        const fl = typeof weatherVm.feelsLike === "number" ? weatherVm.feelsLike : null;
+
+        const diff =
+            typeof weatherVm.maxTemp === "number" && typeof weatherVm.minTemp === "number"
+                ? weatherVm.maxTemp - weatherVm.minTemp
+                : null;
+
+        return [
+            t == null ? "—" : `${fmtTemp1(t)}C`.replace("°", "°"), // 기존 뉘앙스 유지
+            diff == null ? "일교차 —" : `일교차 ${Math.round(diff)}°C`,
+            fl == null ? "체감 —" : `체감 ${fmtTemp1(fl)}C`.replace("°", "°"),
+        ];
     }, [weatherVm]);
 
     // ---------------------------
@@ -178,6 +180,7 @@ const TodayPage: React.FC = () => {
             {weatherLoading && <div className="text-sm font-bold text-slate-400">날씨 불러오는 중...</div>}
             {weatherError && <div className="text-sm font-bold text-red-500">{weatherError}</div>}
 
+            {/* ✅ weatherVm 있을 때만 렌더 */}
             {weatherVm && <WeatherHeroSection data={weatherVm} />}
 
             <div className="grid lg:grid-cols-12 gap-10">
@@ -188,27 +191,22 @@ const TodayPage: React.FC = () => {
                                 <div className="p-8 bg-navy-900 text-white rounded-[40px] shadow-2xl shadow-navy-900/20 relative overflow-hidden">
                                     <Sparkles className="absolute -top-4 -right-4 w-24 h-24 text-white/5" />
                                     <div className="flex items-center gap-2 mb-4">
-                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">
-                                            AI
-                                        </div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Personal Stylist Insight
-                    </span>
+                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">AI</div>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personal Stylist Insight</span>
                                     </div>
                                     <p className="text-xl font-bold leading-snug">
-                                        오늘 {displayName}님은 실내 활동 위주이므로, 기온차를 대비한 가벼운 니트와 통기성이 좋은 슬랙스를
-                                        매치해보세요.
+                                        오늘 {displayName}님은 실내 활동 위주이므로, 기온차를 대비한 가벼운 니트와 통기성이 좋은 슬랙스를 매치해보세요.
                                     </p>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
-                                        오늘의 주요 추천 사유
-                                    </h4>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">오늘의 주요 추천 사유</h4>
                                     <div className="flex flex-wrap gap-2">
                                         <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100">
                                             <ThermometerSun size={14} className="text-orange-500" />
-                                            {weatherVm ? `일교차 ${weatherVm.maxTemp - weatherVm.minTemp}°C` : "일교차 —"}
+                                            {weatherVm && typeof weatherVm.maxTemp === "number" && typeof weatherVm.minTemp === "number"
+                                                ? `일교차 ${Math.round(weatherVm.maxTemp - weatherVm.minTemp)}°C`
+                                                : "일교차 —"}
                                         </div>
                                         <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100">
                                             <Activity size={14} className="text-navy-900" /> 낮은 활동량 선호
@@ -237,12 +235,7 @@ const TodayPage: React.FC = () => {
                                     ))}
                                 </ul>
 
-                                <Button
-                                    variant="primary"
-                                    className="w-full h-14"
-                                    onClick={() => setOpenReco(true)}
-                                    disabled={clothesLoading}
-                                >
+                                <Button variant="primary" className="w-full h-14" onClick={() => setOpenReco(true)} disabled={clothesLoading}>
                                     전체 코디 리스트 확인
                                 </Button>
 
@@ -267,9 +260,7 @@ const TodayPage: React.FC = () => {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="text-xs font-black text-navy-900 truncate">어반 미니멀 룩</div>
-                                        <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                                            2024.05.{15 - i} · 18°C ☀️
-                                        </div>
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">2024.05.{15 - i} · 18°C ☀️</div>
                                     </div>
                                     <ChevronRight className="text-slate-300 group-hover:text-navy-900 transition-colors" size={16} />
                                 </div>

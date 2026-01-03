@@ -1,144 +1,59 @@
 // src/pages/user/RecommendationPage.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, Button, Badge, Stepper, cn } from "@/app/DesignSystem";
 import { ChevronLeft, ChevronRight, CheckCircle, Calendar as CalendarIcon } from "lucide-react";
 
 import OutfitFeedbackCard from "@/pages/user/_components/OutfitFeedbackCard";
-import { recoApi } from "@/lib/api/recoApi";
-import { outfitRepo } from "@/lib/repo/outfitRepo";
 import type { TodayOutfitDto } from "@/lib/api/outfitApi";
-import { HttpError } from "@/lib/http"; // 너가 준 http.ts에 있는 HttpError
 
-export type ClosetItem = {
-    /** UI 식별용 */
-    id: string | number;
-    /** 저장/찜 키로 쓰는 값 (서버 계약상 number) */
-    clothingId: number;
-
-    label: "상의" | "하의" | "아우터";
-    name: string;
-    brand?: string;
-    imageUrl?: string;
-    inCloset?: boolean;
-};
-
-export type RecommendationClosetList = {
-    top: ClosetItem[];
-    bottom: ClosetItem[];
-    outer: ClosetItem[];
-};
-
-type LocationState = {
-    recoList?: RecommendationClosetList;
-    selections?: Record<string, unknown>;
-};
-
-type RecoItemDto = {
-    id?: number;
-    clothingId: number;
-    name: string;
-    brand?: string;
-    imageUrl?: string | null;
-    inCloset?: boolean;
-};
-
-type RecoResponseDto = {
-    top: RecoItemDto[];
-    bottom: RecoItemDto[];
-    outer: RecoItemDto[];
-};
+import { useAppDispatch, useAppSelector } from "@/state/hooks/hooks";
+import {
+    fetchRecommendation,
+    saveTodayOutfitThunk,
+    setIdx,
+    setSelectedOutfitSnapshot,
+} from "@/state/outfitReco/outfitRecoSlice";
 
 const steps = ["날씨 분석", "활동 체크", "스타일 생성", "최종 제안"];
 
-function toErrorMessage(e: unknown): string {
-    if (e instanceof HttpError) {
-        // 서버 ApiResponse 실패면 message가 여기로 들어옴
-        return e.message || "요청 중 오류가 발생했습니다.";
-    }
-    if (e instanceof Error) return e.message || "요청 중 오류가 발생했습니다.";
-    return "요청 중 오류가 발생했습니다.";
-}
+type CalendarSelectedOutfit = {
+    top?: { clothingId: number; name: string; brand?: string; imageUrl?: string; inCloset?: boolean };
+    bottom?: { clothingId: number; name: string; brand?: string; imageUrl?: string; inCloset?: boolean };
+    outer?: { clothingId: number; name: string; brand?: string; imageUrl?: string; inCloset?: boolean };
+};
 
 const RecommendationPage: React.FC = () => {
     const navigate = useNavigate();
-    const { state } = useLocation() as { state: LocationState };
-    const payload = state?.selections ?? null;
+    const dispatch = useAppDispatch();
 
-    const [recoList, setRecoList] = useState<RecommendationClosetList | null>(state?.recoList ?? null);
-    const [loading, setLoading] = useState(false);
-    const [loadError, setLoadError] = useState<string | null>(null);
+    const {
+        checklist,
+        recoList,
+        topIdx,
+        bottomIdx,
+        outerIdx,
+        loading,
+        error,
+        saving,
+        saveError,
+        recoFeedbackScore,
+    } = useAppSelector((s) => s.outfitReco);
 
-    const [topIdx, setTopIdx] = useState(0);
-    const [bottomIdx, setBottomIdx] = useState(0);
-    const [outerIdx, setOuterIdx] = useState(0);
-
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-
-    const safeArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-
-    const mapDtoToList = (dto: RecoResponseDto): RecommendationClosetList => {
-        const toClosetItem = (x: RecoItemDto, label: ClosetItem["label"]): ClosetItem => ({
-            id: x.clothingId ?? x.id ?? `${label}-${Math.random()}`,
-            clothingId: x.clothingId,
-            label,
-            name: x.name,
-            brand: x.brand,
-            imageUrl: x.imageUrl ?? undefined,
-            inCloset: x.inCloset ?? true,
-        });
-
-        const top = safeArray<RecoItemDto>(dto.top)
-            .filter((x) => typeof x?.clothingId === "number")
-            .map((x) => toClosetItem(x, "상의"));
-
-        const bottom = safeArray<RecoItemDto>(dto.bottom)
-            .filter((x) => typeof x?.clothingId === "number")
-            .map((x) => toClosetItem(x, "하의"));
-
-        const outer = safeArray<RecoItemDto>(dto.outer)
-            .filter((x) => typeof x?.clothingId === "number")
-            .map((x) => toClosetItem(x, "아우터"));
-
-        return { top, bottom, outer };
-    };
-
-    // recoList가 없을 때만 fetch
+    // ✅ checklist 없으면 이 페이지 들어오면 안됨
     useEffect(() => {
+        if (!checklist) navigate("/checklist", { replace: true });
+    }, [checklist, navigate]);
+
+    // ✅ recoList 없을 때만 fetch
+    useEffect(() => {
+        if (!checklist) return;
         if (recoList) return;
+        if (loading) return;
+        dispatch(fetchRecommendation());
+    }, [dispatch, checklist, recoList, loading]);
 
-        // payload가 없더라도 동작하게: 현재 정책(서울 고정)으로 fallback
-        const fallbackPayload = payload ?? { region: "Seoul", lat: 37.5665, lon: 126.978, limit: 50 };
-
-        (async () => {
-            try {
-                setLoading(true);
-                setLoadError(null);
-
-                const dto = (await recoApi.getRecommendation(fallbackPayload as any)) as RecoResponseDto;
-                const mapped = mapDtoToList(dto);
-
-                setRecoList(mapped);
-                setTopIdx(0);
-                setBottomIdx(0);
-                setOuterIdx(0);
-            } catch (e) {
-                setLoadError(toErrorMessage(e));
-            } finally {
-                setLoading(false);
-            }
-        })();
-    }, [recoList, payload]);
-
-    // 인덱스 보정
-    useEffect(() => {
-        if (!recoList) return;
-        if (recoList.top.length && topIdx >= recoList.top.length) setTopIdx(0);
-        if (recoList.bottom.length && bottomIdx >= recoList.bottom.length) setBottomIdx(0);
-        if (recoList.outer.length && outerIdx >= recoList.outer.length) setOuterIdx(0);
-    }, [recoList, topIdx, bottomIdx, outerIdx]);
-
+    // ✅ 선택 조합
     const selectedOutfit = useMemo(() => {
         if (!recoList) return null;
         if (!recoList.top.length || !recoList.bottom.length) return null;
@@ -150,64 +65,63 @@ const RecommendationPage: React.FC = () => {
         };
     }, [recoList, topIdx, bottomIdx, outerIdx]);
 
+    const selectedForCalendar: CalendarSelectedOutfit | null = useMemo(() => {
+        if (!selectedOutfit) return null;
+        const to = (x: any) =>
+            x
+                ? {
+                    clothingId: x.clothingId,
+                    name: x.name,
+                    brand: x.brand,
+                    imageUrl: x.imageUrl,
+                    inCloset: x.inCloset,
+                }
+                : undefined;
+
+        return {
+            top: to(selectedOutfit.top),
+            bottom: to(selectedOutfit.bottom),
+            outer: to(selectedOutfit.outer),
+        };
+    }, [selectedOutfit]);
+
     const isOuterOptionalEmpty = !!recoList && recoList.outer.length === 0;
 
     const canSave = useMemo(() => {
         if (!selectedOutfit) return false;
-        const topId = selectedOutfit.top?.clothingId;
-        const bottomId = selectedOutfit.bottom?.clothingId;
-        return typeof topId === "number" && typeof bottomId === "number";
+        return typeof selectedOutfit.top?.clothingId === "number" && typeof selectedOutfit.bottom?.clothingId === "number";
     }, [selectedOutfit]);
 
-    const goCalendar = (recentlySaved?: TodayOutfitDto) => {
-        const date = recentlySaved?.date;
-        const url = date ? `/calendar?date=${encodeURIComponent(date)}` : "/calendar";
+    const saveTodayOutfit = useCallback(async () => {
+        if (!canSave || !selectedForCalendar) return;
 
-        navigate(url, {
-            state: {
-                // ✅ ?date는 선택 날짜만 제어. recentlySaved는 state로 분리.
-                recentlySaved: recentlySaved ?? null,
-                selectedOutfit: selectedOutfit ?? null,
-            },
-        });
-    };
-
-    const saveTodayOutfit = async (): Promise<void> => {
         try {
-            setIsSaving(true);
-            setSaveError(null);
+            // ✅ 저장 직전에 “캘린더/히스토리로 넘길 스냅샷”을 확정
+            dispatch(setSelectedOutfitSnapshot());
 
-            if (!selectedOutfit) {
-                setSaveError("선택된 조합이 없습니다.");
-                return;
-            }
+            const today = await dispatch(saveTodayOutfitThunk()).unwrap();
 
-            const topId = selectedOutfit.top?.clothingId;
-            const bottomId = selectedOutfit.bottom?.clothingId;
-            const outerId = selectedOutfit.outer?.clothingId;
+            // ✅ 백엔드가 feedbackScore를 즉시 내려주지 않는 경우를 대비 (UI 즉시 반영)
+            const patchedToday = ({
+                ...today,
+                feedbackScore: (today as any).feedbackScore ?? recoFeedbackScore,
+            } as unknown) as TodayOutfitDto;
 
-            if (typeof topId !== "number" || typeof bottomId !== "number") {
-                setSaveError("저장할 아이템이 없습니다. (상의/하의는 필수예요)");
-                return;
-            }
+            const date = patchedToday?.date;
+            const url = date ? `/calendar?date=${encodeURIComponent(String(date).slice(0, 10))}` : "/calendar";
 
-            const clothingIds = [topId, bottomId, outerId].filter((v): v is number => typeof v === "number");
-            if (clothingIds.length < 1) {
-                setSaveError("items는 1개 이상 필요합니다.");
-                return;
-            }
-
-            // ✅ 서버 계약: { clothingIds: number[] }
-            const today = await outfitRepo.saveTodayOutfit(clothingIds);
-
-            goCalendar(today);
-        } catch (e) {
-            setSaveError(toErrorMessage(e));
-        } finally {
-            setIsSaving(false);
+            navigate(url, {
+                state: {
+                    recentlySaved: patchedToday,
+                    selectedOutfit: selectedForCalendar,
+                },
+            });
+        } catch {
+            // saveError는 slice에서 관리됨
         }
-    };
+    }, [dispatch, navigate, canSave, selectedForCalendar, recoFeedbackScore]);
 
+    // --- UI states ---
     if (loading) {
         return (
             <div className="space-y-10">
@@ -220,13 +134,13 @@ const RecommendationPage: React.FC = () => {
         );
     }
 
-    if (loadError) {
+    if (error) {
         return (
             <div className="space-y-10">
                 <Stepper steps={steps} currentStep={3} />
                 <Card className="p-14 text-center border-2 border-slate-100">
                     <div className="text-2xl font-black text-navy-900">추천 불러오기 실패</div>
-                    <div className="mt-2 text-sm text-slate-400 font-medium">{loadError}</div>
+                    <div className="mt-2 text-sm text-slate-400 font-medium">{error}</div>
                     <div className="mt-8 flex items-center justify-center gap-3">
                         <Button onClick={() => navigate("/checklist")} className="h-11 px-8">
                             체크리스트로 돌아가기
@@ -234,8 +148,7 @@ const RecommendationPage: React.FC = () => {
                         <Button
                             variant="outline"
                             onClick={() => {
-                                setRecoList(null);
-                                setLoadError(null);
+                                dispatch(fetchRecommendation());
                             }}
                             className="h-11 px-8"
                         >
@@ -253,9 +166,7 @@ const RecommendationPage: React.FC = () => {
                 <Stepper steps={steps} currentStep={3} />
                 <Card className="p-14 text-center border-2 border-slate-100">
                     <div className="text-2xl font-black text-navy-900">추천 후보 데이터가 없습니다</div>
-                    <div className="mt-2 text-sm text-slate-400 font-medium">
-                        체크리스트 결과가 전달되지 않았어요. 다시 진행해 주세요.
-                    </div>
+                    <div className="mt-2 text-sm text-slate-400 font-medium">다시 진행해 주세요.</div>
                     <div className="mt-8">
                         <Button onClick={() => navigate("/checklist")} className="h-11 px-8">
                             체크리스트로 돌아가기
@@ -292,7 +203,7 @@ const RecommendationPage: React.FC = () => {
                          isOptionalEmpty,
                      }: {
         title: "상의" | "하의" | "아우터";
-        list: ClosetItem[];
+        list: any[];
         index: number;
         onPrev: () => void;
         onNext: () => void;
@@ -368,19 +279,14 @@ const RecommendationPage: React.FC = () => {
                                         <span className="text-sm font-black text-slate-400">후보 교체</span>
                                     </>
                                 ) : (
-                                    <span className="text-sm font-black text-slate-400">
-                    {isOptionalEmpty ? "아우터는 옵션이라 없어도 저장돼요" : "조건을 완화해 주세요"}
-                  </span>
+                                    <span className="text-sm font-black text-slate-400">{isOptionalEmpty ? "아우터는 옵션이라 없어도 저장돼요" : "조건을 완화해 주세요"}</span>
                                 )}
                             </div>
 
                             <div className="mt-3 flex items-center gap-2">
                                 {hasItems
-                                    ? list.map((_, i) => (
-                                        <span
-                                            key={i}
-                                            className={cn("w-2.5 h-2.5 rounded-full", i === index ? "bg-orange-500" : "bg-slate-200")}
-                                        />
+                                    ? list.map((_: any, i: number) => (
+                                        <span key={i} className={cn("w-2.5 h-2.5 rounded-full", i === index ? "bg-orange-500" : "bg-slate-200")} />
                                     ))
                                     : Array.from({ length: 3 }).map((_, i) => (
                                         <span key={i} className="w-2.5 h-2.5 rounded-full bg-slate-200 opacity-40" />
@@ -416,15 +322,15 @@ const RecommendationPage: React.FC = () => {
                                 title="상의"
                                 list={recoList.top}
                                 index={topIdx}
-                                onPrev={() => setTopIdx((p) => (p - 1 + recoList.top.length) % recoList.top.length)}
-                                onNext={() => setTopIdx((p) => (p + 1) % recoList.top.length)}
+                                onPrev={() => dispatch(setIdx({ topIdx: (topIdx - 1 + recoList.top.length) % recoList.top.length }))}
+                                onNext={() => dispatch(setIdx({ topIdx: (topIdx + 1) % recoList.top.length }))}
                             />
                             <Chooser
                                 title="하의"
                                 list={recoList.bottom}
                                 index={bottomIdx}
-                                onPrev={() => setBottomIdx((p) => (p - 1 + recoList.bottom.length) % recoList.bottom.length)}
-                                onNext={() => setBottomIdx((p) => (p + 1) % recoList.bottom.length)}
+                                onPrev={() => dispatch(setIdx({ bottomIdx: (bottomIdx - 1 + recoList.bottom.length) % recoList.bottom.length }))}
+                                onNext={() => dispatch(setIdx({ bottomIdx: (bottomIdx + 1) % recoList.bottom.length }))}
                             />
                             <Chooser
                                 title="아우터"
@@ -433,11 +339,11 @@ const RecommendationPage: React.FC = () => {
                                 isOptionalEmpty={isOuterOptionalEmpty}
                                 onPrev={() => {
                                     if (recoList.outer.length === 0) return;
-                                    setOuterIdx((p) => (p - 1 + recoList.outer.length) % recoList.outer.length);
+                                    dispatch(setIdx({ outerIdx: (outerIdx - 1 + recoList.outer.length) % recoList.outer.length }));
                                 }}
                                 onNext={() => {
                                     if (recoList.outer.length === 0) return;
-                                    setOuterIdx((p) => (p + 1) % recoList.outer.length);
+                                    dispatch(setIdx({ outerIdx: (outerIdx + 1) % recoList.outer.length }));
                                 }}
                             />
                         </div>
@@ -456,10 +362,10 @@ const RecommendationPage: React.FC = () => {
                                     size="lg"
                                     className="h-11 px-5 text-sm font-black whitespace-nowrap shadow-2xl shadow-orange-500/20"
                                     onClick={saveTodayOutfit}
-                                    isLoading={isSaving}
-                                    disabled={!canSave || isSaving}
+                                    isLoading={saving}
+                                    disabled={!canSave || saving}
                                 >
-                                    {isSaving ? "저장 중..." : "캘린더에 저장하기"}
+                                    {saving ? "저장 중..." : "캘린더에 저장하기"}
                                     <CalendarIcon className="ml-2" size={18} />
                                 </Button>
                             </div>
@@ -504,14 +410,12 @@ const RecommendationPage: React.FC = () => {
                                 ))}
                             </div>
 
-                            {/* 네 말대로: 게스트 경고는 헤더로 뺄 거면 이 블록만 삭제하면 됨 */}
                             <div className="mt-6 rounded-[12px] border border-slate-100 bg-slate-50 px-5 py-4">
-                                <div className="text-sm font-bold text-slate-600">
-                                    저장 후 캘린더로 이동합니다. (게스트 데이터는 삭제될 수 있어요)
-                                </div>
+                                <div className="text-sm font-bold text-slate-600">저장 후 캘린더로 이동합니다.</div>
                             </div>
                         </Card>
 
+                        {/* ✅ 추천에 대한 피드백(좋아요/모르겠어요/별로예요) */}
                         <OutfitFeedbackCard />
                     </div>
                 </div>

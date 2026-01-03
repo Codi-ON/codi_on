@@ -27,6 +27,7 @@ public class OpenWeatherDailyAggregator {
         // KST 기준 날짜로 그룹핑
         Map<LocalDate, List<OpenWeatherForecastDto.ForecastItem>> byDate =
                 forecast.getList().stream()
+                        .filter(Objects::nonNull)
                         .collect(Collectors.groupingBy(
                                 item -> Instant.ofEpochSecond(item.getDt())
                                         .atZone(KST_ZONE)
@@ -42,39 +43,67 @@ public class OpenWeatherDailyAggregator {
     }
 
     private DailyWeather aggregateDay(String region, LocalDate date, List<OpenWeatherForecastDto.ForecastItem> items) {
-        double avgTemp = items.stream()
-                .map(OpenWeatherForecastDto.ForecastItem::getMain)
-                .filter(Objects::nonNull)
-                .mapToDouble(OpenWeatherForecastDto.Main::getTemp)
-                .average()
-                .orElse(0.0);
+        if (items == null || items.isEmpty()) {
+            return DailyWeather.builder()
+                    .region(region)
+                    .date(date)
+                    .temperature(0.0)
+                    .minTemperature(0.0)
+                    .maxTemperature(0.0)
+                    .feelsLikeTemperature(0.0)
+                    .cloudAmount(0)
+                    .sky("UNKNOWN")
+                    .precipitationProbability(0)
+                    .humidity(0)
+                    .windSpeed(0.0)
+                    .build();
+        }
 
-        double minTemp = items.stream()
+        // ---------- 1) 후보 값 수집 ----------
+        List<Double> tempCandidates = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
                 .filter(Objects::nonNull)
-                .mapToDouble(OpenWeatherForecastDto.Main::getTempMin)
-                .min()
-                .orElse(avgTemp);
+                .map(OpenWeatherForecastDto.Main::getTemp)
+                .filter(Objects::nonNull)
+                .toList();
 
-        double maxTemp = items.stream()
+        List<Double> tempMinCandidates = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
                 .filter(Objects::nonNull)
-                .mapToDouble(OpenWeatherForecastDto.Main::getTempMax)
-                .max()
-                .orElse(avgTemp);
+                .map(OpenWeatherForecastDto.Main::getTempMin)
+                .filter(Objects::nonNull)
+                .toList();
 
-        double feelsLikeAvg = items.stream()
+        List<Double> tempMaxCandidates = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getMain)
                 .filter(Objects::nonNull)
-                .mapToDouble(OpenWeatherForecastDto.Main::getFeelsLike)
-                .average()
-                .orElse(avgTemp);
+                .map(OpenWeatherForecastDto.Main::getTempMax)
+                .filter(Objects::nonNull)
+                .toList();
+
+        List<Double> feelsLikeCandidates = items.stream()
+                .map(OpenWeatherForecastDto.ForecastItem::getMain)
+                .filter(Objects::nonNull)
+                .map(OpenWeatherForecastDto.Main::getFeelsLike)
+                .filter(Objects::nonNull)
+                .toList();
+
+        // ---------- 2) 집계 ----------
+        double avgTemp = averageOr(tempCandidates, 0.0);
+
+        // ✅ 핵심: min/max fallback을 avgTemp가 아니라 temp 기반으로
+        double minTemp = minOr(tempMinCandidates, minOr(tempCandidates, avgTemp));
+        double maxTemp = maxOr(tempMaxCandidates, maxOr(tempCandidates, avgTemp));
+
+        double feelsLikeAvg = averageOr(feelsLikeCandidates, avgTemp);
 
         int cloudAvg = (int) Math.round(
                 items.stream()
                         .map(OpenWeatherForecastDto.ForecastItem::getClouds)
                         .filter(Objects::nonNull)
-                        .mapToInt(OpenWeatherForecastDto.Clouds::getAll)
+                        .map(OpenWeatherForecastDto.Clouds::getAll)
+                        .filter(Objects::nonNull)
+                        .mapToInt(Integer::intValue)
                         .average()
                         .orElse(0.0)
         );
@@ -83,7 +112,9 @@ public class OpenWeatherDailyAggregator {
                 items.stream()
                         .map(OpenWeatherForecastDto.ForecastItem::getMain)
                         .filter(Objects::nonNull)
-                        .mapToInt(OpenWeatherForecastDto.Main::getHumidity)
+                        .map(OpenWeatherForecastDto.Main::getHumidity)
+                        .filter(Objects::nonNull)
+                        .mapToInt(Integer::intValue)
                         .average()
                         .orElse(0.0)
         );
@@ -91,13 +122,17 @@ public class OpenWeatherDailyAggregator {
         double windSpeed = items.stream()
                 .map(OpenWeatherForecastDto.ForecastItem::getWind)
                 .filter(Objects::nonNull)
-                .mapToDouble(OpenWeatherForecastDto.Wind::getSpeed)
+                .map(OpenWeatherForecastDto.Wind::getSpeed)
+                .filter(Objects::nonNull)
+                .mapToDouble(Double::doubleValue)
                 .average()
                 .orElse(0.0);
 
         int precipitationProbability = (int) Math.round(
                 items.stream()
-                        .mapToDouble(OpenWeatherForecastDto.ForecastItem::getPop)
+                        .map(OpenWeatherForecastDto.ForecastItem::getPop)
+                        .filter(Objects::nonNull)
+                        .mapToDouble(Double::doubleValue)
                         .max()
                         .orElse(0.0) * 100
         );
@@ -114,7 +149,7 @@ public class OpenWeatherDailyAggregator {
                 .entrySet().stream()
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
-                .orElse("UNKNOWN"); // sky NOT NULL 보호
+                .orElse("UNKNOWN");
 
         return DailyWeather.builder()
                 .region(region)
@@ -129,5 +164,21 @@ public class OpenWeatherDailyAggregator {
                 .humidity(humidity)
                 .windSpeed(windSpeed)
                 .build();
+    }
+
+    // ---------- helpers ----------
+    private double averageOr(List<Double> values, double fallback) {
+        if (values == null || values.isEmpty()) return fallback;
+        return values.stream().mapToDouble(Double::doubleValue).average().orElse(fallback);
+    }
+
+    private double minOr(List<Double> values, double fallback) {
+        if (values == null || values.isEmpty()) return fallback;
+        return values.stream().mapToDouble(Double::doubleValue).min().orElse(fallback);
+    }
+
+    private double maxOr(List<Double> values, double fallback) {
+        if (values == null || values.isEmpty()) return fallback;
+        return values.stream().mapToDouble(Double::doubleValue).max().orElse(fallback);
     }
 }

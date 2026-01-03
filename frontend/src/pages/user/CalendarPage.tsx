@@ -7,6 +7,10 @@ import { ChevronLeft, ChevronRight, Filter, Download, X } from "lucide-react";
 import { outfitApi, type TodayOutfitDto } from "@/lib/api/outfitApi";
 import { outfitAdapter, type HistoryEntryUI, type SelectedOutfit } from "@/lib/adapters/outfitAdapter";
 
+import { useAppDispatch, useAppSelector } from "@/state/hooks/hooks";
+import {clearLastSaved} from "@/state/outfitReco/outfitRecoSlice.ts";
+
+/** ---------- utils ---------- */
 function toISO(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -36,6 +40,7 @@ function buildCalendarGrid(base: Date) {
   return cells;
 }
 
+/** ---------- Drawer ---------- */
 function Drawer({
                   open,
                   entry,
@@ -89,13 +94,21 @@ function Drawer({
                 <div className="p-6 border-b border-slate-100">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-xs font-black text-slate-400 tracking-widest">{entry.dateISO}</div>
-                      <div className="mt-1 text-2xl font-black text-[#0F172A] truncate">{entry.title}</div>
+                      <div className="text-xs font-black text-slate-400 tracking-widest">
+                        {entry.dateISO}
+                      </div>
+                      <div className="mt-1 text-2xl font-black text-[#0F172A] truncate">
+                        {entry.title}
+                      </div>
 
                       <div className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-600">
                         <span className="text-lg">{entry.weatherIcon}</span>
                         <span>{entry.weatherTemp == null ? "-" : `${entry.weatherTemp}°C`}</span>
-                        {entry.feedback ? <Badge variant="orange">피드백</Badge> : <Badge variant="outline">피드백 없음</Badge>}
+                        {entry.feedback ? (
+                            <Badge variant="orange">피드백</Badge>
+                        ) : (
+                            <Badge variant="outline">피드백 없음</Badge>
+                        )}
                       </div>
                     </div>
 
@@ -113,7 +126,7 @@ function Drawer({
                 {/* body */}
                 <div className="flex-1 overflow-auto p-6 space-y-5">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-black text-slate-500">그날 피드백</div>
+                    <div className="text-xs font-black text-slate-500">추천 피드백</div>
                     <div className="mt-2 text-sm font-bold text-[#0F172A]">
                       {entry.feedback ?? "아직 피드백 데이터가 없습니다."}
                     </div>
@@ -155,11 +168,7 @@ function Drawer({
 
 const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-type CalendarLocationState = {
-  recentlySaved?: TodayOutfitDto | null;
-  selectedOutfit?: SelectedOutfit | null;
-};
-
+/** ---------- DayCell ---------- */
 type DayCellProps = {
   date: Date;
   baseMonth: number;
@@ -180,7 +189,7 @@ const DayCell = React.memo(function DayCell({ date, baseMonth, entry, onSelect }
       isCurrentMonth && dow !== 0 && dow !== 6 && "text-slate-600"
   );
 
-  // ✅ “신호만”: dot + (옵션)날씨 아이콘 + (옵션)피드백 신호
+  // “신호만”: 기록 dot + 날씨 + 피드백 유무 dot
   const Signal = () => (
       <div className="mt-2 flex items-center gap-2">
         <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" aria-label="기록 있음" />
@@ -205,7 +214,7 @@ const DayCell = React.memo(function DayCell({ date, baseMonth, entry, onSelect }
         <div className="flex items-center justify-between">
           <div className={headTextClass}>{date.getDate()}</div>
 
-          {/* 기록 있으면 우측 상단에도 dot 하나 */}
+          {/* 기록 있으면 우측 상단 dot */}
           {entry ? (
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" aria-label="기록 있음" />
           ) : (
@@ -233,13 +242,28 @@ const DayCell = React.memo(function DayCell({ date, baseMonth, entry, onSelect }
   );
 });
 
+/** ---------- Page ---------- */
+type CalendarLocationState = {
+  recentlySaved?: TodayOutfitDto | null;
+  selectedOutfit?: SelectedOutfit | null;
+};
+
 export default function CalendarPage() {
+  const dispatch = useAppDispatch();
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get("date");
 
+  // (옵션) 구버전 호환: navigate state가 들어오면 우선
   const { state } = useLocation() as { state?: CalendarLocationState };
-  const recentlySaved = state?.recentlySaved ?? null;
-  const selectedOutfit = state?.selectedOutfit ?? null;
+
+  // Redux: 저장 직후 스냅샷
+  const lastSaved = useAppSelector((s) => s.outfitReco.lastSavedTodayOutfit);
+  const snapshot = useAppSelector((s) => s.outfitReco.selectedOutfitSnapshot);
+
+  // 우선순위: location.state > redux
+  const recentlySaved: TodayOutfitDto | null = state?.recentlySaved ?? lastSaved ?? null;
+  const selectedOutfit: SelectedOutfit | null =
+      (state?.selectedOutfit ?? (snapshot as any) ?? null) as SelectedOutfit | null;
 
   const [base, setBase] = useState(() => {
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -271,7 +295,7 @@ export default function CalendarPage() {
     setDrawerOpen(false);
   }, []);
 
-  // ✅ 월 데이터 로드 (DTO -> UI는 adapter에서만)
+  // ✅ 월 데이터 로드 + recentlySaved merge(저장 직후 피드백/이미지 즉시 반영)
   useEffect(() => {
     let mounted = true;
 
@@ -283,10 +307,16 @@ export default function CalendarPage() {
         const monthly = await outfitApi.getMonthly(year, month);
         const map = outfitAdapter.monthlyToMap(monthly);
 
-        // ✅ recentlySaved는 “?date와 무관하게” 항상 노출 가능하도록 map에 merge
+        // ✅ 핵심: recentlySaved + selectedOutfit을 monthly 결과에 덮어쓰기 merge
         const merged = outfitAdapter.mergeRecentlySaved(map, recentlySaved, selectedOutfit);
 
         if (mounted) setHistoryMap(merged);
+
+        // ✅ “저장 직후 한번 보여주고 끝” 전략이면 초기화
+        // - dateParam이 있는 캘린더 진입(저장 후 이동) 시점에만 지우는게 안전
+        if (recentlySaved?.date && dateParam) {
+          dispatch(clearLastSaved());
+        }
       } catch (e: any) {
         if (mounted) setError(e?.message ?? "월 히스토리를 불러오지 못했습니다.");
       } finally {
@@ -297,9 +327,9 @@ export default function CalendarPage() {
     return () => {
       mounted = false;
     };
-  }, [year, month, recentlySaved, selectedOutfit]);
+  }, [year, month, recentlySaved, selectedOutfit, dispatch, dateParam]);
 
-  // 월 이동 시 열린 패널은 닫고, 선택은 유지(원하면 null로 바꾸면 됨)
+  // 월 이동 시 열린 패널 닫기
   useEffect(() => {
     setDrawerOpen(false);
   }, [year, month]);

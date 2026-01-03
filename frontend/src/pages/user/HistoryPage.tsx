@@ -1,40 +1,27 @@
-import React, {useMemo, useState} from "react";
-import {useLocation, useNavigate, useSearchParams} from "react-router-dom";
-import {Card, Button, Badge, cn} from "@/app/DesignSystem";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Card, Button, Badge, cn } from "@/app/DesignSystem";
+import { Calendar as CalendarIcon, List, ArrowRight, Thermometer, Cloud, Sparkles, Shirt } from "lucide-react";
+
+import { outfitApi } from "@/lib/api/outfitApi";
+import { outfitAdapter, type HistoryEntryUI } from "@/lib/adapters/outfitAdapter";
+
+// ✅ redux
+import { useAppDispatch, useAppSelector } from "@/state/hooks/hooks";
 import {
-    Calendar as CalendarIcon,
-    List,
-    ArrowRight,
-    Thermometer,
-    Cloud,
-    Sparkles,
-    Shirt,
-    History as HistoryIcon,
-} from "lucide-react";
-import {MOCK_HISTORY} from "@/shared/ui/mock";
-
-type HistoryEntryUI = {
-    id: string;
-    dateISO: string; // YYYY-MM-DD
-    title: string;
-    weatherTemp: number;
-    weatherIcon: React.ReactNode;
-    images: string[];
-};
-
-function weatherIconFromCondition(cond?: string) {
-    const c = (cond ?? "").toLowerCase();
-    if (c.includes("rain") || c.includes("비")) return "🌧️";
-    if (c.includes("snow") || c.includes("눈")) return "❄️";
-    if (c.includes("cloud") || c.includes("흐림") || c.includes("구름")) return "☁️";
-    if (c.includes("sun") || c.includes("맑")) return "☀️";
-    return "🌤️";
-}
+    selectLastSavedTodayOutfit,
+    selectSelectedOutfitSnapshot,
+    clearLastSaved,
+} from "@/state/outfitReco/outfitRecoSlice";
 
 function formatKoreanDate(iso: string) {
     const [y, m, d] = iso.split("-").map(Number);
     if (!y || !m || !d) return iso || "-";
     return `${y}.${String(m).padStart(2, "0")}.${String(d).padStart(2, "0")}`;
+}
+
+function isValidISODate(s?: string | null) {
+    return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
 function toISO(d: Date) {
@@ -44,9 +31,9 @@ function toISO(d: Date) {
     return `${y}-${m}-${day}`;
 }
 
-function addDays(d: Date, days: number) {
+function addMonths(d: Date, months: number) {
     const x = new Date(d);
-    x.setDate(x.getDate() + days);
+    x.setMonth(x.getMonth() + months);
     return x;
 }
 
@@ -54,51 +41,13 @@ function startOfMonth(d: Date) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
-function addMonths(d: Date, months: number) {
+function addDays(d: Date, days: number) {
     const x = new Date(d);
-    x.setMonth(x.getMonth() + months);
+    x.setDate(x.getDate() + days);
     return x;
 }
 
-function isValidISODate(s?: string | null) {
-    return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
-function toHistoryEntryUI(raw: any, idx: number): HistoryEntryUI {
-    const id = String(raw?.id ?? raw?.historyId ?? `h-${idx}`);
-
-    const dateISO = String(
-        raw?.date ?? raw?.weatherDate ?? raw?.createdAt ?? "2025-12-28"
-    ).slice(0, 10);
-
-    const title = String(
-        raw?.styleName ?? raw?.style ?? raw?.title ?? raw?.note ?? "기록된 코디"
-    );
-
-    const weatherTemp = Number(
-        raw?.weatherTemp ?? raw?.weather?.temp ?? raw?.weather?.temperature ?? 0
-    );
-
-    const weatherIcon =
-        raw?.weatherIcon ??
-        weatherIconFromCondition(raw?.weather?.condition ?? raw?.weather?.description);
-
-    const imagesFromRaw =
-        Array.isArray(raw?.images)
-            ? raw.images
-            : Array.isArray(raw?.items)
-                ? raw.items.map((it: any) => it?.imageUrl).filter(Boolean)
-                : Array.isArray(raw?.outfit)
-                    ? raw.outfit.map((it: any) => it?.imageUrl).filter(Boolean)
-                    : [];
-
-    const images = imagesFromRaw.filter(Boolean).slice(0, 3);
-
-    return {id, dateISO, title, weatherTemp, weatherIcon, images};
-}
-
-type RangeKey = "LAST_7" | "THIS_MONTH" | "LAST_3_MONTHS" | "ALL";
-
+type RangeKey = "LAST_7" | "THIS_MONTH" | "LAST_3_MONTHS" | "LAST_12_MONTHS";
 function rangeLabel(range: RangeKey) {
     switch (range) {
         case "LAST_7":
@@ -107,89 +56,269 @@ function rangeLabel(range: RangeKey) {
             return "이번 달";
         case "LAST_3_MONTHS":
             return "최근 3개월";
+        case "LAST_12_MONTHS":
+        default:
+            return "최근 12개월";
+    }
+}
+
+type YearKey = "THIS_YEAR" | "LAST_YEAR" | "ALL";
+function yearLabel(y: YearKey) {
+    switch (y) {
+        case "THIS_YEAR":
+            return "올해";
+        case "LAST_YEAR":
+            return "작년";
         case "ALL":
         default:
             return "전체";
     }
 }
 
+type SeasonKey = "ALL" | "SPRING" | "SUMMER" | "FALL" | "WINTER";
+function seasonLabel(s: SeasonKey) {
+    switch (s) {
+        case "SPRING":
+            return "봄";
+        case "SUMMER":
+            return "여름";
+        case "FALL":
+            return "가을";
+        case "WINTER":
+            return "겨울";
+        case "ALL":
+        default:
+            return "전체";
+    }
+}
+
+function seasonMonths(season: SeasonKey): number[] {
+    // month: 1~12
+    switch (season) {
+        case "SPRING":
+            return [3, 4, 5];
+        case "SUMMER":
+            return [6, 7, 8];
+        case "FALL":
+            return [9, 10, 11];
+        case "WINTER":
+            // “해당 연도 내” 겨울로 단순화: 12,1,2
+            return [12, 1, 2];
+        default:
+            return [];
+    }
+}
+
+type MonthPair = { year: number; month: number }; // month 1~12
+
+function buildMonthsByRange(range: RangeKey): MonthPair[] {
+    const now = new Date();
+    const thisYM: MonthPair = { year: now.getFullYear(), month: now.getMonth() + 1 };
+
+    // LAST_7은 월 경계 넘어갈 수 있으니 2개월만 확보
+    if (range === "LAST_7") {
+        const prev = addMonths(now, -1);
+        return [
+            thisYM,
+            { year: prev.getFullYear(), month: prev.getMonth() + 1 },
+        ];
+    }
+
+    if (range === "THIS_MONTH") return [thisYM];
+
+    if (range === "LAST_3_MONTHS") {
+        const m1 = addMonths(now, -1);
+        const m2 = addMonths(now, -2);
+        return [
+            thisYM,
+            { year: m1.getFullYear(), month: m1.getMonth() + 1 },
+            { year: m2.getFullYear(), month: m2.getMonth() + 1 },
+        ];
+    }
+
+    // LAST_12_MONTHS
+    const pairs: MonthPair[] = [];
+    for (let i = 0; i < 12; i++) {
+        const d = addMonths(now, -i);
+        pairs.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    }
+    return pairs;
+}
+
+function buildMonthsByYearSeason(yearKey: YearKey, seasonKey: SeasonKey): MonthPair[] {
+    const now = new Date();
+    const targetYears =
+        yearKey === "ALL"
+            ? [now.getFullYear(), now.getFullYear() - 1] // ✅ 전체는 2년만 (필요하면 늘려)
+            : [yearKey === "THIS_YEAR" ? now.getFullYear() : now.getFullYear() - 1];
+
+    if (seasonKey === "ALL") {
+        // 연도만 선택 -> 그 연도 12개월
+        const out: MonthPair[] = [];
+        for (const y of targetYears) {
+            for (let m = 1; m <= 12; m++) out.push({ year: y, month: m });
+        }
+        return out;
+    }
+
+    const months = seasonMonths(seasonKey);
+    const out: MonthPair[] = [];
+    for (const y of targetYears) {
+        for (const m of months) out.push({ year: y, month: m });
+    }
+    return out;
+}
+
 export default function HistoryPage() {
     const navigate = useNavigate();
-    const {pathname} = useLocation();
+    const { pathname } = useLocation();
     const isList = pathname.startsWith("/history");
 
     const [searchParams] = useSearchParams();
     const dateParam = searchParams.get("date");
-    const highlightISO = isValidISODate(dateParam) ? String(dateParam) : null;
+    const highlightFromQuery = isValidISODate(dateParam) ? String(dateParam) : null;
 
-    // ✅ 기본은 사용자가 클릭하기 좋은 범위
-    const [range, setRange] = useState<RangeKey>("THIS_MONTH");
+    const dispatch = useAppDispatch();
+    const lastSavedTodayOutfit = useAppSelector(selectLastSavedTodayOutfit);
+    const selectedOutfitSnapshot = useAppSelector(selectSelectedOutfitSnapshot);
 
-    const allEntries = useMemo(() => {
-        const arr = Array.isArray(MOCK_HISTORY) ? MOCK_HISTORY : [];
-        return arr.map(toHistoryEntryUI).sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
-    }, []);
+    // ✅ highlight 우선순위: query > lastSaved > 없음
+    const highlightISO = useMemo(() => {
+        if (highlightFromQuery) return highlightFromQuery;
+        const d = lastSavedTodayOutfit?.date;
+        return isValidISODate(d) ? String(d) : null;
+    }, [highlightFromQuery, lastSavedTodayOutfit?.date]);
 
-    const filtered = useMemo(() => {
-        const now = new Date();
-        let minISO = "0000-01-01";
+    // ✅ 기본 필터: “히스토리”는 넓게 보는게 맞아서 3개월 권장
+    const [range, setRange] = useState<RangeKey>("LAST_3_MONTHS");
+    const [yearFilter, setYearFilter] = useState<YearKey>("THIS_YEAR");
+    const [seasonFilter, setSeasonFilter] = useState<SeasonKey>("ALL");
 
-        if (range === "LAST_7") {
-            minISO = toISO(addDays(now, -6)); // 오늘 포함 7일
-        } else if (range === "THIS_MONTH") {
-            minISO = toISO(startOfMonth(now));
-        } else if (range === "LAST_3_MONTHS") {
-            minISO = toISO(startOfMonth(addMonths(now, -2))); // 이번달 포함 3개월
-        } else {
-            minISO = "0000-01-01";
-        }
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-        return allEntries.filter((e) => e.dateISO >= minISO);
-    }, [allEntries, range]);
+    // 최종 entries
+    const [entries, setEntries] = useState<HistoryEntryUI[]>([]);
 
+    // ✅ “저장 직후 한번 보여주고 끝” 처리용
+    const mergedOnceRef = useRef(false);
+
+    // ✅ 히스토리 로드: (1) 월별 API 합치기 → (2) lastSaved merge → (3) range 필터/정렬 → (4) highlight pin
+    useEffect(() => {
+        let mounted = true;
+
+        (async () => {
+            try {
+                setLoading(true);
+                setError(null);
+
+                const monthsToLoad =
+                    seasonFilter !== "ALL" || yearFilter !== "THIS_YEAR"
+                        ? buildMonthsByYearSeason(yearFilter, seasonFilter)
+                        : buildMonthsByRange(range);
+
+                const monthlyList = await Promise.all(
+                    monthsToLoad.map((p) => outfitApi.getMonthly(p.year, p.month))
+                );
+
+                // 1) 월별 map 합치기
+                const baseMap = new Map<string, HistoryEntryUI>();
+                for (const m of monthlyList) {
+                    const mp = outfitAdapter.monthlyToMap(m as any);
+                    for (const [k, v] of mp.entries()) baseMap.set(k, v);
+                }
+
+                // 2) 저장 직후(lastSaved) + 선택 스냅샷 merge
+                // selectedOutfitSnapshot은 타입이 달라도 name/imageUrl/clothingId만 있으면 title 생성 가능
+                const mergedMap = outfitAdapter.mergeRecentlySaved(
+                    baseMap,
+                    lastSavedTodayOutfit ?? null,
+                    (selectedOutfitSnapshot as any) ?? null
+                );
+
+                // 3) map -> list
+                const all = Array.from(mergedMap.values()).filter((e) => isValidISODate(e.dateISO));
+
+                // 4) range 필터 (range가 적용되는 경우만)
+                const now = new Date();
+                let minISO = "0000-01-01";
+                if (seasonFilter === "ALL" && yearFilter === "THIS_YEAR") {
+                    if (range === "LAST_7") minISO = toISO(addDays(now, -6));
+                    else if (range === "THIS_MONTH") minISO = toISO(startOfMonth(now));
+                    else if (range === "LAST_3_MONTHS") minISO = toISO(startOfMonth(addMonths(now, -2)));
+                    else minISO = toISO(startOfMonth(addMonths(now, -11)));
+                }
+
+                const ranged = all.filter((e) => e.dateISO >= minISO);
+
+                // 5) 정렬: 기본 최신순
+                ranged.sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
+
+                // 6) highlight 우선 pin
+                const pinned = highlightISO ? ranged.find((e) => e.dateISO === highlightISO) : null;
+                const rest = highlightISO ? ranged.filter((e) => e.dateISO !== highlightISO) : ranged;
+
+                const finalList = pinned ? [pinned, ...rest] : rest;
+
+                if (mounted) setEntries(finalList);
+
+                // ✅ 저장 직후 UX: 히스토리에서도 한번 보여주고 clear 할지 여부
+                // - query date로 들어온 경우(저장 후 이동)만 clear 하는게 안전
+                if (
+                    !mergedOnceRef.current &&
+                    lastSavedTodayOutfit?.date &&
+                    highlightFromQuery &&
+                    highlightFromQuery === lastSavedTodayOutfit.date
+                ) {
+                    mergedOnceRef.current = true;
+                    dispatch(clearLastSaved());
+                }
+            } catch (e: any) {
+                if (mounted) setError(e?.message ?? "히스토리를 불러오지 못했습니다.");
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        })();
+
+        return () => {
+            mounted = false;
+        };
+    }, [
+        range,
+        yearFilter,
+        seasonFilter,
+        highlightISO,
+        highlightFromQuery,
+        lastSavedTodayOutfit,
+        selectedOutfitSnapshot,
+        dispatch,
+    ]);
+
+    // ✅ 요약
     const summary = useMemo(() => {
-        const count = filtered.length;
-        const temps = filtered.map((e) => e.weatherTemp).filter((n) => Number.isFinite(n));
-        const avgTemp = temps.length
-            ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10
-            : 0;
-        return {count, avgTemp};
-    }, [filtered]);
+        const count = entries.length;
+        const temps = entries.map((e) => e.weatherTemp).filter((n) => Number.isFinite(n)) as number[];
+        const avgTemp = temps.length ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10 : 0;
+        return { count, avgTemp };
+    }, [entries]);
 
-    // ✅ 우측: 최근 선택 아이템 (이미지 URL flatten)
+    // ✅ 우측: 최근 선택 아이템
     const recentItemThumbs = useMemo(() => {
-        const urls = allEntries.flatMap((e) => e.images ?? []);
+        const urls = entries.flatMap((e) => e.images ?? []);
         const uniq = Array.from(new Set(urls));
         return uniq.slice(0, 8);
-    }, [allEntries]);
+    }, [entries]);
 
-    // ✅ 우측: 최근 기록
-    const recentLogs = useMemo(() => allEntries.slice(0, 5), [allEntries]);
-
-    // ✅ 우측: 작년 같은 날(타임머신) — 메인에서 빼고 사이드로
-    const baseISO = useMemo(() => {
-        if (isValidISODate(dateParam)) return String(dateParam);
-        return toISO(new Date());
-    }, [dateParam]);
-
-    const lastYearSameDay = useMemo(() => {
-        const [y, m, d] = baseISO.split("-").map(Number);
-        const last = new Date(y - 1, m - 1, d);
-        const key = toISO(last);
-        return allEntries.find((e) => e.dateISO === key) ?? null;
-    }, [allEntries, baseISO]);
+    const recentLogs = useMemo(() => entries.slice(0, 5), [entries]);
 
     return (
         <div className="space-y-6 pb-24">
             {/* Header */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
                 <div>
-                    <div className="flex items-center gap-2">
-                        <h1 className="text-3xl font-black text-[#0F172A] tracking-tighter">스타일 히스토리</h1>
-
-                    </div>
+                    <h1 className="text-3xl font-black text-[#0F172A] tracking-tighter">스타일 히스토리</h1>
                     <p className="text-slate-500 text-sm font-medium mt-1">
-                        날짜 탐색은 캘린더가 메인이라, 히스토리는 “범위 클릭”으로 빠르게 찾습니다.
+                        highlight(날짜 지정) 우선 노출, 없으면 최신순으로 정리됩니다.
                     </p>
                 </div>
 
@@ -201,13 +330,10 @@ export default function HistoryPage() {
                             onClick={() => navigate(`/calendar${highlightISO ? `?date=${highlightISO}` : ""}`)}
                             className={cn(
                                 "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                !isList
-                                    ? "bg-[#0F172A] text-white shadow-lg shadow-navy-900/20"
-                                    : "text-slate-400 hover:bg-slate-50"
+                                !isList ? "bg-[#0F172A] text-white shadow-lg shadow-navy-900/20" : "text-slate-400 hover:bg-slate-50"
                             )}
-                            aria-pressed={!isList}
                         >
-                            <CalendarIcon size={16}/> 캘린더
+                            <CalendarIcon size={16} /> 캘린더
                         </button>
 
                         <button
@@ -215,37 +341,32 @@ export default function HistoryPage() {
                             onClick={() => navigate("/history")}
                             className={cn(
                                 "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                isList
-                                    ? "bg-[#0F172A] text-white shadow-lg shadow-navy-900/20"
-                                    : "text-slate-400 hover:bg-slate-50"
+                                isList ? "bg-[#0F172A] text-white shadow-lg shadow-navy-900/20" : "text-slate-400 hover:bg-slate-50"
                             )}
-                            aria-pressed={isList}
                         >
-                            <List size={16}/> 리스트
+                            <List size={16} /> 리스트
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* ✅ Click Filters (검색 입력 제거) */}
+            {/* Filters */}
             <Card className="p-5">
-                <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-                    <div>
-                        <div className="text-sm font-black text-slate-600">빠른 필터</div>
-                        <div className="text-xs font-bold text-slate-400 mt-1">
-                            날짜로 찾고 싶으면 캘린더에서 선택 후 다시 돌아오면 됩니다.
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 items-center">
-                        {(["LAST_7", "THIS_MONTH", "LAST_3_MONTHS", "ALL"] as RangeKey[]).map((k) => (
+                <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-black text-slate-600 mr-2">빠른 범위</div>
+                        {(["LAST_7", "THIS_MONTH", "LAST_3_MONTHS", "LAST_12_MONTHS"] as RangeKey[]).map((k) => (
                             <button
                                 key={k}
                                 type="button"
-                                onClick={() => setRange(k)}
+                                onClick={() => {
+                                    setSeasonFilter("ALL");
+                                    setYearFilter("THIS_YEAR");
+                                    setRange(k);
+                                }}
                                 className={cn(
                                     "px-4 py-2 rounded-2xl text-xs font-black border transition",
-                                    range === k
+                                    range === k && seasonFilter === "ALL" && yearFilter === "THIS_YEAR"
                                         ? "bg-[#0F172A] text-white border-[#0F172A]"
                                         : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
                                 )}
@@ -253,7 +374,6 @@ export default function HistoryPage() {
                                 {rangeLabel(k)}
                             </button>
                         ))}
-
                         <Button
                             size="sm"
                             variant="outline"
@@ -262,8 +382,46 @@ export default function HistoryPage() {
                             캘린더로 찾기
                         </Button>
                     </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-black text-slate-600 mr-2">연도</div>
+                        {(["THIS_YEAR", "LAST_YEAR", "ALL"] as YearKey[]).map((y) => (
+                            <button
+                                key={y}
+                                type="button"
+                                onClick={() => setYearFilter(y)}
+                                className={cn(
+                                    "px-4 py-2 rounded-2xl text-xs font-black border transition",
+                                    yearFilter === y ? "bg-[#0F172A] text-white border-[#0F172A]" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                                )}
+                            >
+                                {yearLabel(y)}
+                            </button>
+                        ))}
+
+                        <div className="text-sm font-black text-slate-600 ml-4 mr-2">계절</div>
+                        {(["ALL", "SPRING", "SUMMER", "FALL", "WINTER"] as SeasonKey[]).map((s) => (
+                            <button
+                                key={s}
+                                type="button"
+                                onClick={() => setSeasonFilter(s)}
+                                className={cn(
+                                    "px-4 py-2 rounded-2xl text-xs font-black border transition",
+                                    seasonFilter === s ? "bg-[#0F172A] text-white border-[#0F172A]" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                                )}
+                            >
+                                {seasonLabel(s)}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </Card>
+
+            {error && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                    {error}
+                </div>
+            )}
 
             {/* Main layout */}
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
@@ -273,8 +431,15 @@ export default function HistoryPage() {
                     <Card className="p-5">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="space-y-1">
-                                <div className="text-xs font-bold text-slate-500">{rangeLabel(range)} 요약</div>
-                                <div className="text-lg font-black text-[#0F172A]">검색 결과 {summary.count}건</div>
+                                <div className="text-xs font-bold text-slate-500">
+                                    {seasonFilter !== "ALL" || yearFilter !== "THIS_YEAR"
+                                        ? `${yearLabel(yearFilter)} · ${seasonLabel(seasonFilter)}`
+                                        : rangeLabel(range)}{" "}
+                                    요약
+                                </div>
+                                <div className="text-lg font-black text-[#0F172A]">
+                                    {loading ? "불러오는 중..." : `검색 결과 ${summary.count}건`}
+                                </div>
                             </div>
 
                             <div className="flex gap-2">
@@ -292,34 +457,29 @@ export default function HistoryPage() {
 
                     {/* Row List */}
                     <Card className="overflow-hidden">
-                        <div
-                            className="grid grid-cols-[140px_1fr_160px] gap-0 border-b border-slate-100 px-5 py-3 text-[11px] font-black text-slate-400 tracking-widest">
+                        <div className="grid grid-cols-[140px_1fr_160px] gap-0 border-b border-slate-100 px-5 py-3 text-[11px] font-black text-slate-400 tracking-widest">
                             <div>DATE</div>
                             <div>OUTFIT</div>
                             <div className="text-right">ACTION</div>
                         </div>
 
-                        {filtered.length === 0 ? (
+                        {!loading && entries.length === 0 ? (
                             <div className="p-8 text-sm text-slate-500">
-                                해당 기간에 기록이 없습니다. 필터를 “전체”로 바꾸거나, 추천을 생성해 기록을 쌓으세요.
+                                해당 조건에 기록이 없습니다. 필터를 완화하거나, 추천을 생성해 기록을 쌓으세요.
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-100">
-                                {filtered.map((entry) => {
+                                {entries.map((entry) => {
                                     const isHighlight = highlightISO && entry.dateISO === highlightISO;
+
                                     return (
                                         <div
                                             key={entry.id}
-                                            className={cn(
-                                                "px-5 py-4 transition-colors",
-                                                isHighlight ? "bg-orange-50" : "hover:bg-slate-50"
-                                            )}
+                                            className={cn("px-5 py-4 transition-colors", isHighlight ? "bg-orange-50" : "hover:bg-slate-50")}
                                         >
-                                            <div
-                                                className="grid grid-cols-1 md:grid-cols-[140px_1fr_160px] items-center gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-[140px_1fr_160px] items-center gap-4">
                                                 {/* date */}
-                                                <div
-                                                    className="text-sm font-black text-slate-600">{formatKoreanDate(entry.dateISO)}</div>
+                                                <div className="text-sm font-black text-slate-600">{formatKoreanDate(entry.dateISO)}</div>
 
                                                 {/* outfit info */}
                                                 <div className="flex items-center gap-4 min-w-0">
@@ -330,52 +490,56 @@ export default function HistoryPage() {
                                                                     key={src + i}
                                                                     className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
                                                                 >
-                                                                    <img src={src}
-                                                                         className="w-full h-full object-cover"
-                                                                         alt="ootd"/>
+                                                                    <img src={src} className="w-full h-full object-cover" alt="ootd" />
                                                                 </div>
                                                             ))
                                                         ) : (
-                                                            <div
-                                                                className="w-[124px] h-10 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center gap-2 text-xs font-bold text-slate-400">
-                                                                <Shirt size={16}/>
+                                                            <div className="w-[124px] h-10 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center gap-2 text-xs font-bold text-slate-400">
+                                                                <Shirt size={16} />
                                                                 이미지 없음
                                                             </div>
                                                         )}
                                                     </div>
 
                                                     <div className="min-w-0">
-                                                        <div
-                                                            className="text-base font-black text-[#0F172A] truncate">{entry.title}</div>
-                                                        <div
-                                                            className="flex items-center gap-2 text-xs font-bold text-slate-500 mt-1">
+                                                        <div className="text-base font-black text-[#0F172A] truncate">{entry.title}</div>
+                                                        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 mt-1">
                               <span className="inline-flex items-center gap-1">
-                                <Cloud size={14}/> {entry.weatherIcon}
+                                <Cloud size={14} /> {entry.weatherIcon}
                               </span>
                                                             <span className="inline-flex items-center gap-1">
-                                <Thermometer size={14}/> {entry.weatherTemp}°C
+                                <Thermometer size={14} /> {entry.weatherTemp == null ? "-" : `${entry.weatherTemp}°C`}
                               </span>
-                                                            <span className="inline-flex items-center gap-1">
-                                <Sparkles size={14}/> 저장됨
-                              </span>
+
+                                                            {/* ✅ 추천 피드백(좋/괜/별) 표시 */}
+                                                            {entry.feedback ? (
+                                                                <Badge variant="orange">{entry.feedback}</Badge>
+                                                            ) : (
+                                                                <Badge variant="outline">피드백 없음</Badge>
+                                                            )}
+
+                                                            {isHighlight ? (
+                                                                <span className="inline-flex items-center gap-1">
+                                  <Sparkles size={14} /> highlight
+                                </span>
+                                                            ) : null}
                                                         </div>
                                                     </div>
                                                 </div>
 
                                                 {/* action */}
                                                 <div className="flex md:justify-end gap-2">
-                                                    <Button size="sm" variant="outline"
-                                                            onClick={() => navigate(`/calendar?date=${entry.dateISO}`)}>
+                                                    <Button size="sm" variant="outline" onClick={() => navigate(`/calendar?date=${entry.dateISO}`)}>
                                                         캘린더
                                                     </Button>
                                                     <Button
                                                         size="sm"
                                                         onClick={() => {
-                                                            // TODO: 상세 라우트 생기면 연결
-                                                            // navigate(`/history/${entry.id}`)
+                                                            // 상세 라우트가 없으면 캘린더 드로어로 통일
+                                                            navigate(`/calendar?date=${entry.dateISO}`);
                                                         }}
                                                     >
-                                                        상세 <ArrowRight size={16}/>
+                                                        상세 <ArrowRight size={16} />
                                                     </Button>
                                                 </div>
                                             </div>
@@ -389,7 +553,6 @@ export default function HistoryPage() {
 
                 {/* RIGHT */}
                 <aside className="xl:sticky xl:top-6 h-fit space-y-4">
-                    {/* ✅ 최근 선택 아이템 + 최근 기록 */}
                     <Card className="p-6">
                         <div className="flex items-center justify-between">
                             <div className="text-sm font-black text-slate-500">최근 선택한 아이템</div>
@@ -412,12 +575,11 @@ export default function HistoryPage() {
                                         className="aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50 hover:shadow-sm transition"
                                         title="최근 선택 아이템"
                                     >
-                                        <img src={src} className="w-full h-full object-cover" alt="recent item"/>
+                                        <img src={src} className="w-full h-full object-cover" alt="recent item" />
                                     </button>
                                 ))
                             ) : (
-                                <div
-                                    className="col-span-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
+                                <div className="col-span-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
                                     아직 선택한 아이템 이미지가 없어요
                                 </div>
                             )}
@@ -438,23 +600,18 @@ export default function HistoryPage() {
                                             )}
                                         >
                                             <div className="min-w-0">
-                                                <div
-                                                    className="text-[11px] font-bold text-slate-500">{formatKoreanDate(e.dateISO)}</div>
-                                                <div
-                                                    className="text-sm font-black text-[#0F172A] truncate">{e.title}</div>
+                                                <div className="text-[11px] font-bold text-slate-500">{formatKoreanDate(e.dateISO)}</div>
+                                                <div className="text-sm font-black text-[#0F172A] truncate">{e.title}</div>
                                             </div>
 
                                             <div className="shrink-0 text-right">
                                                 <div className="text-lg">{e.weatherIcon}</div>
-                                                <div
-                                                    className="text-[11px] font-black text-slate-500">{e.weatherTemp}°C
-                                                </div>
+                                                <div className="text-[11px] font-black text-slate-500">{e.weatherTemp ?? "-"}°C</div>
                                             </div>
                                         </button>
                                     ))
                                 ) : (
-                                    <div
-                                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-400">
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-400">
                                         최근 기록이 없습니다.
                                     </div>
                                 )}
@@ -462,57 +619,6 @@ export default function HistoryPage() {
                         </div>
                     </Card>
 
-                    {/* ✅ 타임머신(작년 같은 날) -> 빠른 작업 영역으로 이동 */}
-                    <Card className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div className="text-sm font-black text-slate-500 flex items-center gap-2">
-                                <HistoryIcon size={16}/>
-                                작년 같은 날
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => navigate(`/calendar?date=${baseISO}`)}
-                                className="text-xs font-bold text-slate-400 hover:text-slate-600"
-                            >
-                                기준일 보기
-                            </button>
-                        </div>
-
-                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                            {lastYearSameDay ? (
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="text-[11px] font-bold text-slate-500">
-                                            {formatKoreanDate(lastYearSameDay.dateISO)}
-                                        </div>
-                                        <div
-                                            className="text-base font-black text-[#0F172A] truncate">{lastYearSameDay.title}</div>
-                                        <div className="text-xs font-bold text-slate-500 mt-1">
-                                            날씨 {lastYearSameDay.weatherTemp}°C
-                                        </div>
-                                    </div>
-                                    <Button size="sm" variant="outline"
-                                            onClick={() => navigate(`/calendar?date=${lastYearSameDay.dateISO}`)}>
-                                        보기
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="flex items-center justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-black text-[#0F172A]">기록이 없습니다.</div>
-                                        <div className="text-xs font-bold text-slate-500 mt-1">
-                                            기록을 쌓으면 작년 오늘을 바로 비교할 수 있어요.
-                                        </div>
-                                    </div>
-                                    <Button size="sm" onClick={() => navigate("/recommendation")}>
-                                        추천 받기
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </Card>
-
-                    {/* ✅ 빠른 작업 */}
                     <Card className="p-6">
                         <div className="text-sm font-black text-slate-500">빠른 작업</div>
                         <div className="mt-4 flex flex-col gap-2">
