@@ -7,10 +7,9 @@ MODEL_PATH = BASE_DIR/"ml"/"artifacts"/"model.pt"
 
 # model.pt를 학습할 때의 layer 구조가 동일해야함
 MODEL_CONFIG = {
-    "input_dim": 3,
-    # "use_ap": False,
+    "input_dim": 9,
     "hidden_dims": [32, 16],
-    "activation": "gelu",
+    "activation": "silu",
     "dropout": 0.1,
 }
 

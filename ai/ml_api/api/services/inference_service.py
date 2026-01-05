@@ -1,50 +1,114 @@
 from typing import List
+import torch
+
+from api.config import DEVICE
 from api.schemas.predict_schema import Context, Item, Result
+from ml.pipeline.preprocess import build_feature_vector
+from api.dependencies.model_loader import load_model
 
-def _clamp_0_100(x: int) -> int:
-    if x < 0:
-        return 0
-    if x > 100:
-        return 100
-    return x
+THICKNESS_LOWER = {
+    "THIN": "thin",
+    "NORMAL": "normal",
+    "THICK": "thick",
+}
 
-def _normalize_to_100(c: int, p: int) -> tuple[int, int]:
-    c = _clamp_0_100(int(c))
-    p = _clamp_0_100(int(p))
-    s = c + p
-    if s == 100:
-        return c, p
-    if s <= 0:
-        return 50, 50
-    c2 = round((c * 100.0) / s)
-    c2 = max(0, min(100, int(c2)))
-    p2 = 100 - c2
-    return c2, p2
+WEATHER_MAP = {
+    "CLEAR": "clear",
 
-def _score(context: Context, item: Item) -> float:
-    ta = float(context.Ta)
-    rh = float(context.RH)
-    va = float(context.Va)
-    cloud = float(context.cloud)
+    "CLOUDS": "cloudy",
 
-    base = 100.0
-    base -= abs(22.0 - ta) * 1.5
-    base -= (rh / 100.0) * 10.0
-    base -= va * 1.0
-    base -= (cloud / 100.0) * 5.0
+    "RAIN": "rain",
+    "DRIZZLE": "rain",
+    "THUNDERSTORM": "rain",
 
-    c, p = _normalize_to_100(item.c_ratio, item.p_ratio)
-    weighted = (base * (c / 100.0)) + (base * (p / 100.0) * 0.9)
-    return round(max(0.0, min(100.0, weighted)), 3)
+    "SNOW": "snow",
+}
 
-def predict_comfort_batch(context: Context, items: List[Item]) -> List[Result]:
+
+def normalize_thickness(thickness: str) -> str:
+    return THICKNESS_LOWER[thickness.upper()]
+
+
+def normalize_weather(weather_type: str) -> str:
+    if not weather_type:
+        return "cloudy"
+
+    key = weather_type.upper()
+    return WEATHER_MAP.get(key, "cloudy")
+
+def score_0_1_to_0_100(score: float) -> int:
+    score = max(0.0, min(1.0, score))
+    return int(round(score * 100))
+
+
+def predict_comfort_batch(
+    context: Context,
+    items: List[Item],
+) -> List[Result]:
+
+    print("\n[DEBUG] ===== Inference Start =====")
+    print("[DEBUG] context:", context)
+
+    model = load_model()
+    model.eval()
+
     results: List[Result] = []
 
-    for it in items:
-        try:
-            s = _score(context, it)
-            results.append(Result(item_id=it.item_id, comfort_score=s, error=None))
-        except Exception as e:
-            results.append(Result(item_id=getattr(it, "item_id", 0), comfort_score=None, error=str(e)))
+    temp_range = context.temp_max - context.temp_min
+    weather_type = normalize_weather(context.weather_type)
 
+    print("[DEBUG] temp_max:", context.temp_max)
+    print("[DEBUG] temp_min:", context.temp_min)
+    print("[DEBUG] temp_range(calculated):", temp_range)
+    print("[DEBUG] weather_type(normalized):", weather_type)
+
+    for it in items:
+        print("\n[DEBUG] item:", it)
+
+        try:
+            thickness = normalize_thickness(it.thickness)
+            print("[DEBUG] thickness(normalized):", thickness)
+
+            feature = build_feature_vector(
+                c_ratio=it.c_ratio,
+                thickness=thickness,
+                Ta=context.Ta,
+                RH=context.RH,
+                Va=context.Va,
+                cloud=context.cloud,
+                temp_range=temp_range,
+                weather_type=weather_type,
+            )
+
+            print("[DEBUG] feature vector:", feature)
+
+            x = torch.tensor(feature, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+            print("[DEBUG] model input shape:", x.shape)
+
+            with torch.no_grad():
+                raw_score = model(x).item()
+
+            print("[DEBUG] raw_score:", raw_score)
+
+            comfort_score = score_0_1_to_0_100(raw_score)
+            print("[DEBUG] comfort_score(0~100):", comfort_score)
+
+            results.append(
+                Result(
+                    clothingId=it.clothingId,
+                    blendRatioScore=comfort_score,
+                )
+            )
+
+        except Exception as e:
+            print("[ERROR] exception:", repr(e))
+            results.append(
+                Result(
+                    clothingId=it.clothingId,
+                    blendRatioScore=None,
+                    error=str(e),
+                )
+            )
+
+    print("[DEBUG] ===== Inference End =====\n")
     return results
