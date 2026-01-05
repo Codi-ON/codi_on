@@ -1,6 +1,6 @@
 package com.team.backend.api.dto.outfit;
 
-import com.team.backend.domain.enums.outfit.FeedbackRating;
+import com.team.backend.domain.enums.feadback.FeedbackRating;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
 import lombok.*;

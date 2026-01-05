@@ -1,7 +1,7 @@
 package com.team.backend.domain.outfit;
 
-import com.team.backend.domain.enums.outfit.FeedbackRating;
-import com.team.backend.domain.enums.outfit.FeedbackRatingConverter;
+import com.team.backend.domain.enums.feadback.FeedbackRating;
+import com.team.backend.domain.enums.feadback.FeedbackRatingConverter;
 import jakarta.persistence.*;
 import lombok.*;
 

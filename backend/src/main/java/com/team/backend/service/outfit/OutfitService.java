@@ -5,7 +5,7 @@ import com.team.backend.api.dto.outfit.OutfitResponseDto;
 import com.team.backend.api.dto.session.SessionLogRequestDto;
 import com.team.backend.common.exception.ConflictException;
 import com.team.backend.domain.DailyWeather;
-import com.team.backend.domain.enums.outfit.FeedbackRating;
+import com.team.backend.domain.enums.feadback.FeedbackRating;
 import com.team.backend.domain.enums.session.SessionEventType;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;

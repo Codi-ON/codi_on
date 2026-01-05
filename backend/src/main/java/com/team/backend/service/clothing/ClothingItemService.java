@@ -157,7 +157,7 @@ public class ClothingItemService {
     private List<ClothingItemResponseDto> fetchOrderedDtos(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
 
-        List<ClothingItem> rows = clothingItemRepository.findAllWithSeasonsByIdIn(ids);
+        List<ClothingItem> rows = clothingItemRepository.findAllByIdIn(ids);
 
         Map<Long, ClothingItem> map = rows.stream()
                 .collect(Collectors.toMap(ClothingItem::getId, Function.identity()));

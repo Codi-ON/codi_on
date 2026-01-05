@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/common/excel/ExcelExport.java
 package com.team.backend.common;
 
 public record ExcelExport(

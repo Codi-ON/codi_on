@@ -1,4 +1,4 @@
-package com.team.backend.domain.enums.outfit;
+package com.team.backend.domain.enums.feadback;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
