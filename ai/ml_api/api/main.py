@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 from api.routers.health import router as health_router
 from api.routers.comfort import router as comfort_router
