@@ -1,8 +1,6 @@
-// src/main/java/com/team/backend/service/ai/RecommendationAiClient.java
 package com.team.backend.service.ai.dto;
 
 import com.team.backend.config.AiUpstreamException;
-import com.team.backend.service.ai.dto.RecommendationAiDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,7 +17,6 @@ public class RecommendationAiClient {
 
     private final RestTemplate aiRestTemplate;
 
-    // 모델별 path 분리
     @Value("${ai.blend-ratio-path:/recommend/blend-ratio}")
     private String blendRatioPath;
 
@@ -30,7 +27,6 @@ public class RecommendationAiClient {
         this.aiRestTemplate = aiRestTemplate;
     }
 
-    // ✅ 서비스에서 호출하는 이름 그대로 제공해야 함
     public RecommendationAiDto.RecommendationResponse recommendBlendRatio(RecommendationAiDto.RecommendationRequest req) {
         return executePost(normalizePath(blendRatioPath), req, "BLEND_RATIO");
     }
@@ -39,9 +35,11 @@ public class RecommendationAiClient {
         return executePost(normalizePath(materialRatioPath), req, "MATERIAL_RATIO");
     }
 
-    private RecommendationAiDto.RecommendationResponse executePost(String path,
-                                                                  RecommendationAiDto.RecommendationRequest req,
-                                                                  String modelTag) {
+    private RecommendationAiDto.RecommendationResponse executePost(
+            String path,
+            RecommendationAiDto.RecommendationRequest req,
+            String modelTag
+    ) {
         validateRequest(req);
 
         HttpHeaders headers = new HttpHeaders();
@@ -58,7 +56,7 @@ public class RecommendationAiClient {
                 throw new AiUpstreamException("AI_BAD_RESPONSE", 502, modelTag + " returned empty body");
             }
 
-            RecommendationAiDto.RecommendationResponse body = res.getBody();
+            var body = res.getBody();
             String st = (body.status == null ? "" : body.status.trim().toLowerCase());
 
             if (!"success".equals(st)) {
