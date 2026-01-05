@@ -2,12 +2,8 @@
 package com.team.backend.repository.clothing;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
-import com.team.backend.domain.ClothingItem;
-import com.team.backend.domain.enums.SeasonType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import jakarta.persistence.TypedQuery;
-import jakarta.persistence.criteria.*;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
@@ -22,75 +18,104 @@ public class ClothingItemRepositoryImpl implements ClothingItemRepositoryCustom 
 
     @Override
     public List<Long> searchCandidateIds(ClothingItemRequestDto.SearchCondition cond, Pageable pageable) {
+        return searchNative(null, cond, pageable);
+    }
 
-        CriteriaBuilder cb = em.getCriteriaBuilder();
-        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+    @Override
+    public List<Long> searchCandidateIdsInCloset(Long closetId, ClothingItemRequestDto.SearchCondition cond, Pageable pageable) {
+        if (closetId == null) return List.of();
+        return searchNative(closetId, cond, pageable);
+    }
 
-        Root<ClothingItem> c = cq.from(ClothingItem.class);
-        cq.select(c.get("id")); // distinct 제거(중복은 groupBy로 정리)
+    /**
+     * closetId가 null이면 전역 후보, 있으면 closet-only 후보
+     * 반환: ClothingItem PK(id)
+     */
+    private List<Long> searchNative(Long closetId, ClothingItemRequestDto.SearchCondition cond, Pageable pageable) {
+        StringBuilder sql = new StringBuilder();
+        sql.append("""
+            SELECT ci.id
+            FROM clothing_item ci
+            WHERE 1=1
+        """);
 
-        List<Predicate> predicates = new ArrayList<>();
+        // (A) closet-only 제한
+        if (closetId != null) {
+            sql.append("""
+                AND ci.clothing_id IN (
+                    SELECT cci.clothing_id
+                    FROM closet_item cci
+                    WHERE cci.closet_id = :closetId
+                )
+            """);
+        }
+
+        // (B) 조건
+        if (cond != null) {
+            if (cond.getClothingId() != null) {
+                sql.append(" AND ci.clothing_id = :clothingId ");
+            }
+            if (cond.getTemp() != null) {
+                sql.append(" AND ci.suitable_min_temp <= :temp AND ci.suitable_max_temp >= :temp ");
+            }
+            if (cond.getCategory() != null) {
+                sql.append(" AND ci.category = :category ");
+            }
+            if (cond.getThicknessLevel() != null) {
+                sql.append(" AND ci.thickness_level = :thicknessLevel ");
+            }
+            if (cond.getUsageTypes() != null && !cond.getUsageTypes().isEmpty()) {
+                sql.append(" AND ci.usage_type IN (:usageTypes) ");
+            }
+            if (cond.getSeasons() != null && !cond.getSeasons().isEmpty()) {
+                // ★중요: clothing_item_season은 clothing_item_id(PK) 기준
+                sql.append("""
+                    AND EXISTS (
+                        SELECT 1
+                        FROM clothing_item_season cis
+                        WHERE cis.clothing_item_id = ci.id
+                          AND cis.season IN (:seasons)
+                    )
+                """);
+            }
+        }
+
+        // (C) 정렬
+        String sort = (cond == null || cond.getSort() == null) ? "popular" : cond.getSort();
+        if ("latest".equalsIgnoreCase(sort)) {
+            sql.append(" ORDER BY ci.created_at DESC, ci.id DESC ");
+        } else {
+            sql.append(" ORDER BY ci.selected_count DESC, ci.id DESC ");
+        }
+
+        var q = em.createNativeQuery(sql.toString());
+
+        if (closetId != null) q.setParameter("closetId", closetId);
 
         if (cond != null) {
+            if (cond.getClothingId() != null) q.setParameter("clothingId", cond.getClothingId());
+            if (cond.getTemp() != null) q.setParameter("temp", cond.getTemp());
+            if (cond.getCategory() != null) q.setParameter("category", cond.getCategory().name());
+            if (cond.getThicknessLevel() != null) q.setParameter("thicknessLevel", cond.getThicknessLevel().name());
 
-            // 0) clothingId (business key)
-            if (cond.getClothingId() != null) {
-                predicates.add(cb.equal(c.get("clothingId"), cond.getClothingId()));
-            }
-
-            // 1) temp: suitableMinTemp <= temp <= suitableMaxTemp
-            if (cond.getTemp() != null) {
-                Integer temp = cond.getTemp();
-                predicates.add(cb.lessThanOrEqualTo(c.get("suitableMinTemp"), temp));
-                predicates.add(cb.greaterThanOrEqualTo(c.get("suitableMaxTemp"), temp));
-            }
-
-            // 2) category
-            if (cond.getCategory() != null) {
-                predicates.add(cb.equal(c.get("category"), cond.getCategory()));
-            }
-
-            // 3) thicknessLevel
-            if (cond.getThicknessLevel() != null) {
-                predicates.add(cb.equal(c.get("thicknessLevel"), cond.getThicknessLevel()));
-            }
-
-            // 4) usageTypes (Search에서 INDOOR/OUTDOOR면 BOTH 포함해서 넘어옴)
             if (cond.getUsageTypes() != null && !cond.getUsageTypes().isEmpty()) {
-                predicates.add(c.get("usageType").in(cond.getUsageTypes()));
+                q.setParameter("usageTypes", cond.getUsageTypes().stream().map(Enum::name).toList());
             }
-
-            // 5) seasons: 하나라도 겹치면 통과(OR)
             if (cond.getSeasons() != null && !cond.getSeasons().isEmpty()) {
-                Join<ClothingItem, SeasonType> s = c.join("seasons", JoinType.INNER);
-                predicates.add(s.in(cond.getSeasons()));
+                q.setParameter("seasons", cond.getSeasons().stream().map(Enum::name).toList());
             }
         }
-
-        cq.where(predicates.toArray(new Predicate[0]));
-
-        // Postgres 대응: ORDER BY 컬럼은 GROUP BY에 포함(조인 중복도 정리됨)
-        cq.groupBy(
-                c.get("id"),
-                c.get("createdAt"),
-                c.get("selectedCount")
-        );
-
-        // 6) sort
-        String sort = (cond == null ? "popular" : cond.getSort());
-        if ("latest".equalsIgnoreCase(sort)) {
-            cq.orderBy(cb.desc(c.get("createdAt")), cb.desc(c.get("id")));
-        } else {
-            cq.orderBy(cb.desc(c.get("selectedCount")), cb.desc(c.get("id")));
-        }
-
-        TypedQuery<Long> query = em.createQuery(cq);
 
         if (pageable != null) {
-            query.setFirstResult((int) pageable.getOffset());
-            query.setMaxResults(pageable.getPageSize());
+            q.setFirstResult((int) pageable.getOffset());
+            q.setMaxResults(pageable.getPageSize());
         }
 
-        return query.getResultList();
+        @SuppressWarnings("unchecked")
+        List<Number> rows = q.getResultList();
+
+        List<Long> out = new ArrayList<>(rows.size());
+        for (Number n : rows) out.add(n.longValue());
+        return out;
     }
 }

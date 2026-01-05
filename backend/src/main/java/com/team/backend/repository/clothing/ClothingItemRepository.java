@@ -11,20 +11,15 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ClothingItemRepository extends JpaRepository<ClothingItem, Long>, ClothingItemRepositoryCustom {
-    List<ClothingItem> findAllByOrderByIdAsc(Pageable pageable);
 
     boolean existsByClothingId(Long clothingId);
 
     Optional<ClothingItem> findByClothingId(Long clothingId);
 
-
     @EntityGraph(attributePaths = "seasons")
     List<ClothingItem> findAllByIdIn(List<Long> ids);
 
-
-    default List<ClothingItem> findAllWithSeasonsByIdIn(List<Long> ids) {
-        return findAllByIdIn(ids);
-    }
+    List<ClothingItem> findAllByOrderByIdAsc(Pageable pageable);
 
     List<ClothingItem> findAllByOrderBySelectedCountDesc(Pageable pageable);
 

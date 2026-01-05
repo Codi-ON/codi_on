@@ -1,4 +1,4 @@
-package com.team.backend.domain.enums.outfit;
+package com.team.backend.domain.enums.feadback;
 
 public enum FeedbackRating {
     GOOD(1),

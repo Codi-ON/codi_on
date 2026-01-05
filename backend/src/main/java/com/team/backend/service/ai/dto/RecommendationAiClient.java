@@ -1,4 +1,5 @@
-package com.team.backend.service.ai;
+// src/main/java/com/team/backend/service/ai/RecommendationAiClient.java
+package com.team.backend.service.ai.dto;
 
 import com.team.backend.config.AiUpstreamException;
 import com.team.backend.service.ai.dto.RecommendationAiDto;
@@ -18,14 +19,29 @@ public class RecommendationAiClient {
 
     private final RestTemplate aiRestTemplate;
 
-    @Value("${ai.recommend-path:/recommend}")
-    private String recommendPath;
+    // 모델별 path 분리
+    @Value("${ai.blend-ratio-path:/recommend/blend-ratio}")
+    private String blendRatioPath;
+
+    @Value("${ai.material-ratio-path:/recommend/material-ratio}")
+    private String materialRatioPath;
 
     public RecommendationAiClient(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate) {
         this.aiRestTemplate = aiRestTemplate;
     }
 
-    public RecommendationAiDto.RecommendationResponse recommend(RecommendationAiDto.RecommendationRequest req) {
+    // ✅ 서비스에서 호출하는 이름 그대로 제공해야 함
+    public RecommendationAiDto.RecommendationResponse recommendBlendRatio(RecommendationAiDto.RecommendationRequest req) {
+        return executePost(normalizePath(blendRatioPath), req, "BLEND_RATIO");
+    }
+
+    public RecommendationAiDto.RecommendationResponse recommendMaterialRatio(RecommendationAiDto.RecommendationRequest req) {
+        return executePost(normalizePath(materialRatioPath), req, "MATERIAL_RATIO");
+    }
+
+    private RecommendationAiDto.RecommendationResponse executePost(String path,
+                                                                  RecommendationAiDto.RecommendationRequest req,
+                                                                  String modelTag) {
         validateRequest(req);
 
         HttpHeaders headers = new HttpHeaders();
@@ -33,30 +49,25 @@ public class RecommendationAiClient {
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
         HttpEntity<RecommendationAiDto.RecommendationRequest> entity = new HttpEntity<>(req, headers);
-        String path = normalizePath(recommendPath);
 
         try {
             ResponseEntity<RecommendationAiDto.RecommendationResponse> res =
                     aiRestTemplate.exchange(path, HttpMethod.POST, entity, RecommendationAiDto.RecommendationResponse.class);
 
             if (!res.getStatusCode().is2xxSuccessful() || res.getBody() == null) {
-                throw new AiUpstreamException("AI_BAD_RESPONSE", 502, "AI returned empty body");
+                throw new AiUpstreamException("AI_BAD_RESPONSE", 502, modelTag + " returned empty body");
             }
 
-            // AI가 200이어도 status=fail/error로 내려줄 수 있으니 여기서 걸러준다.
             RecommendationAiDto.RecommendationResponse body = res.getBody();
             String st = (body.status == null ? "" : body.status.trim().toLowerCase());
 
             if (!"success".equals(st)) {
-                throw new AiUpstreamException(
-                        "AI_APP_FAIL",
-                        502,
-                        "AI status is not success. status=" + body.status + ", message=" + body.message
-                );
+                throw new AiUpstreamException("AI_APP_FAIL", 502,
+                        modelTag + " status is not success. status=" + body.status + ", message=" + body.message);
             }
 
             if (body.recommendations == null) {
-                throw new AiUpstreamException("AI_BAD_SCHEMA", 502, "AI recommendations is null");
+                throw new AiUpstreamException("AI_BAD_SCHEMA", 502, modelTag + " recommendations is null");
             }
 
             return body;
@@ -65,12 +76,12 @@ public class RecommendationAiClient {
             throw new AiUpstreamException(
                     "AI_HTTP_" + e.getStatusCode().value(),
                     502,
-                    "AI error: status=" + e.getStatusCode().value() + ", body=" + safeBody(e)
+                    modelTag + " error: status=" + e.getStatusCode().value() + ", body=" + safeBody(e)
             );
         } catch (ResourceAccessException e) {
-            throw new AiUpstreamException("AI_TIMEOUT", 504, "AI timeout/connection error: " + e.getMessage());
+            throw new AiUpstreamException("AI_TIMEOUT", 504, modelTag + " timeout/connection error: " + e.getMessage());
         } catch (RestClientException e) {
-            throw new AiUpstreamException("AI_CLIENT_ERROR", 502, "AI client error: " + e.getMessage());
+            throw new AiUpstreamException("AI_CLIENT_ERROR", 502, modelTag + " client error: " + e.getMessage());
         }
     }
 

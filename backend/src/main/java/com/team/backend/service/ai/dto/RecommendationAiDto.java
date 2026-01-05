@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/service/ai/dto/RecommendationAiDto.java
 package com.team.backend.service.ai.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
@@ -19,6 +20,7 @@ public final class RecommendationAiDto {
         public WeatherData weather;
 
         public RecommendationRequest() {}
+
         public RecommendationRequest(List<Item> items, WeatherData weather) {
             this.items = items;
             this.weather = weather;
@@ -33,24 +35,44 @@ public final class RecommendationAiDto {
         @JsonProperty("feelsLikeTemperature")
         public Double feelsLikeTemperature;
 
+        @JsonProperty("maxTemperature")
+        public Double maxTemperature;
+
+        @JsonProperty("minTemperature")
+        public Double minTemperature;
+
         @JsonProperty("humidity")
         public Integer humidity;
 
         @JsonProperty("precipitationProbability")
         public Integer precipitationProbability;
 
+        @JsonProperty("windSpeed")
+        public Double windSpeed;
+
         public WeatherData() {}
-        public WeatherData(Double t, Double f, Integer h, Integer p) {
-            temperature = t;
-            feelsLikeTemperature = f;
-            humidity = h;
-            precipitationProbability = p;
+
+        public WeatherData(Double temperature,
+                          Double feelsLikeTemperature,
+                          Double maxTemperature,
+                          Double minTemperature,
+                          Integer humidity,
+                          Integer precipitationProbability,
+                          Double windSpeed) {
+            this.temperature = temperature;
+            this.feelsLikeTemperature = feelsLikeTemperature;
+            this.maxTemperature = maxTemperature;
+            this.minTemperature = minTemperature;
+            this.humidity = humidity;
+            this.precipitationProbability = precipitationProbability;
+            this.windSpeed = windSpeed;
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Item {
         @JsonProperty("clothingId")
+        @JsonAlias({"clothing_id"})
         public Long clothingId;
 
         @JsonProperty("name")
@@ -59,11 +81,20 @@ public final class RecommendationAiDto {
         @JsonProperty("category")
         public String category;
 
+        @JsonProperty("thicknessLevel")
+        public String thicknessLevel; // THICK | NORMAL | THIN
+
+        @JsonProperty("color")
+        public String color;
+
         public Item() {}
-        public Item(Long id, String name, String category) {
-            this.clothingId = id;
+
+        public Item(Long clothingId, String name, String category, String thicknessLevel, String color) {
+            this.clothingId = clothingId;
             this.name = name;
             this.category = category;
+            this.thicknessLevel = thicknessLevel;
+            this.color = color;
         }
     }
 
@@ -82,6 +113,7 @@ public final class RecommendationAiDto {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Recommendation {
         @JsonProperty("clothingId")
+        @JsonAlias({"clothing_id"})
         public Long clothingId;
 
         @JsonProperty("name")
@@ -89,6 +121,7 @@ public final class RecommendationAiDto {
         public String name;
 
         @JsonProperty("score")
+        @JsonAlias({"blend_ratio_score", "material_ratio_score"})
         public Double score;
 
         @JsonProperty("analysis")
