@@ -12,15 +12,17 @@ class WeatherData(BaseModel):
     feelsLikeTemperature: float
     humidity: int
     precipitationProbability: int
+    windSpeed: float = 0.0
+    minTemperature: float = 0.0
+    maxTemperature: float = 0.0
 
 
 class ClothingItem(BaseModel):
     clothingId: int
     name: str
     category: str
-    cottonPercentage: Optional[int] = None
-    polyesterPercentage: Optional[int] = None
     color: Optional[str] = None
+    thicknessLevel: str = "NORMAL"
 
 
 class RecommendationRequest(BaseModel):

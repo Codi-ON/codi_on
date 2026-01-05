@@ -30,12 +30,12 @@ def recommend(payload: Dict[str, Any]):
         current_weather = req.weather
         results = []
         for item in req.items:
-            score = recommender_service.calculate_score(item.name, current_weather)
+            score = recommender_service.calculate_score(item, current_weather)
             results.append({
                 "clothingId": item.clothingId,
                 "material_name": item.name,
                 "score": score,
-                "analysis": f"체감온도 {current_weather.feelsLikeTemperature}도 기준 적합도 {score}점"
+                "analysis": f" 적합도 {score}점"
             })
         results.sort(key=lambda x: x["score"], reverse=True)
         return {"status": "success", "recommendations": results}
