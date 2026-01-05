@@ -75,7 +75,7 @@ def test():
     })
     df.to_csv("../artifacts/test_predict.csv", index=False)
 
-    threshold = 0.1
+    threshold = 0.02
     correct_cnt = (df["error"].abs() <= threshold).sum()
     total_cnt = len(df)
     acc = correct_cnt / total_cnt * 100
