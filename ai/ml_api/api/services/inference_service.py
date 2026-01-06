@@ -91,6 +91,7 @@ def predict_comfort_batch(
             print("[DEBUG] raw_score:", raw_score)
 
             comfort_score = score_0_1_to_0_100(raw_score)
+            # comfort_score = raw_score
             print("[DEBUG] comfort_score(0~100):", comfort_score)
 
             results.append(
@@ -106,7 +107,7 @@ def predict_comfort_batch(
                 Result(
                     clothingId=it.clothingId,
                     blendRatioScore=None,
-                    error=str(e),
+                    # error=str(e),
                 )
             )
 
