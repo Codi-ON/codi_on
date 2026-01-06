@@ -13,11 +13,15 @@ public record DashboardOverviewResponseDto(
 ) {
 
     public record Meta(
-            LocalDate from,
-            LocalDate to,
-            Instant generatedAt
+            LocalDate from,       // inclusive
+            LocalDate to,         // inclusive
+            Instant generatedAt,
+            int topN
     ) {}
 
+    // -----------------------
+    // Funnel
+    // -----------------------
     public record Funnel(
             long checklistSubmitted,
             long recoShown,
@@ -26,6 +30,25 @@ public record DashboardOverviewResponseDto(
             double shownToSelectRate      // 0~100
     ) {}
 
+    // -----------------------
+    // Retention (D1)
+    // -----------------------
+    public record D1RetentionSummary(
+            long eligibleUsers,
+            long retainedUsers,
+            double d1RetentionRate        // 0~100
+    ) {}
+
+    public record DailyD1Retention(
+            LocalDate date,
+            long baseUsers,
+            long retainedUsers,
+            double d1RetentionRate        // 0~100
+    ) {}
+
+    // -----------------------
+    // Summary / Series
+    // -----------------------
     public record Summary(
             long totalSessionEvents,
             long totalSessions,
@@ -72,17 +95,24 @@ public record DashboardOverviewResponseDto(
             Summary summary,
             List<DailySessions> dailySessions,
             List<DailyClicks> dailyClicks,
-            List<TopClickedItem> topClickedItems
+            List<TopClickedItem> topClickedItems,
+            D1RetentionSummary d1RetentionSummary,
+            List<DailyD1Retention> d1RetentionTrend
     ) {}
 
+    // -----------------------
+    // Factory
+    // -----------------------
     public static DashboardOverviewResponseDto from(
-            LocalDate from,
-            LocalDate to,
+            LocalDate fromInclusive,
+            LocalDate toInclusive,
             int topN,
             DashboardOverviewJdbcRepository.SummaryRow summaryRow,
             List<DashboardOverviewJdbcRepository.DailySessionRow> dailySessionsRow,
             List<DashboardOverviewJdbcRepository.DailyClickRow> dailyClicksRow,
-            List<DashboardOverviewJdbcRepository.TopClickedItemRow> topClickedRow
+            List<DashboardOverviewJdbcRepository.TopClickedItemRow> topClickedRow,
+            D1RetentionSummary d1Summary,
+            List<DailyD1Retention> d1Trend
     ) {
         var funnel = new Funnel(
                 summaryRow.getFunnel().getChecklistSubmitted(),
@@ -115,7 +145,8 @@ public record DashboardOverviewResponseDto(
                 funnel
         );
 
-        var dailySessions = dailySessionsRow.stream()
+        var dailySessions = (dailySessionsRow == null ? List.<DailySessions>of()
+                : dailySessionsRow.stream()
                 .map(r -> new DailySessions(
                         r.getDate(),
                         r.getSessionEventCount(),
@@ -123,19 +154,27 @@ public record DashboardOverviewResponseDto(
                         r.getErrorEventCount(),
                         r.getErrorRate()
                 ))
-                .toList();
+                .toList());
 
-        var dailyClicks = dailyClicksRow.stream()
+        var dailyClicks = (dailyClicksRow == null ? List.<DailyClicks>of()
+                : dailyClicksRow.stream()
                 .map(r -> new DailyClicks(r.getDate(), r.getClickCount()))
-                .toList();
+                .toList());
 
-        var topClicked = topClickedRow.stream()
+        var topClicked = (topClickedRow == null ? List.<TopClickedItem>of()
+                : topClickedRow.stream()
                 .map(r -> new TopClickedItem(r.getItemId(), r.getName(), r.getClickCount()))
-                .toList();
+                .toList());
+
+        var resolvedD1Summary = (d1Summary == null)
+                ? new D1RetentionSummary(0, 0, 0.0)
+                : d1Summary;
+
+        var resolvedD1Trend = (d1Trend == null) ? List.<DailyD1Retention>of() : d1Trend;
 
         return new DashboardOverviewResponseDto(
-                new Meta(from, to, Instant.now()),
-                new Metrics(summary, dailySessions, dailyClicks, topClicked)
+                new Meta(fromInclusive, toInclusive, Instant.now(), topN),
+                new Metrics(summary, dailySessions, dailyClicks, topClicked, resolvedD1Summary, resolvedD1Trend)
         );
     }
 }
