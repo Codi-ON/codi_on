@@ -16,11 +16,11 @@ public class ClosetItemQueryRepositoryImpl implements ClosetItemQueryRepository 
         if (closetId == null) return List.of();
 
         var q = em.createNativeQuery("""
-            SELECT ci.clothing_id
-            FROM closet_item ci
-            WHERE ci.closet_id = :closetId
-            ORDER BY ci.id ASC
-        """);
+                    SELECT ci.clothing_item_id
+                    FROM public.closet_item ci
+                    WHERE ci.closet_id = :closetId
+                    ORDER BY ci.id ASC
+                """);
         q.setParameter("closetId", closetId);
 
         @SuppressWarnings("unchecked")

@@ -58,7 +58,7 @@ public class DashboardMonthlyAdminService {
             topMap.computeIfAbsent(r.month(), k -> new ArrayList<>()).add(
                     new DashboardMonthlyRowResponseDto.TopClickedItem(
                             r.rank(),
-                            r.clothingItemId(),
+                            r.itemId(),
                             r.name(),
                             r.clickCount(),
                             r.clickRatio()
@@ -160,7 +160,7 @@ public class DashboardMonthlyAdminService {
 
             // Sheet 2) Top Clicked
             var sheet2 = wb.createSheet("top_clicked");
-            String[] headers2 = {"month", "rank", "clothingItemId", "name", "clickCount", "clickRatio"};
+            String[] headers2 = {"month", "rank", "ItemId", "name", "clickCount", "clickRatio"};
             Row h2 = sheet2.createRow(0);
             for (int i = 0; i < headers2.length; i++) h2.createCell(i).setCellValue(headers2[i]);
 
@@ -171,7 +171,7 @@ public class DashboardMonthlyAdminService {
                     int c = 0;
                     row.createCell(c++).setCellValue(r.month());
                     row.createCell(c++).setCellValue(item.rank());
-                    row.createCell(c++).setCellValue(item.clothingItemId());
+                    row.createCell(c++).setCellValue(item.itemId());
                     row.createCell(c++).setCellValue(item.name());
                     row.createCell(c++).setCellValue(item.clickCount());
                     row.createCell(c++).setCellValue(item.clickRatio());

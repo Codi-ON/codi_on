@@ -2,6 +2,7 @@
 package com.team.backend.domain.enums.recommendation;
 
 public enum RecommendationEventType {
+    CANDIDATES_CREATED,
     CHECKLIST_SUBMITTED,
     RECO_GENERATED,
     RECO_SHOWN,

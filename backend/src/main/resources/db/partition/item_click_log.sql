@@ -1,49 +1,40 @@
-BEGIN;
+-- 운영 마이그레이션에서는 DROP 금지 (테스트 스크립트로만)
+CREATE TABLE IF NOT EXISTS public.item_click_log (
+  id                BIGINT GENERATED ALWAYS AS IDENTITY,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
--- 테스트 전용이면 OK (운영이면 DROP 금지)
-DROP TABLE IF EXISTS public.item_click_log CASCADE;
+  -- 세션 테이블과 정합성 맞추기 (둘 중 하나 택1)
+  session_key       VARCHAR(64) NOT NULL,
+  user_id           BIGINT NULL,
 
-CREATE TABLE public.item_click_log (
-  id               BIGINT GENERATED ALWAYS AS IDENTITY,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  recommendation_id BIGINT NULL,   -- 있으면 좋음(선택/클릭이 어느 추천에 속하는지)
+  clothing_item_id  BIGINT NOT NULL,
 
-  user_id          BIGINT NULL,
-  session_id       UUID NULL,
-  recommendation_id BIGINT NULL,
+  -- 컨벤션: UPPER_SNAKE_CASE
+  event_type        VARCHAR(50) NOT NULL,  -- ITEM_CLICK / RECO_ITEM_SELECTED
 
-  clothing_item_id BIGINT NOT NULL,
-  event_type       VARCHAR(50) NOT NULL,
-  payload          JSONB NULL,
+  payload           JSONB NULL,
 
-  PRIMARY KEY (id, created_at)
+  PRIMARY KEY (created_at, id)
 ) PARTITION BY RANGE (created_at);
 
--- KST 기준 월 파티션(경계 +09)
-CREATE TABLE public.item_click_log_202512
-  PARTITION OF public.item_click_log
-  FOR VALUES FROM ('2025-12-01 00:00:00+09') TO ('2026-01-01 00:00:00+09');
-
-CREATE TABLE public.item_click_log_202601
+-- 파티션 (KST 경계)
+CREATE TABLE IF NOT EXISTS public.item_click_log_202601
   PARTITION OF public.item_click_log
   FOR VALUES FROM ('2026-01-01 00:00:00+09') TO ('2026-02-01 00:00:00+09');
 
-CREATE TABLE public.item_click_log_default
-  PARTITION OF public.item_click_log
-  DEFAULT;
+CREATE TABLE IF NOT EXISTS public.item_click_log_default
+  PARTITION OF public.item_click_log DEFAULT;
 
--- 인덱스(로그 조회 패턴 기준)
-CREATE INDEX idx_item_click_log_created_at ON public.item_click_log (created_at);
-CREATE INDEX idx_item_click_log_session_id_created_at ON public.item_click_log (session_id, created_at);
-CREATE INDEX idx_item_click_log_reco_id ON public.item_click_log (recommendation_id);
-CREATE INDEX idx_item_click_log_item_id ON public.item_click_log (clothing_item_id);
+-- 인덱스: 대시보드 쿼리 기준 (기간 + topN)
+CREATE INDEX IF NOT EXISTS idx_item_click_log_event_created_at
+  ON public.item_click_log (event_type, created_at);
 
-COMMIT;
+CREATE INDEX IF NOT EXISTS idx_item_click_log_item_event_created_at
+  ON public.item_click_log (clothing_item_id, event_type, created_at);
 
--- smoke test (event_type는 enum/계약에 맞춰)
-INSERT INTO public.item_click_log (created_at, user_id, session_id, recommendation_id, clothing_item_id, event_type, payload)
-VALUES ('2025-12-16 12:00:00+09', 1, NULL, NULL, 101, 'ITEM_CLICK', '{"ref":"swagger"}'::jsonb);
+CREATE INDEX IF NOT EXISTS idx_item_click_log_session_created_at
+  ON public.item_click_log (session_key, created_at);
 
-SELECT tableoid::regclass AS physical_table, *
-FROM public.item_click_log
-ORDER BY created_at DESC
-LIMIT 10;
+CREATE INDEX IF NOT EXISTS idx_item_click_log_reco_created_at
+  ON public.item_click_log (recommendation_id, created_at);
