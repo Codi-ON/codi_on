@@ -24,7 +24,7 @@ class ComfortBatchRequest(BaseModel):
 class Result(BaseModel):
     clothingId: int
     blendRatioScore: Optional[int] = None
-    error: Optional[str] = None
+    # error: Optional[str] = None
 
 class ComfortBatchResult(BaseModel):
     results: List[Result]
