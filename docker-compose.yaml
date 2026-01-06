@@ -11,7 +11,6 @@ services:
     volumes:
       - codion_db_data:/var/lib/postgresql/data
     healthcheck:
-      # compose의 environment 변수를 healthcheck에서 쓰려면 $$로 escape 필요
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
@@ -27,8 +26,13 @@ services:
     container_name: codion-ai
     ports:
       - "8000:8000"
+    environment:
+      # ✅ 모델 경로 기준점 (코드에서 이 값을 우선 사용)
+      MODEL_BASE_PATH: /app/models
+
+      # (선택) 런타임 설정값이 필요하면 여기 계속 추가
+      # LOG_LEVEL: INFO
     healthcheck:
-      # wget/curl 의존 제거 (python은 컨테이너에 있다는 전제)
       test:
         [
           "CMD-SHELL",
@@ -52,15 +56,12 @@ services:
       ai:
         condition: service_healthy
     environment:
-      # DB
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
 
-      # Weather
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
 
-      # AI (Spring relaxed binding: AI_BASE_URL -> ai.base-url)
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
@@ -68,7 +69,6 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      # actuator 쓰면 /actuator/health 추천, 없으면 아래처럼 임시로
       test:
         [
           "CMD-SHELL",
