@@ -110,7 +110,7 @@ class WeatherRecommender:
             final_score = max(0.0, min(100.0, predicted_score))
 
             # 100점 만점으로 변환
-            return round(final_score, 2)
+            return int(final_score)
 
         except Exception as e:
             print(f"🔥 예측 중 에러 발생: {e}")
