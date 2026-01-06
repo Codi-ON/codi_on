@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from ..schemas.predict_schema import ComfortBatchRequest, ComfortBatchResult
 from ..services.inference_service import predict_comfort_batch  # ✅ 상대 임포트
 
-router = APIRouter(prefix="/comfort", tags=["comfort"])
+router = APIRouter(prefix="/recommend/blend-ratio", tags=["comfort"])
 
 def _parse(payload: Dict[str, Any]) -> ComfortBatchRequest:
     if hasattr(ComfortBatchRequest, "model_validate"):
@@ -16,7 +16,7 @@ def _parse(payload: Dict[str, Any]) -> ComfortBatchRequest:
 def health():
     return {"status": "ok", "service": "comfort"}
 
-@router.post("/batch")
+@router.post("")
 def batch(payload: Dict[str, Any]):
     try:
         req = _parse(payload)
