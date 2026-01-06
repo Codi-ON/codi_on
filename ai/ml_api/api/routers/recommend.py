@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from ..schemas.recommendation_schemas import RecommendationRequest
 from ..services.predictor import recommender_service  # ✅ 상대 임포트로 고정
 
-router = APIRouter(prefix="/recommend", tags=["recommend"])
+router = APIRouter(prefix="/recommend/material_ratio", tags=["recommend"])
 
 def _parse(payload: Dict[str, Any]) -> RecommendationRequest:
     if hasattr(RecommendationRequest, "model_validate"):  # pydantic v2
