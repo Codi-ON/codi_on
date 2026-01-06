@@ -1,12 +1,11 @@
-version: "3.9"
 
 services:
   db:
     image: postgres:16-alpine
     container_name: codion-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-huisun}
-      POSTGRES_USER: ${POSTGRES_USER:-huisun}
+      POSTGRES_DB: ${POSTGRES_DB:-codion}
+      POSTGRES_USER: ${POSTGRES_USER:-codion}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
     ports:
       - "5432:5432"
@@ -49,8 +48,8 @@ services:
       db:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-codion}}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-codion}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
 
