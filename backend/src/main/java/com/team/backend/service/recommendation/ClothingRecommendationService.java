@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -41,7 +42,6 @@ public class ClothingRecommendationService {
 
     // =========================
     // GET /api/recommend/today
-    // - 기존 유지(단, sessionKey 있으면 closet-only로 후보 제한)
     // =========================
     public List<ClothingItemResponseDto> recommendToday(
             String region,
@@ -63,9 +63,18 @@ public class ClothingRecommendationService {
         if (candidates.isEmpty()) return List.of();
 
         RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
-        RecommendationAiDto.RecommendationResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
 
-        List<ClothingItem> picked = mapAiToEntities(aiRes, candidates, Math.min(limit, candidates.size()));
+        RecommendationAiDto.RecommendationResponse aiRes = null;
+        boolean aiUsed = false;
+        try {
+            aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
+            aiUsed = isAiUsable(aiRes);
+        } catch (Exception e) {
+            log.warn("AI recommendToday failed. fallback. region={}, lat={}, lon={}, limit={}, sessionKeyPresent={}",
+                    region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank(), e);
+        }
+
+        List<ClothingItem> picked = mapAiToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
         return toResponse(picked, sessionKey);
     }
 
@@ -73,7 +82,6 @@ public class ClothingRecommendationService {
     // GET /api/recommend/today/by-category
     // =========================
     public List<ClothingItemResponseDto> recommendTodayByCategory(
-
             ClothingCategory category,
             String region,
             double lat,
@@ -82,7 +90,8 @@ public class ClothingRecommendationService {
             String sessionKey
     ) {
         log.info("recommendTodayByCategory start. category={}, region={}, lat={}, lon={}, limit={}, sessionKeyPresent={}",
-        category, region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank());
+                category, region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank());
+
         var weather = weatherService.getTodaySmart(lat, lon, region);
         Integer temp = toTemp(weather.getFeelsLikeTemperature(), weather.getTemperature());
 
@@ -97,17 +106,24 @@ public class ClothingRecommendationService {
         if (candidates.isEmpty()) return List.of();
 
         RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
-        RecommendationAiDto.RecommendationResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
 
-        List<ClothingItem> picked = mapAiToEntities(aiRes, candidates, Math.min(limit, candidates.size()));
+        RecommendationAiDto.RecommendationResponse aiRes = null;
+        boolean aiUsed = false;
+        try {
+            aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
+            aiUsed = isAiUsable(aiRes);
+        } catch (Exception e) {
+            log.warn("AI recommendTodayByCategory failed. fallback. category={}, region={}, lat={}, lon={}, limit={}, sessionKeyPresent={}",
+                    category, region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank(), e);
+        }
+
+        List<ClothingItem> picked = mapAiToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
         return toResponse(picked, sessionKey);
     }
 
     // =========================
     // POST /api/recommend/candidates
-    // - sessionKey 있으면 closet-only
-    // - sessionKey null/blank면 전체풀 fallback
-    // - 모델 2개 각각 + 카테고리별 TopN
+    // - 카테고리별로 AI 호출하므로, aiUsed는 "카테고리 단위"로 내려감
     // =========================
     public RecommendationCandidatesResponseDto getCandidates(RecommendationCandidatesRequestDto req, String sessionKey) {
 
@@ -127,18 +143,13 @@ public class ClothingRecommendationService {
 
         int topN = (req.getTopNPerCategory() == null ? 10 : req.getTopNPerCategory());
         var checklist = req.getChecklist();
-
-        // checklist는 @NotNull이라 가정하지만, 방어적으로 한 번 더
-        if (checklist == null) {
-            throw new IllegalArgumentException("checklist is required");
-        }
+        if (checklist == null) throw new IllegalArgumentException("checklist is required");
 
         Set<UsageType> usageTypes = expandUsageTypes(checklist.getUsageType());
 
         // 3) 카테고리별 후보 로딩 (closetId 있으면 closet-only, 없으면 전체풀)
         Map<ClothingCategory, List<ClothingItem>> candidatesByCategory = new LinkedHashMap<>();
         for (ClothingCategory category : ClothingCategory.values()) {
-
             ClothingItemRequestDto.SearchCondition cond = ClothingItemRequestDto.SearchCondition.builder()
                     .category(category)
                     .temp(temp)
@@ -164,35 +175,54 @@ public class ClothingRecommendationService {
                 RecommendationModelType.BLEND_RATIO,
                 RecommendationModelType.MATERIAL_RATIO
         )) {
-
             List<RecommendationCandidatesResponseDto.CategoryCandidatesDto> categoryDtos = new ArrayList<>();
 
             for (var entry : candidatesByCategory.entrySet()) {
                 ClothingCategory category = entry.getKey();
                 List<ClothingItem> candidates = entry.getValue();
 
+                // 후보 자체가 없으면 AI 탈 것도 없음
                 if (candidates == null || candidates.isEmpty()) {
                     categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
                             .category(category)
+                            .aiUsed(false)
                             .candidates(List.of())
                             .build());
                     continue;
                 }
 
                 RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
-                RecommendationAiDto.RecommendationResponse aiRes = callAi(modelType, aiReq);
 
+                RecommendationAiDto.RecommendationResponse aiRes = null;
+                boolean aiUsed = false;
+
+                try {
+                    aiRes = callAi(modelType, aiReq);
+                    aiUsed = isAiUsable(aiRes);
+                    if (!aiUsed) {
+                        log.warn("AI returned empty/invalid. fallback. modelType={}, category={}, recoKey={}",
+                                modelType, category, recommendationKey);
+                    }
+                } catch (Exception e) {
+                    log.warn("AI call failed. fallback. modelType={}, category={}, recoKey={}",
+                            modelType, category, recommendationKey, e);
+                    aiRes = null;
+                    aiUsed = false;
+                }
+
+                // aiUsed=false면 map 함수에서 자동 fallback(list 기본정렬)로 내려감
                 List<RecommendationCandidatesResponseDto.CandidateDto> out =
-                        mapAiToCandidateDtos(aiRes, candidates, favSet, topN);
+                        mapAiToCandidateDtos(aiUsed ? aiRes : null, candidates, favSet, topN);
 
                 categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
                         .category(category)
+                        .aiUsed(aiUsed)
                         .candidates(out)
                         .build());
             }
 
             models.add(RecommendationCandidatesResponseDto.ModelCandidatesDto.builder()
-                    .RecommendationModelType(modelType)   // DTO 필드명이 다르면 여기만 너 DTO에 맞게 바꾸면 끝
+                    .modelType(modelType)
                     .categories(categoryDtos)
                     .build());
         }
@@ -206,6 +236,12 @@ public class ClothingRecommendationService {
     // =========================
     // 내부 유틸
     // =========================
+    private boolean isAiUsable(RecommendationAiDto.RecommendationResponse aiRes) {
+        return aiRes != null
+                && aiRes.recommendations != null
+                && !aiRes.recommendations.isEmpty();
+    }
+
     private LocalDate resolveClientDate(RecommendationCandidatesRequestDto req) {
         if (req == null || req.getChecklist() == null) return TimeRanges.todayKst();
         if (req.getChecklist().getClientDateISO() == null) return TimeRanges.todayKst();
@@ -275,7 +311,7 @@ public class ClothingRecommendationService {
     }
 
     // =========================
-    // AI Request: 최신 RecommendationAiDto 스펙 정합
+    // AI Request: RecommendationAiDto 스펙 정합
     // =========================
     private RecommendationAiDto.RecommendationRequest buildAiRequest(
             DailyWeatherResponseDto w,
@@ -316,7 +352,7 @@ public class ClothingRecommendationService {
             List<ClothingItem> candidates,
             int limit
     ) {
-        if (aiRes == null || aiRes.recommendations == null || aiRes.recommendations.isEmpty()) {
+        if (!isAiUsable(aiRes)) {
             return candidates.stream().limit(limit).toList();
         }
 
@@ -344,7 +380,7 @@ public class ClothingRecommendationService {
         Map<Long, ClothingItem> byClothingId = candidates.stream()
                 .collect(Collectors.toMap(ClothingItem::getClothingId, Function.identity(), (a, b) -> a));
 
-        if (aiRes != null && aiRes.recommendations != null && !aiRes.recommendations.isEmpty()) {
+        if (isAiUsable(aiRes)) {
             List<RecommendationCandidatesResponseDto.CandidateDto> out = new ArrayList<>();
             for (RecommendationAiDto.Recommendation r : aiRes.recommendations) {
                 if (r == null || r.clothingId == null) continue;
@@ -366,6 +402,7 @@ public class ClothingRecommendationService {
             if (!out.isEmpty()) return out;
         }
 
+        // fallback
         return candidates.stream()
                 .limit(limit)
                 .map(it -> RecommendationCandidatesResponseDto.CandidateDto.builder()
