@@ -160,7 +160,7 @@ public class DashboardMonthlyAdminService {
 
             // Sheet 2) Top Clicked
             var sheet2 = wb.createSheet("top_clicked");
-            String[] headers2 = {"month", "rank", "ItemId", "name", "clickCount", "clickRatio"};
+            String[] headers2 = {"month", "rank", "clothingItemId", "name", "clickCount", "clickRatio"};
             Row h2 = sheet2.createRow(0);
             for (int i = 0; i < headers2.length; i++) h2.createCell(i).setCellValue(headers2[i]);
 

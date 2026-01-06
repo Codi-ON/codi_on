@@ -28,13 +28,24 @@ public class AdminDashboardController {
     private final DashboardOverviewAdminService dashboardOverviewAdminService;
     private final DashboardMonthlyAdminService dashboardMonthlyAdminService;
 
+    /**
+     * overview
+     * - from: inclusive (YYYY-MM-DD)
+     * - to:   inclusive (YYYY-MM-DD)
+     * - 내부 집계는 [from, to+1day)로 처리 (KST 기준)
+     */
     @GetMapping("/overview")
     public ApiResponse<DashboardOverviewResponseDto> overview(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "" + DEFAULT_TOP_N) int topN
     ) {
+        if (from == null || to == null) throw new IllegalArgumentException("from/to는 필수입니다.");
+        if (from.isAfter(to)) throw new IllegalArgumentException("from은 to보다 클 수 없습니다.");
+
         int resolvedTopN = clamp(topN, MIN_TOP_N, MAX_TOP_N);
+
+        // ✅ to inclusive → service에서 toExclusive로 변환하는 방식(권장)
         return ApiResponse.success(dashboardOverviewAdminService.getOverview(from, to, resolvedTopN));
     }
 
