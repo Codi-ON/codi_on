@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:16-alpine
@@ -17,7 +19,9 @@ services:
       retries: 10
     networks: [codion_app_network]
 
+  # ✅ 필요할 때만 띄우는 AI (기본 up에서는 제외)
   ai:
+    profiles: ["ai"]
     build:
       context: ../ai/ratio_based
       dockerfile: Dockerfile
@@ -35,6 +39,7 @@ services:
       retries: 10
     networks: [codion_app_network]
 
+  # ✅ backend는 DB만 의존. (AI 없어도 기동)
   backend:
     build:
       context: .
@@ -43,17 +48,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      ai:
-        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+
+      # AI는 살아있으면 쓰고, 죽어있으면 backend fallback로 처리(스프링 코드에서 예외 봉합 필요)
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
       AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
+      AI_ENABLED: ${AI_ENABLED:-false}
     ports:
       - "8080:8080"
     restart: unless-stopped

@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/api/controller/admin/AdminRecommendationMetricsController.java
 package com.team.backend.api.controller.admin;
 
 import com.team.backend.api.dto.ApiResponse;
