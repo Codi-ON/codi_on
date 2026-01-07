@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-huisun}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - codion_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -39,8 +39,9 @@ services:
           "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if r.status==200 else 1)\""
         ]
       interval: 10s
-      timeout: 3s
+      timeout: 10s
       retries: 10
+      start_period: 60s
     restart: unless-stopped
     networks:
       - codion_app_network
@@ -59,9 +60,8 @@ services:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
-
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
-
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
@@ -72,12 +72,40 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health'); sys.exit(0 if r.status==200 else 1)\""
+          "python3 -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health'); sys.exit(0 if r.status==200 else 1)\""
         ]
       interval: 10s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    networks:
+      - codion_app_network
+
+  codi_n8n:
+    image: n8nio/n8n:latest
+    container_name: codi_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_DATABASE_TYPE=postgres
+      - N8N_DATABASE_POSTGRES_HOST=db
+      - N8N_DATABASE_POSTGRES_PORT=5432
+      - N8N_DATABASE_POSTGRES_DB=n8n
+      - N8N_DATABASE_POSTGRES_USER=${POSTGRES_USER:-huisun}
+      - N8N_DATABASE_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-1234}
+
+      # 기타 설정들
+      - N8N_ENCRYPTION_KEY=0bcf66ad39b743a1b932d2b98258b17e
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    # 👇 db가 먼저 켜져야 n8n이 붙을 수 있습니다.
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - codion_app_network
 
