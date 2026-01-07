@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/api/dto/admin/dashboard/DashboardMonthlyRowResponseDto.java
 package com.team.backend.api.dto.admin.dashboard;
 
 import java.util.List;
@@ -28,7 +27,7 @@ public record DashboardMonthlyRowResponseDto(
 ) {
     public record TopClickedItem(
             int rank,
-            long clothingItemId,
+            long itemId,
             String name,
             long clickCount,
             double clickRatio // 0~1

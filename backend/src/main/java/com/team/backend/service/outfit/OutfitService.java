@@ -1,17 +1,18 @@
+// src/main/java/com/team/backend/service/outfit/OutfitService.java
 package com.team.backend.service.outfit;
 
+import com.team.backend.api.dto.log.SessionLogRequestDto;
 import com.team.backend.api.dto.outfit.OutfitRequestDto;
 import com.team.backend.api.dto.outfit.OutfitResponseDto;
-import com.team.backend.api.dto.session.SessionLogRequestDto;
 import com.team.backend.common.exception.ConflictException;
 import com.team.backend.domain.DailyWeather;
 import com.team.backend.domain.enums.feadback.FeedbackRating;
 import com.team.backend.domain.enums.session.SessionEventType;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
-import com.team.backend.repository.log.SessionLogJdbcRepository;
 import com.team.backend.repository.outfit.OutfitHistoryRepository;
 import com.team.backend.repository.weather.DailyWeatherRepository;
+import com.team.backend.service.log.SessionLogService;
 import com.team.backend.service.session.SessionService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -29,13 +30,14 @@ import java.util.*;
 public class OutfitService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-
     private static final String DEFAULT_REGION = "Seoul";
 
     private final SessionService sessionService;
     private final OutfitHistoryRepository outfitHistoryRepository;
     private final DailyWeatherRepository dailyWeatherRepository;
-    private final SessionLogJdbcRepository sessionLogJdbcRepository;
+
+    // ✅ 변경: repo 직접 insert -> SessionLogService(insert)로 통일
+    private final SessionLogService sessionLogService;
 
     // =========================
     // WRITE: 오늘 아웃핏 저장 (덮어쓰기)
@@ -83,17 +85,19 @@ public class OutfitService {
 
         OutfitHistory saved = outfitHistoryRepository.save(history);
 
-        // 로그(실패해도 기능 실패 금지)
+        // ✅ 로그(실패해도 기능 실패 금지)
         try {
-            sessionLogJdbcRepository.insert(
+            sessionLogService.write(
                     SessionLogRequestDto.builder()
                             .sessionKey(key)
-                            .eventType(SessionEventType.OUTFIT_SAVED)
-                            .payload(Map.of("date", today.toString(), "clothingIds", clothingIds))
+                            .eventType(SessionEventType.OUTFIT_SAVED.name()) // String 고정
+                            .payload(Map.of(
+                                    "date", today.toString(),
+                                    "clothingIds", clothingIds
+                            ))
                             .build()
             );
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
         return OutfitResponseDto.Today.from(saved);
     }
@@ -168,7 +172,6 @@ public class OutfitService {
 
     // =========================
     // FEEDBACK: 날짜별 1회 제한
-    // - 컨트롤러가 호출하는 시그니처 그대로 제공
     // =========================
     public OutfitResponseDto.Today submitFeedbackOnce(String sessionKey, LocalDate date, Integer rating) {
         String key = sessionService.validateOnly(sessionKey);
@@ -191,15 +194,17 @@ public class OutfitService {
         OutfitHistory saved = outfitHistoryRepository.save(history);
 
         try {
-            sessionLogJdbcRepository.insert(
+            sessionLogService.write(
                     SessionLogRequestDto.builder()
                             .sessionKey(key)
-                            .eventType(SessionEventType.OUTFIT_FEEDBACK_SUBMITTED)
-                            .payload(Map.of("date", date.toString(), "feedbackScore", enumRating.toScore()))
+                            .eventType(SessionEventType.OUTFIT_FEEDBACK_SUBMITTED.name())
+                            .payload(Map.of(
+                                    "date", date.toString(),
+                                    "feedbackScore", enumRating.toScore()
+                            ))
                             .build()
             );
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
         return OutfitResponseDto.Today.from(saved);
     }

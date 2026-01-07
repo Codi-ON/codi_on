@@ -1,6 +1,7 @@
+// src/main/java/com/team/backend/repository/log/ItemClickLogJdbcRepository.java
 package com.team.backend.repository.log;
 
-import com.team.backend.api.dto.recommendation.ItemClickLogRequestDto;
+import com.team.backend.api.dto.log.ItemClickLogCreateRequestDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -12,45 +13,41 @@ public class ItemClickLogJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    /**
-     * item_click_log에 클릭 이벤트 1건 저장
-     * - createdAt 이 null이면 DB now() 사용
-     * - payloadJson 이 null이 아니면 jsonb로 캐스팅해서 저장
-     */
-    public void write(ItemClickLogRequestDto dto) {
+    public void insert(ItemClickLogCreateRequestDto dto) {
         String sql = """
-                INSERT INTO public.item_click_log (
-                    created_at,
-                    user_id,
-                    session_id,
-                    recommendation_id,
-                    clothing_item_id,
-                    event_type,
-                    payload
-                )
-                VALUES (
-                    COALESCE(:createdAt, now()),
-                    :userId,
-                    :sessionId,
-                    :recommendationId,
-                    :clothingItemId,
-                    :eventType,
-                    CASE
-                        WHEN :payloadJson IS NULL THEN NULL
-                        ELSE CAST(:payloadJson AS jsonb)
-                    END
-                )
-                """;
+            INSERT INTO public.item_click_log (
+                created_at,
+                session_key,
+                user_id,
+                recommendation_id,
+                clothing_item_id,
+                event_type,
+                payload
+            )
+            VALUES (
+                COALESCE(:createdAt, now()),
+                :sessionKey,
+                :userId,
+                :recommendationId,
+                :clothingItemId,
+                :eventType,
+                CASE
+                  WHEN :payloadJson IS NULL THEN NULL
+                  ELSE CAST(:payloadJson AS jsonb)
+                END
+            )
+            """;
 
-        MapSqlParameterSource params = new MapSqlParameterSource()
+        MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("createdAt", dto.getCreatedAt())
+                .addValue("sessionKey", dto.getSessionKey())
                 .addValue("userId", dto.getUserId())
-                .addValue("sessionId", dto.getSessionId())
+                // ✅ BIGINT 그대로
                 .addValue("recommendationId", dto.getRecommendationId())
                 .addValue("clothingItemId", dto.getClothingItemId())
                 .addValue("eventType", dto.getEventType())
-                .addValue("payloadJson", dto.getPayloadJson());
+                .addValue("payloadJson", dto.payloadJsonOrNull());
 
-        jdbc.update(sql, params);
+        jdbc.update(sql, p);
     }
 }

@@ -182,6 +182,8 @@ public class DashboardMonthlyJdbcRepository {
 
     // =========================
     // 2) 월별 TopClicked 스냅샷 갱신 (delete + insert)
+    // - 스냅샷 테이블에는 최소 컬럼만 저장한다.
+    // - name, click_ratio는 조회 시 JOIN/계산
     // =========================
     public void refreshMonthlyTopClicked(LocalDate monthStart, String region, OffsetDateTime from, OffsetDateTime to, int topN) {
         jdbc.update(
@@ -189,40 +191,30 @@ public class DashboardMonthlyJdbcRepository {
                 Map.of("m", monthStart, "r", region)
         );
 
+        if (topN <= 0) return;
+
         String sql = """
-            WITH total AS (
-              SELECT COUNT(*)::numeric AS total_clicks
-              FROM public.item_click_log
-              WHERE created_at >= :from AND created_at < :to
-            ),
-            ranked AS (
+            WITH ranked AS (
               SELECT
-                l.clothing_item_id AS item_id,
-                COALESCE(i.name, '(unknown)') AS name,
+                l.clothing_item_id,
                 COUNT(*) AS click_count
               FROM public.item_click_log l
-              LEFT JOIN public.clothing_item i ON i.id = l.clothing_item_id
               WHERE l.created_at >= :from AND l.created_at < :to
-              GROUP BY l.clothing_item_id, i.name
+              GROUP BY l.clothing_item_id
               ORDER BY click_count DESC
               LIMIT :topN
             )
             INSERT INTO public.admin_monthly_top_clicked_item (
-              month_start, region, rank, clothing_item_id, name, click_count, click_ratio, generated_at
+              month_start, region, clothing_item_id, click_count, rank_no, created_at
             )
             SELECT
               :monthStart::date,
               :region::text,
-              ROW_NUMBER() OVER (ORDER BY r.click_count DESC)::int AS rank,
-              r.item_id,
-              r.name,
+              r.clothing_item_id,
               r.click_count,
-              CASE WHEN t.total_clicks = 0 THEN 0
-                   ELSE (r.click_count::numeric / t.total_clicks)
-              END AS click_ratio,
+              ROW_NUMBER() OVER (ORDER BY r.click_count DESC)::int AS rank_no,
               now()
             FROM ranked r
-            CROSS JOIN total t
             """;
 
         jdbc.update(sql, Map.of(
@@ -279,36 +271,65 @@ public class DashboardMonthlyJdbcRepository {
                     rs.getLong("reco_generated"),
                     emptyRate,
 
-                    List.of() // service에서 month별 topClicked 붙일거라 여기선 빈 리스트
+                    List.of() // service에서 month별 topClicked 붙인다
             );
         });
     }
 
     // =========================
     // 4) TopClicked 조회 (range)
+    // - 스냅샷 테이블에는 name/click_ratio 없음
+    // - 조회 시 clothing_item JOIN + click_ratio(0~1) 계산
+    // - topN은 rank_no로 필터링
     // =========================
     public List<TopClickedSnapshotRow> fetchMonthlyTopClicked(LocalDate fromMonthStart, LocalDate toMonthStart, String region, int topN) {
+        if (topN <= 0) return List.of();
+
         String sql = """
+            WITH totals AS (
+              SELECT
+                month_start,
+                region,
+                COALESCE(SUM(click_count), 0)::numeric AS total_clicks
+              FROM public.admin_monthly_top_clicked_item
+              WHERE region = :r
+                AND month_start >= :fromM
+                AND month_start <= :toM
+              GROUP BY month_start, region
+            )
             SELECT
-              to_char(month_start, 'YYYY-MM') AS month,
-              rank,
-              clothing_item_id,
-              name,
-              click_count,
-              click_ratio
-            FROM public.admin_monthly_top_clicked_item
-            WHERE region = :r
-              AND month_start >= :fromM
-              AND month_start <= :toM
-            ORDER BY month_start, rank
+              to_char(t.month_start, 'YYYY-MM') AS month,
+              t.rank_no AS rank,
+              t.clothing_item_id AS item_id,
+              COALESCE(i.name, '(unknown)') AS name,
+              t.click_count,
+              CASE WHEN tot.total_clicks = 0 THEN 0
+                   ELSE (t.click_count::numeric / tot.total_clicks)
+              END AS click_ratio
+            FROM public.admin_monthly_top_clicked_item t
+            JOIN totals tot
+              ON tot.month_start = t.month_start
+             AND tot.region = t.region
+            LEFT JOIN public.clothing_item i
+              ON i.id = t.clothing_item_id
+            WHERE t.region = :r
+              AND t.month_start >= :fromM
+              AND t.month_start <= :toM
+              AND t.rank_no <= :topN
+            ORDER BY t.month_start, t.rank_no
             """;
 
-        return jdbc.query(sql, Map.of("r", region, "fromM", fromMonthStart, "toM", toMonthStart), (rs, rowNum) -> {
+        return jdbc.query(sql, Map.of(
+                "r", region,
+                "fromM", fromMonthStart,
+                "toM", toMonthStart,
+                "topN", topN
+        ), (rs, rowNum) -> {
             BigDecimal ratio = rs.getBigDecimal("click_ratio");
             return new TopClickedSnapshotRow(
                     rs.getString("month"),
                     rs.getInt("rank"),
-                    rs.getLong("clothing_item_id"),
+                    rs.getLong("item_id"),
                     rs.getString("name"),
                     rs.getLong("click_count"),
                     ratio == null ? 0.0 : ratio.doubleValue()
@@ -331,11 +352,11 @@ public class DashboardMonthlyJdbcRepository {
     }
 
     public record TopClickedSnapshotRow(
-            String month,
-            int rank,
-            long clothingItemId,
+            String month,   // "YYYY-MM"
+            int rank,       // rank_no
+            long itemId,    // clothing_item_id
             String name,
             long clickCount,
-            double clickRatio
+            double clickRatio // 0~1
     ) {}
 }
