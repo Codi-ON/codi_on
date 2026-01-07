@@ -15,6 +15,7 @@ import { getUserMessage } from "@/lib/errors";
 import { closetRepo } from "@/lib/repo/closetRepo";
 
 import { fmtTemp1 } from "@/shared/utils/format";
+import { useAiService } from "@/lib/hooks/useAiService";
 
 // ---- TodayPage에서 필요한 최소 필드만 ----
 type ClothesItemDto = {
@@ -149,6 +150,43 @@ const TodayPage: React.FC = () => {
 
         return grouped;
     }, [clothes, favoriteSet]);
+    // ---------------------
+    // AI service Hook
+    // ---------------------
+    const { fetchDailyComment } = useAiService();
+    const [aiComment, setAiComment] = useState<string | null>(null);
+    useEffect(() => {
+        // 1. 기본값 (서울 좌표) 설정
+        const defaultLat = 37.5665;
+        const defaultLon = 126.9780;
+
+        // 2. 위치 정보 요청 함수
+        const getLocationAndFetch = () => {
+            // 브라우저가 위치 기능을 지원하는지 확인
+            if (!navigator.geolocation) {
+                console.warn("이 브라우저는 위치 정보를 지원하지 않습니다.");
+                fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+                return;
+            }
+
+            // 위치 요청 (성공 시, 실패 시 콜백)
+            navigator.geolocation.getCurrentPosition(
+                // ✅ 성공했을 때 (실제 위치 사용)
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    console.log(`📍 현재 위치 발견: ${latitude}, ${longitude}`);
+                    fetchDailyComment(latitude, longitude).then(setAiComment);
+                },
+                // ❌ 실패했을 때 (사용자 거부 등 -> 서울 기본값 사용)
+                (error) => {
+                    console.warn("위치 정보 가져오기 실패(기본값 사용):", error.message);
+                    fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+                }
+            );
+        };
+
+        getLocationAndFetch();
+    }, [fetchDailyComment]);
 
     return (
         <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -195,7 +233,19 @@ const TodayPage: React.FC = () => {
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personal Stylist Insight</span>
                                     </div>
                                     <p className="text-xl font-bold leading-snug">
-                                        오늘 {displayName}님은 실내 활동 위주이므로, 기온차를 대비한 가벼운 니트와 통기성이 좋은 슬랙스를 매치해보세요.
+                                        {aiComment ? (
+                                            /* AI 멘트가 도착하면 보여주기 */
+                                            <>
+                                                <span className="text-orange-400 mr-1">{displayName}님,</span>
+                                                {aiComment}
+                                            </>
+                                        ) : (
+                                            /* 로딩 중일 때 보여줄 스켈레톤 (깜빡이는 효과) */
+                                            <span className="animate-pulse text-slate-400">
+                                                현재 날씨와 스타일을 분석하여<br/>
+                                                오늘의 코디를 생성하고 있습니다...
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
 
