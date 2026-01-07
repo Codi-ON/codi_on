@@ -17,3 +17,4 @@ seaborn
 requests
 python-dotenv
 scikit-learn
+lightgbm

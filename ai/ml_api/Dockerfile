@@ -4,7 +4,7 @@ WORKDIR /app
 
 # ✅ lightgbm 런타임 의존성 (libgomp)
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libgomp1 \
+ && apt-get install -y --no-install-recommends libgomp1 build-essential cmake \
  && rm -rf /var/lib/apt/lists/*
 
 # requirements

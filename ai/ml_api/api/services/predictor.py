@@ -20,7 +20,7 @@ class WeatherRecommender:
         if docker_model_path:
             # 🐳 Docker 환경: artifacts 폴더가 풀려서 ml 폴더 바로 아래에 파일이 있음
             # 경로: /app/models/material_weather/ml/weather_material_model.pkl
-            base_dir = os.path.join(docker_model_path, "material_weather", "ml")
+            base_dir = os.path.join(docker_model_path, "material_weather", "ml", "artifacts")
             model_path = os.path.join(base_dir, "weather_material_pmv.pkl")
             print(f"🐳 Docker 환경 감지: {model_path}")
         else:
