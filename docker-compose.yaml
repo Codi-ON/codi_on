@@ -3,8 +3,8 @@ services:
     image: postgres:16-alpine
     container_name: codion-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-huisun}
-      POSTGRES_USER: ${POSTGRES_USER:-huisun}
+      POSTGRES_DB: ${POSTGRES_DB:-codion}
+      POSTGRES_USER: ${POSTGRES_USER:-codion}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
     ports:
       - "5434:5432"
@@ -57,8 +57,8 @@ services:
       ai:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-huisun}}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-huisun}}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://db:5432/${POSTGRES_DB:-codion}}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER:-codion}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
@@ -92,7 +92,7 @@ services:
       - N8N_DATABASE_POSTGRES_HOST=db
       - N8N_DATABASE_POSTGRES_PORT=5432
       - N8N_DATABASE_POSTGRES_DB=n8n
-      - N8N_DATABASE_POSTGRES_USER=${POSTGRES_USER:-huisun}
+      - N8N_DATABASE_POSTGRES_USER=${POSTGRES_USER:-codion}
       - N8N_DATABASE_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-1234}
 
       # 기타 설정들
