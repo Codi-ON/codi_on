@@ -34,20 +34,20 @@ public class ClothingItemRepositoryImpl implements ClothingItemRepositoryCustom 
     private List<Long> searchNative(Long closetId, ClothingItemRequestDto.SearchCondition cond, Pageable pageable) {
         StringBuilder sql = new StringBuilder();
         sql.append("""
-            SELECT ci.id
-            FROM clothing_item ci
-            WHERE 1=1
-        """);
+                    SELECT ci.id
+                    FROM clothing_item ci
+                    WHERE 1=1
+                """);
 
         // (A) closet-only 제한
         if (closetId != null) {
             sql.append("""
-                AND ci.clothing_id IN (
-                    SELECT cci.clothing_id
-                    FROM closet_item cci
-                    WHERE cci.closet_id = :closetId
-                )
-            """);
+                        AND ci.id IN (
+                            SELECT cci.clothing_item_id
+                            FROM closet_item cci
+                            WHERE cci.closet_id = :closetId
+                        )
+                    """);
         }
 
         // (B) 조건
@@ -70,13 +70,13 @@ public class ClothingItemRepositoryImpl implements ClothingItemRepositoryCustom 
             if (cond.getSeasons() != null && !cond.getSeasons().isEmpty()) {
                 // ★중요: clothing_item_season은 clothing_item_id(PK) 기준
                 sql.append("""
-                    AND EXISTS (
-                        SELECT 1
-                        FROM clothing_item_season cis
-                        WHERE cis.clothing_item_id = ci.id
-                          AND cis.season IN (:seasons)
-                    )
-                """);
+                            AND EXISTS (
+                                SELECT 1
+                                FROM clothing_item_season cis
+                                WHERE cis.clothing_item_id = ci.id
+                                  AND cis.season IN (:seasons)
+                            )
+                        """);
             }
         }
 
