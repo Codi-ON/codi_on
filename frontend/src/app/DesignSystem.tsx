@@ -44,7 +44,11 @@ export const Button: React.FC<ButtonProps> = ({
 };
 
 // --- Badge ---
-export const Badge: React.FC<{ children: React.ReactNode; variant?: 'navy' | 'orange' | 'success' | 'slate' | 'error' }> = ({ children, variant = 'slate' }) => {
+export const Badge: React.FC<{
+  children: React.ReactNode,
+  variant?: 'navy' | 'orange' | 'success' | 'slate' | 'error',
+  className?: string
+}> = ({children, variant = 'slate', className}) => {
   const styles = {
     navy: "bg-navy-900 text-white",
     orange: "bg-orange-500 text-white",

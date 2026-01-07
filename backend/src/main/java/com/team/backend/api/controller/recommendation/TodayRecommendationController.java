@@ -80,20 +80,25 @@ public class TodayRecommendationController {
 
         var payload = new java.util.LinkedHashMap<String, Object>();
 
-        // 핵심: 리스트로 저장
-        var ids = req.getSelectedItems().stream()
+        // ✅ 핵심: 리스트로 저장 (null-safe)
+        var selectedItems = req.getSelectedItems();
+        var ids = (selectedItems == null) ? java.util.List.<Long>of()
+                : selectedItems.stream()
                 .map(TodaySelectRequestDto.SelectedItemDto::getClothingId)
+                .filter(java.util.Objects::nonNull)
                 .toList();
+
         payload.put("clothingIds", ids);
 
-        // 선택적으로 category까지 남기고 싶으면 함께
-        // payload.put("selectedItems", req.getSelectedItems());
+        // 필요하면 원본도 같이 남길 수 있음(대시보드용은 보통 ids만으로 충분)
+        // payload.put("selectedItems", selectedItems);
 
+        // ✅ modelType 추가 (blank 방지)
         if (req.getModelType() != null && !req.getModelType().isBlank()) {
             payload.put("modelType", req.getModelType());
         }
 
-        recoLogService.write(com.team.backend.api.dto.log.RecommendationEventLogRequestDto.builder()
+        recoLogService.write(RecommendationEventLogRequestDto.builder()
                 .sessionKey(key)
                 .recommendationId(req.getRecommendationId())
                 .eventType(EVT_RECO_ITEM_SELECTED)
