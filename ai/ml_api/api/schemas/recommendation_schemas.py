@@ -20,7 +20,6 @@ class WeatherData(BaseModel):
 class ClothingItem(BaseModel):
     clothingId: int
     name: str
-    category: str
     color: Optional[str] = None
     thicknessLevel: str = "NORMAL"
 
