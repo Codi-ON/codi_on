@@ -9,57 +9,59 @@ import java.util.List;
 public final class RecommendationAiDto {
     private RecommendationAiDto() {}
 
-    // ========= Request (FastAPI schema: context + items) =========
+    // =========================
+    // BLEND_RATIO Request
+    // =========================
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Context {
-        /** Air temperature */
-        @JsonProperty("Ta")
-        public Double ta;
+    public static class BlendContext {
+        @JsonProperty("temperature")
+        public Double temperature;
 
-        /** Relative humidity */
-        @JsonProperty("RH")
-        public Double rh;
+        @JsonProperty("humidity")
+        public Double humidity;
 
-        /** Wind speed */
-        @JsonProperty("Va")
-        public Double va;
+        @JsonProperty("windSpeed")
+        public Double windSpeed;
 
-        /** Cloud amount */
-        @JsonProperty("cloud")
-        public Double cloud;
+        @JsonProperty("cloudAmount")
+        public Double cloudAmount;
 
-        /** Daily max temperature */
-        @JsonProperty("temp_max")
-        public Double tempMax;
+        @JsonProperty("maxTemperature")
+        public Double maxTemperature;
 
-        /** Daily min temperature */
-        @JsonProperty("temp_min")
-        public Double tempMin;
+        @JsonProperty("minTemperature")
+        public Double minTemperature;
 
-        /** Weather type (clear/cloudy/rain/snow) */
-        @JsonProperty("weather_type")
-        public String weatherType;
+        @JsonProperty("sky")
+        public String sky;
 
-        public Context() {}
+        public BlendContext() {}
 
-        public Context(Double ta, Double rh, Double va, Double cloud, Double tempMax, Double tempMin, String weatherType) {
-            this.ta = ta;
-            this.rh = rh;
-            this.va = va;
-            this.cloud = cloud;
-            this.tempMax = tempMax;
-            this.tempMin = tempMin;
-            this.weatherType = weatherType;
+        public BlendContext(
+                Double temperature,
+                Double humidity,
+                Double windSpeed,
+                Double cloudAmount,
+                Double maxTemperature,
+                Double minTemperature,
+                String sky
+        ) {
+            this.temperature = temperature;
+            this.humidity = humidity;
+            this.windSpeed = windSpeed;
+            this.cloudAmount = cloudAmount;
+            this.maxTemperature = maxTemperature;
+            this.minTemperature = minTemperature;
+            this.sky = sky;
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class ItemReq {
+    public static class BlendItemReq {
         @JsonProperty("clothingId")
         public Long clothingId;
 
-        /** cotton percentage (0~100) */
         @JsonProperty("c_ratio")
         public Integer cRatio;
 
@@ -67,9 +69,9 @@ public final class RecommendationAiDto {
         @JsonProperty("thickness")
         public String thickness;
 
-        public ItemReq() {}
+        public BlendItemReq() {}
 
-        public ItemReq(Long clothingId, Integer cRatio, String thickness) {
+        public BlendItemReq(Long clothingId, Integer cRatio, String thickness) {
             this.clothingId = clothingId;
             this.cRatio = cRatio;
             this.thickness = thickness;
@@ -77,22 +79,25 @@ public final class RecommendationAiDto {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class ComfortBatchRequest {
+    public static class BlendRatioRequest {
         @JsonProperty("context")
-        public Context context;
+        public BlendContext context;
 
         @JsonProperty("items")
-        public List<ItemReq> items;
+        public List<BlendItemReq> items;
 
-        public ComfortBatchRequest() {}
+        public BlendRatioRequest() {}
 
-        public ComfortBatchRequest(Context context, List<ItemReq> items) {
+        public BlendRatioRequest(BlendContext context, List<BlendItemReq> items) {
             this.context = context;
             this.items = items;
         }
     }
 
-    // ========= Response: /recommend/blend-ratio =========
+    // =========================
+    // BLEND_RATIO Response
+    // =========================
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class BlendRatioResponse {
         @JsonProperty("results")
@@ -108,7 +113,94 @@ public final class RecommendationAiDto {
         public Double blendRatioScore;
     }
 
-    // ========= Response: /recommend/material_ratio =========
+    // =========================
+    // MATERIAL_RATIO
+    // =========================
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MaterialRatioRequest {
+        @JsonProperty("items")
+        public List<MaterialItemReq> items;
+
+        @JsonProperty("weather")
+        public MaterialWeather weather;
+
+        public MaterialRatioRequest() {}
+
+        public MaterialRatioRequest(List<MaterialItemReq> items, MaterialWeather weather) {
+            this.items = items;
+            this.weather = weather;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MaterialItemReq {
+        @JsonProperty("clothingId")
+        public Long clothingId;
+
+        @JsonProperty("name")
+        public String name;
+
+        @JsonProperty("thicknessLevel")
+        public String thicknessLevel;
+
+        @JsonProperty("color")
+        public String color;
+
+        public MaterialItemReq() {}
+
+        public MaterialItemReq(Long clothingId, String name, String thicknessLevel, String color) {
+            this.clothingId = clothingId;
+            this.name = name;
+            this.thicknessLevel = thicknessLevel;
+            this.color = color;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MaterialWeather {
+        @JsonProperty("temperature")
+        public Double temperature;
+
+        @JsonProperty("feelsLikeTemperature")
+        public Double feelsLikeTemperature;
+
+        @JsonProperty("maxTemperature")
+        public Double maxTemperature;
+
+        @JsonProperty("minTemperature")
+        public Double minTemperature;
+
+        @JsonProperty("humidity")
+        public Integer humidity;
+
+        @JsonProperty("precipitationProbability")
+        public Integer precipitationProbability;
+
+        @JsonProperty("windSpeed")
+        public Double windSpeed;
+
+        public MaterialWeather() {}
+
+        public MaterialWeather(
+                Double temperature,
+                Double feelsLikeTemperature,
+                Double maxTemperature,
+                Double minTemperature,
+                Integer humidity,
+                Integer precipitationProbability,
+                Double windSpeed
+        ) {
+            this.temperature = temperature;
+            this.feelsLikeTemperature = feelsLikeTemperature;
+            this.maxTemperature = maxTemperature;
+            this.minTemperature = minTemperature;
+            this.humidity = humidity;
+            this.precipitationProbability = precipitationProbability;
+            this.windSpeed = windSpeed;
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MaterialRatioResponse {
         @JsonProperty("results")
@@ -123,8 +215,8 @@ public final class RecommendationAiDto {
         @JsonProperty("material_name")
         public String materialName;
 
-        @JsonProperty("score")
-        public Double score;
+        @JsonProperty("materialRatioScore")
+        public Double materialRatioScore;
 
         @JsonProperty("analysis")
         public String analysis;
