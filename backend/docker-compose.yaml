@@ -1,4 +1,3 @@
-
 services:
   db:
     image: postgres:16-alpine
@@ -18,7 +17,6 @@ services:
       retries: 10
     networks: [codion_app_network]
 
-  # ✅ 필요할 때만 띄우는 AI (기본 up에서는 제외)
   ai:
     profiles: ["ai"]
     build:
@@ -31,14 +29,13 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request,json,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if json.load(r).get('status')=='ok' else 1)\""
+          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/recommend/health'); sys.exit(0 if r.status==200 else 1)\""
         ]
       interval: 5s
       timeout: 3s
       retries: 10
     networks: [codion_app_network]
 
-  # ✅ backend는 DB만 의존. (AI 없어도 기동)
   backend:
     build:
       context: .
@@ -53,12 +50,16 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
 
-      # AI는 살아있으면 쓰고, 죽어있으면 backend fallback로 처리(스프링 코드에서 예외 봉합 필요)
+      # AI (FastAPI)
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
-      AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
-      AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
-      AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
+      AI_BLEND_RATIO_PATH: ${AI_BLEND_RATIO_PATH:-/recommend/blend-ratio}
+      AI_MATERIAL_RATIO_PATH: ${AI_MATERIAL_RATIO_PATH:-/recommend/material_ratio}
+      AI_CONNECT_TIMEOUT_MS: ${AI_CONNECT_TIMEOUT_MS:-2000}
+      AI_READ_TIMEOUT_MS: ${AI_READ_TIMEOUT_MS:-7000}
+
+      # AI 스위치 (코드에서 반드시 체크해서 호출 여부 결정)
       AI_ENABLED: ${AI_ENABLED:-false}
+
     ports:
       - "8080:8080"
     restart: unless-stopped

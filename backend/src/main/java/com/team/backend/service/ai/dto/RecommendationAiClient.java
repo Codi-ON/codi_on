@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/service/ai/dto/RecommendationAiClient.java
 package com.team.backend.service.ai.dto;
 
 import com.team.backend.config.AiUpstreamException;
@@ -20,79 +21,61 @@ public class RecommendationAiClient {
     @Value("${ai.blend-ratio-path:/recommend/blend-ratio}")
     private String blendRatioPath;
 
-    @Value("${ai.material-ratio-path:/recommend/material-ratio}")
+    @Value("${ai.material-ratio-path:/recommend/material_ratio}")
     private String materialRatioPath;
 
     public RecommendationAiClient(@Qualifier("aiRestTemplate") RestTemplate aiRestTemplate) {
         this.aiRestTemplate = aiRestTemplate;
     }
 
-    public RecommendationAiDto.RecommendationResponse recommendBlendRatio(RecommendationAiDto.RecommendationRequest req) {
-        return executePost(normalizePath(blendRatioPath), req, "BLEND_RATIO");
+    public RecommendationAiDto.BlendRatioResponse recommendBlendRatio(RecommendationAiDto.ComfortBatchRequest req) {
+        return executePost(normalizePath(blendRatioPath), req, RecommendationAiDto.BlendRatioResponse.class, "BLEND_RATIO");
     }
 
-    public RecommendationAiDto.RecommendationResponse recommendMaterialRatio(RecommendationAiDto.RecommendationRequest req) {
-        return executePost(normalizePath(materialRatioPath), req, "MATERIAL_RATIO");
+    public RecommendationAiDto.MaterialRatioResponse recommendMaterialRatio(RecommendationAiDto.ComfortBatchRequest req) {
+        return executePost(normalizePath(materialRatioPath), req, RecommendationAiDto.MaterialRatioResponse.class, "MATERIAL_RATIO");
     }
 
-    private RecommendationAiDto.RecommendationResponse executePost(
-            String path,
-            RecommendationAiDto.RecommendationRequest req,
-            String modelTag
-    ) {
+    private <T> T executePost(String path, RecommendationAiDto.ComfortBatchRequest req, Class<T> responseType, String tag) {
         validateRequest(req);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
-        HttpEntity<RecommendationAiDto.RecommendationRequest> entity = new HttpEntity<>(req, headers);
+        HttpEntity<RecommendationAiDto.ComfortBatchRequest> entity = new HttpEntity<>(req, headers);
 
         try {
-            ResponseEntity<RecommendationAiDto.RecommendationResponse> res =
-                    aiRestTemplate.exchange(path, HttpMethod.POST, entity, RecommendationAiDto.RecommendationResponse.class);
+            ResponseEntity<T> res = aiRestTemplate.exchange(path, HttpMethod.POST, entity, responseType);
 
             if (!res.getStatusCode().is2xxSuccessful() || res.getBody() == null) {
-                throw new AiUpstreamException("AI_BAD_RESPONSE", 502, modelTag + " returned empty body");
+                throw new AiUpstreamException("AI_BAD_RESPONSE", 502, tag + " returned empty body");
             }
-
-            var body = res.getBody();
-            String st = (body.status == null ? "" : body.status.trim().toLowerCase());
-
-            if (!"success".equals(st)) {
-                throw new AiUpstreamException("AI_APP_FAIL", 502,
-                        modelTag + " status is not success. status=" + body.status + ", message=" + body.message);
-            }
-
-            if (body.recommendations == null) {
-                throw new AiUpstreamException("AI_BAD_SCHEMA", 502, modelTag + " recommendations is null");
-            }
-
-            return body;
+            return res.getBody();
 
         } catch (HttpStatusCodeException e) {
             throw new AiUpstreamException(
                     "AI_HTTP_" + e.getStatusCode().value(),
                     502,
-                    modelTag + " error: status=" + e.getStatusCode().value() + ", body=" + safeBody(e)
+                    tag + " error: status=" + e.getStatusCode().value() + ", body=" + safeBody(e)
             );
         } catch (ResourceAccessException e) {
-            throw new AiUpstreamException("AI_TIMEOUT", 504, modelTag + " timeout/connection error: " + e.getMessage());
+            throw new AiUpstreamException("AI_TIMEOUT", 504, tag + " timeout/connection error: " + e.getMessage());
         } catch (RestClientException e) {
-            throw new AiUpstreamException("AI_CLIENT_ERROR", 502, modelTag + " client error: " + e.getMessage());
+            throw new AiUpstreamException("AI_CLIENT_ERROR", 502, tag + " client error: " + e.getMessage());
         }
     }
 
-    private void validateRequest(RecommendationAiDto.RecommendationRequest req) {
+    private void validateRequest(RecommendationAiDto.ComfortBatchRequest req) {
         if (req == null) throw new IllegalArgumentException("req is required");
-        if (req.weather == null) throw new IllegalArgumentException("weather is required");
+        if (req.context == null) throw new IllegalArgumentException("context is required");
         if (req.items == null || req.items.isEmpty()) throw new IllegalArgumentException("items must not be empty");
 
-        for (RecommendationAiDto.Item it : req.items) {
+        for (RecommendationAiDto.ItemReq it : req.items) {
             if (it == null) throw new IllegalArgumentException("item must not be null");
             if (it.clothingId == null) throw new IllegalArgumentException("clothingId is required");
-            if (it.name == null || it.name.isBlank()) throw new IllegalArgumentException("name is required");
-            if (it.category == null || it.category.isBlank()) throw new IllegalArgumentException("category is required");
+            if (it.thickness == null || it.thickness.isBlank()) throw new IllegalArgumentException("thickness is required");
+            if (it.cRatio == null) throw new IllegalArgumentException("c_ratio is required");
         }
     }
 

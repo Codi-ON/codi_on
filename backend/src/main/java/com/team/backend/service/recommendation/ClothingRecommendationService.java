@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/service/recommendation/ClothingRecommendationService.java
 package com.team.backend.service.recommendation;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
@@ -62,19 +63,19 @@ public class ClothingRecommendationService {
         List<ClothingItem> candidates = loadCandidates(cond, limit, sessionKey);
         if (candidates.isEmpty()) return List.of();
 
-        RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
+        RecommendationAiDto.ComfortBatchRequest aiReq = buildAiRequest(weather, candidates);
 
-        RecommendationAiDto.RecommendationResponse aiRes = null;
+        RecommendationAiDto.MaterialRatioResponse aiRes = null;
         boolean aiUsed = false;
         try {
             aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
-            aiUsed = isAiUsable(aiRes);
+            aiUsed = isAiUsableMaterial(aiRes);
         } catch (Exception e) {
             log.warn("AI recommendToday failed. fallback. region={}, lat={}, lon={}, limit={}, sessionKeyPresent={}",
                     region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank(), e);
         }
 
-        List<ClothingItem> picked = mapAiToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
+        List<ClothingItem> picked = mapMaterialToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
         return toResponse(picked, sessionKey);
     }
 
@@ -105,25 +106,25 @@ public class ClothingRecommendationService {
         List<ClothingItem> candidates = loadCandidates(cond, limit, sessionKey);
         if (candidates.isEmpty()) return List.of();
 
-        RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
+        RecommendationAiDto.ComfortBatchRequest aiReq = buildAiRequest(weather, candidates);
 
-        RecommendationAiDto.RecommendationResponse aiRes = null;
+        RecommendationAiDto.MaterialRatioResponse aiRes = null;
         boolean aiUsed = false;
         try {
             aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
-            aiUsed = isAiUsable(aiRes);
+            aiUsed = isAiUsableMaterial(aiRes);
         } catch (Exception e) {
             log.warn("AI recommendTodayByCategory failed. fallback. category={}, region={}, lat={}, lon={}, limit={}, sessionKeyPresent={}",
                     category, region, lat, lon, limit, sessionKey != null && !sessionKey.isBlank(), e);
         }
 
-        List<ClothingItem> picked = mapAiToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
+        List<ClothingItem> picked = mapMaterialToEntities(aiUsed ? aiRes : null, candidates, Math.min(limit, candidates.size()));
         return toResponse(picked, sessionKey);
     }
 
     // =========================
     // POST /api/recommend/candidates
-    // - 카테고리별로 AI 호출하므로, aiUsed는 "카테고리 단위"로 내려감
+    // - 모델 2개 각각 호출 → 모델별/카테고리별 후보 리스트
     // =========================
     public RecommendationCandidatesResponseDto getCandidates(RecommendationCandidatesRequestDto req, String sessionKey) {
 
@@ -181,7 +182,6 @@ public class ClothingRecommendationService {
                 ClothingCategory category = entry.getKey();
                 List<ClothingItem> candidates = entry.getValue();
 
-                // 후보 자체가 없으면 AI 탈 것도 없음
                 if (candidates == null || candidates.isEmpty()) {
                     categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
                             .category(category)
@@ -191,28 +191,34 @@ public class ClothingRecommendationService {
                     continue;
                 }
 
-                RecommendationAiDto.RecommendationRequest aiReq = buildAiRequest(weather, candidates);
+                RecommendationAiDto.ComfortBatchRequest aiReq = buildAiRequest(weather, candidates);
 
-                RecommendationAiDto.RecommendationResponse aiRes = null;
                 boolean aiUsed = false;
+                List<RecommendationCandidatesResponseDto.CandidateDto> out;
 
                 try {
-                    aiRes = callAi(modelType, aiReq);
-                    aiUsed = isAiUsable(aiRes);
+                    if (modelType == RecommendationModelType.BLEND_RATIO) {
+                        RecommendationAiDto.BlendRatioResponse aiRes = recommendationAiClient.recommendBlendRatio(aiReq);
+                        aiUsed = isAiUsableBlend(aiRes);
+                        out = mapBlendToCandidateDtos(aiUsed ? aiRes : null, candidates, favSet, topN);
+
+                    } else {
+                        RecommendationAiDto.MaterialRatioResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
+                        aiUsed = isAiUsableMaterial(aiRes);
+                        out = mapMaterialToCandidateDtos(aiUsed ? aiRes : null, candidates, favSet, topN);
+                    }
+
                     if (!aiUsed) {
                         log.warn("AI returned empty/invalid. fallback. modelType={}, category={}, recoKey={}",
                                 modelType, category, recommendationKey);
                     }
+
                 } catch (Exception e) {
                     log.warn("AI call failed. fallback. modelType={}, category={}, recoKey={}",
                             modelType, category, recommendationKey, e);
-                    aiRes = null;
                     aiUsed = false;
+                    out = fallbackCandidates(candidates, favSet, topN);
                 }
-
-                // aiUsed=false면 map 함수에서 자동 fallback(list 기본정렬)로 내려감
-                List<RecommendationCandidatesResponseDto.CandidateDto> out =
-                        mapAiToCandidateDtos(aiUsed ? aiRes : null, candidates, favSet, topN);
 
                 categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
                         .category(category)
@@ -236,10 +242,12 @@ public class ClothingRecommendationService {
     // =========================
     // 내부 유틸
     // =========================
-    private boolean isAiUsable(RecommendationAiDto.RecommendationResponse aiRes) {
-        return aiRes != null
-                && aiRes.recommendations != null
-                && !aiRes.recommendations.isEmpty();
+    private boolean isAiUsableBlend(RecommendationAiDto.BlendRatioResponse res) {
+        return res != null && res.results != null && !res.results.isEmpty();
+    }
+
+    private boolean isAiUsableMaterial(RecommendationAiDto.MaterialRatioResponse res) {
+        return res != null && res.results != null && !res.results.isEmpty();
     }
 
     private LocalDate resolveClientDate(RecommendationCandidatesRequestDto req) {
@@ -311,48 +319,64 @@ public class ClothingRecommendationService {
     }
 
     // =========================
-    // AI Request: RecommendationAiDto 스펙 정합
+    // AI Request: FastAPI 스펙(context + items[c_ratio, thickness]) 정합
     // =========================
-    private RecommendationAiDto.RecommendationRequest buildAiRequest(
+    private RecommendationAiDto.ComfortBatchRequest buildAiRequest(
             DailyWeatherResponseDto w,
             List<ClothingItem> items
     ) {
-        List<RecommendationAiDto.Item> aiItems = items.stream()
-                .map(i -> new RecommendationAiDto.Item(
+        // FastAPI가 기대하는 context 필드명 기준
+        RecommendationAiDto.Context ctx = new RecommendationAiDto.Context(
+                pickTa(w.getFeelsLikeTemperature(), w.getTemperature()),                       // Ta
+                (w.getHumidity() == null ? null : w.getHumidity().doubleValue()),             // RH
+                w.getWindSpeed(),                                                             // Va
+                null,                                                                         // cloud (없으면 null)
+                w.getMaxTemperature(),                                                        // temp_max
+                w.getMinTemperature(),                                                        // temp_min
+                guessWeatherType(w.getPrecipitationProbability())                              // weather_type (fallback)
+        );
+
+        List<RecommendationAiDto.ItemReq> aiItems = items.stream()
+                .map(i -> new RecommendationAiDto.ItemReq(
                         i.getClothingId(),
-                        i.getName(),
-                        i.getCategory().name(),
-                        i.getThicknessLevel() == null ? null : i.getThicknessLevel().name(),
-                        i.getColor()
+                        clampRatio(i.getCottonPercentage()),                                   // ✅ DB cotton_percentage -> c_ratio
+                        (i.getThicknessLevel() == null ? "NORMAL" : i.getThicknessLevel().name())
                 ))
                 .toList();
 
-        RecommendationAiDto.WeatherData weather = new RecommendationAiDto.WeatherData(
-                w.getTemperature(),
-                w.getFeelsLikeTemperature(),
-                w.getMaxTemperature(),
-                w.getMinTemperature(),
-                w.getHumidity(),
-                w.getPrecipitationProbability(),
-                w.getWindSpeed()
-        );
-
-        return new RecommendationAiDto.RecommendationRequest(aiItems, weather);
+        return new RecommendationAiDto.ComfortBatchRequest(ctx, aiItems);
     }
 
-    private RecommendationAiDto.RecommendationResponse callAi(RecommendationModelType modelType, RecommendationAiDto.RecommendationRequest req) {
-        return switch (modelType) {
-            case BLEND_RATIO -> recommendationAiClient.recommendBlendRatio(req);
-            case MATERIAL_RATIO -> recommendationAiClient.recommendMaterialRatio(req);
-        };
+    private Double pickTa(Double feels, Double temp) {
+        if (feels != null && Double.isFinite(feels)) return feels;
+        if (temp != null && Double.isFinite(temp)) return temp;
+        return null;
     }
 
-    private List<ClothingItem> mapAiToEntities(
-            RecommendationAiDto.RecommendationResponse aiRes,
+    private Integer clampRatio(Integer v) {
+        if (v == null) return 0;
+        if (v < 0) return 0;
+        if (v > 100) return 100;
+        return v;
+    }
+
+    // precipitationProbability 기반으로 최소한의 타입 추정 (FastAPI가 무시하면 상관없음)
+    private String guessWeatherType(Integer pop) {
+        if (pop == null) return "clear";
+        if (pop >= 60) return "rain";
+        if (pop >= 30) return "cloudy";
+        return "clear";
+    }
+
+    // =========================
+    // today 추천용 (MATERIAL 결과만 엔티티로 매핑)
+    // =========================
+    private List<ClothingItem> mapMaterialToEntities(
+            RecommendationAiDto.MaterialRatioResponse aiRes,
             List<ClothingItem> candidates,
             int limit
     ) {
-        if (!isAiUsable(aiRes)) {
+        if (!isAiUsableMaterial(aiRes)) {
             return candidates.stream().limit(limit).toList();
         }
 
@@ -360,7 +384,7 @@ public class ClothingRecommendationService {
                 .collect(Collectors.toMap(ClothingItem::getClothingId, Function.identity(), (a, b) -> a));
 
         List<ClothingItem> out = new ArrayList<>();
-        for (RecommendationAiDto.Recommendation r : aiRes.recommendations) {
+        for (RecommendationAiDto.MaterialRatioResult r : aiRes.results) {
             if (r == null || r.clothingId == null) continue;
             ClothingItem it = byClothingId.get(r.clothingId);
             if (it != null) out.add(it);
@@ -371,8 +395,11 @@ public class ClothingRecommendationService {
         return out;
     }
 
-    private List<RecommendationCandidatesResponseDto.CandidateDto> mapAiToCandidateDtos(
-            RecommendationAiDto.RecommendationResponse aiRes,
+    // =========================
+    // candidates 응답용 매핑 (results 기준)
+    // =========================
+    private List<RecommendationCandidatesResponseDto.CandidateDto> mapBlendToCandidateDtos(
+            RecommendationAiDto.BlendRatioResponse aiRes,
             List<ClothingItem> candidates,
             Set<Long> favSet,
             int limit
@@ -380,9 +407,43 @@ public class ClothingRecommendationService {
         Map<Long, ClothingItem> byClothingId = candidates.stream()
                 .collect(Collectors.toMap(ClothingItem::getClothingId, Function.identity(), (a, b) -> a));
 
-        if (isAiUsable(aiRes)) {
+        if (isAiUsableBlend(aiRes)) {
             List<RecommendationCandidatesResponseDto.CandidateDto> out = new ArrayList<>();
-            for (RecommendationAiDto.Recommendation r : aiRes.recommendations) {
+            for (RecommendationAiDto.BlendRatioResult r : aiRes.results) {
+                if (r == null || r.clothingId == null) continue;
+                ClothingItem it = byClothingId.get(r.clothingId);
+                if (it == null) continue;
+
+                out.add(RecommendationCandidatesResponseDto.CandidateDto.builder()
+                        .clothingId(it.getClothingId())
+                        .name(it.getName())
+                        .color(it.getColor())
+                        .imageUrl(it.getImageUrl())
+                        .favorited(favSet.contains(it.getClothingId()))
+                        .score(r.blendRatioScore)
+                        .analysis("BLEND_RATIO")
+                        .build());
+
+                if (out.size() >= limit) break;
+            }
+            if (!out.isEmpty()) return out;
+        }
+
+        return fallbackCandidates(candidates, favSet, limit);
+    }
+
+    private List<RecommendationCandidatesResponseDto.CandidateDto> mapMaterialToCandidateDtos(
+            RecommendationAiDto.MaterialRatioResponse aiRes,
+            List<ClothingItem> candidates,
+            Set<Long> favSet,
+            int limit
+    ) {
+        Map<Long, ClothingItem> byClothingId = candidates.stream()
+                .collect(Collectors.toMap(ClothingItem::getClothingId, Function.identity(), (a, b) -> a));
+
+        if (isAiUsableMaterial(aiRes)) {
+            List<RecommendationCandidatesResponseDto.CandidateDto> out = new ArrayList<>();
+            for (RecommendationAiDto.MaterialRatioResult r : aiRes.results) {
                 if (r == null || r.clothingId == null) continue;
                 ClothingItem it = byClothingId.get(r.clothingId);
                 if (it == null) continue;
@@ -402,7 +463,14 @@ public class ClothingRecommendationService {
             if (!out.isEmpty()) return out;
         }
 
-        // fallback
+        return fallbackCandidates(candidates, favSet, limit);
+    }
+
+    private List<RecommendationCandidatesResponseDto.CandidateDto> fallbackCandidates(
+            List<ClothingItem> candidates,
+            Set<Long> favSet,
+            int limit
+    ) {
         return candidates.stream()
                 .limit(limit)
                 .map(it -> RecommendationCandidatesResponseDto.CandidateDto.builder()

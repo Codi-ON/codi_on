@@ -1,127 +1,129 @@
 // src/main/java/com/team/backend/service/ai/dto/RecommendationAiDto.java
 package com.team.backend.service.ai.dto;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
 public final class RecommendationAiDto {
-
     private RecommendationAiDto() {}
 
+    // ========= Request (FastAPI schema: context + items) =========
+
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class RecommendationRequest {
-        @JsonProperty("items")
-        public List<Item> items;
+    public static class Context {
+        /** Air temperature */
+        @JsonProperty("Ta")
+        public Double ta;
 
-        @JsonProperty("weather")
-        public WeatherData weather;
+        /** Relative humidity */
+        @JsonProperty("RH")
+        public Double rh;
 
-        public RecommendationRequest() {}
+        /** Wind speed */
+        @JsonProperty("Va")
+        public Double va;
 
-        public RecommendationRequest(List<Item> items, WeatherData weather) {
-            this.items = items;
-            this.weather = weather;
+        /** Cloud amount */
+        @JsonProperty("cloud")
+        public Double cloud;
+
+        /** Daily max temperature */
+        @JsonProperty("temp_max")
+        public Double tempMax;
+
+        /** Daily min temperature */
+        @JsonProperty("temp_min")
+        public Double tempMin;
+
+        /** Weather type (clear/cloudy/rain/snow) */
+        @JsonProperty("weather_type")
+        public String weatherType;
+
+        public Context() {}
+
+        public Context(Double ta, Double rh, Double va, Double cloud, Double tempMax, Double tempMin, String weatherType) {
+            this.ta = ta;
+            this.rh = rh;
+            this.va = va;
+            this.cloud = cloud;
+            this.tempMax = tempMax;
+            this.tempMin = tempMin;
+            this.weatherType = weatherType;
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class WeatherData {
-        @JsonProperty("temperature")
-        public Double temperature;
-
-        @JsonProperty("feelsLikeTemperature")
-        public Double feelsLikeTemperature;
-
-        @JsonProperty("maxTemperature")
-        public Double maxTemperature;
-
-        @JsonProperty("minTemperature")
-        public Double minTemperature;
-
-        @JsonProperty("humidity")
-        public Integer humidity;
-
-        @JsonProperty("precipitationProbability")
-        public Integer precipitationProbability;
-
-        @JsonProperty("windSpeed")
-        public Double windSpeed;
-
-        public WeatherData() {}
-
-        public WeatherData(Double temperature,
-                          Double feelsLikeTemperature,
-                          Double maxTemperature,
-                          Double minTemperature,
-                          Integer humidity,
-                          Integer precipitationProbability,
-                          Double windSpeed) {
-            this.temperature = temperature;
-            this.feelsLikeTemperature = feelsLikeTemperature;
-            this.maxTemperature = maxTemperature;
-            this.minTemperature = minTemperature;
-            this.humidity = humidity;
-            this.precipitationProbability = precipitationProbability;
-            this.windSpeed = windSpeed;
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Item {
+    public static class ItemReq {
         @JsonProperty("clothingId")
-        @JsonAlias({"clothing_id"})
         public Long clothingId;
 
-        @JsonProperty("name")
-        public String name;
+        /** cotton percentage (0~100) */
+        @JsonProperty("c_ratio")
+        public Integer cRatio;
 
-        @JsonProperty("category")
-        public String category;
+        /** THICK | NORMAL | THIN */
+        @JsonProperty("thickness")
+        public String thickness;
 
-        @JsonProperty("thicknessLevel")
-        public String thicknessLevel; // THICK | NORMAL | THIN
+        public ItemReq() {}
 
-        @JsonProperty("color")
-        public String color;
-
-        public Item() {}
-
-        public Item(Long clothingId, String name, String category, String thicknessLevel, String color) {
+        public ItemReq(Long clothingId, Integer cRatio, String thickness) {
             this.clothingId = clothingId;
-            this.name = name;
-            this.category = category;
-            this.thicknessLevel = thicknessLevel;
-            this.color = color;
+            this.cRatio = cRatio;
+            this.thickness = thickness;
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class RecommendationResponse {
-        @JsonProperty("status")
-        public String status;
+    public static class ComfortBatchRequest {
+        @JsonProperty("context")
+        public Context context;
 
-        @JsonProperty("recommendations")
-        public List<Recommendation> recommendations;
+        @JsonProperty("items")
+        public List<ItemReq> items;
 
-        @JsonProperty("message")
-        public String message;
+        public ComfortBatchRequest() {}
+
+        public ComfortBatchRequest(Context context, List<ItemReq> items) {
+            this.context = context;
+            this.items = items;
+        }
+    }
+
+    // ========= Response: /recommend/blend-ratio =========
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BlendRatioResponse {
+        @JsonProperty("results")
+        public List<BlendRatioResult> results;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Recommendation {
+    public static class BlendRatioResult {
         @JsonProperty("clothingId")
-        @JsonAlias({"clothing_id"})
         public Long clothingId;
 
-        @JsonProperty("name")
-        @JsonAlias({"material_name"})
-        public String name;
+        @JsonProperty("blendRatioScore")
+        public Double blendRatioScore;
+    }
+
+    // ========= Response: /recommend/material_ratio =========
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MaterialRatioResponse {
+        @JsonProperty("results")
+        public List<MaterialRatioResult> results;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MaterialRatioResult {
+        @JsonProperty("clothingId")
+        public Long clothingId;
+
+        @JsonProperty("material_name")
+        public String materialName;
 
         @JsonProperty("score")
-        @JsonAlias({"blend_ratio_score", "material_ratio_score"})
         public Double score;
 
         @JsonProperty("analysis")

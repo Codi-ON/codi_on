@@ -56,7 +56,10 @@ public class ClothingItemRepositoryImpl implements ClothingItemRepositoryCustom 
                 sql.append(" AND ci.clothing_id = :clothingId ");
             }
             if (cond.getTemp() != null) {
-                sql.append(" AND ci.suitable_min_temp <= :temp AND ci.suitable_max_temp >= :temp ");
+                sql.append("""
+                            AND (ci.suitable_min_temp IS NULL OR ci.suitable_min_temp <= :temp)
+                            AND (ci.suitable_max_temp IS NULL OR ci.suitable_max_temp >= :temp)
+                        """);
             }
             if (cond.getCategory() != null) {
                 sql.append(" AND ci.category = :category ");
