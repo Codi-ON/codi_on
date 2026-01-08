@@ -13,7 +13,6 @@ import org.springframework.web.client.*;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.List;
 
 @Slf4j
 @Component
@@ -42,7 +41,7 @@ public class RecommendationAiClient {
     // Public API
     // =========================
 
-    public RecommendationAiDto.BlendRatioResponse recommendBlendRatio(RecommendationAiDto.ComfortBatchRequest req) {
+    public RecommendationAiDto.BlendRatioResponse recommendBlendRatio(RecommendationAiDto.BlendRatioRequest req) {
         validateBlendRequest(req);
         return executePost(
                 normalizePath(blendRatioPath),
@@ -119,31 +118,15 @@ public class RecommendationAiClient {
     }
 
     // =========================
-    // Validation
+    // Validation (DTO 기준)
     // =========================
 
-    /**
-     * ✅ BLEND_RATIO (네가 원한 스키마 기준)
-     *
-     * {
-     *   "context": {
-     *     "temperature": number,
-     *     "humidity": number,
-     *     "windSpeed": number,
-     *     "cloudAmount": number,
-     *     "maxTemperature": number,
-     *     "minTemperature": number,
-     *     "sky": "CLOUD" ...
-     *   },
-     *   "items": [{ "clothingId": 1, "cRatio": 50, "thickness": "NORMAL" }]
-     * }
-     */
-    private void validateBlendRequest(RecommendationAiDto.ComfortBatchRequest req) {
+    private void validateBlendRequest(RecommendationAiDto.BlendRatioRequest req) {
         if (req == null) throw new IllegalArgumentException("req is required");
         if (req.context == null) throw new IllegalArgumentException("context is required");
         if (req.items == null || req.items.isEmpty()) throw new IllegalArgumentException("items must not be empty");
 
-        // context 필수
+        // context (AI 스키마가 필수로 요구한다는 전제)
         if (req.context.temperature == null) throw new IllegalArgumentException("context.temperature is required");
         if (req.context.humidity == null) throw new IllegalArgumentException("context.humidity is required");
         if (req.context.windSpeed == null) throw new IllegalArgumentException("context.windSpeed is required");
@@ -153,19 +136,14 @@ public class RecommendationAiClient {
         if (req.context.sky == null || req.context.sky.isBlank())
             throw new IllegalArgumentException("context.sky is required");
 
-        // items 필수
-        for (RecommendationAiDto.ItemReq it : req.items) {
+        for (RecommendationAiDto.BlendItemReq it : req.items) {
             if (it == null) throw new IllegalArgumentException("item must not be null");
             if (it.clothingId == null) throw new IllegalArgumentException("clothingId is required");
-            if (it.cRatio == null) throw new IllegalArgumentException("cRatio is required");
+            if (it.cRatio == null) throw new IllegalArgumentException("c_ratio is required");
             if (it.thickness == null || it.thickness.isBlank()) throw new IllegalArgumentException("thickness is required");
         }
     }
 
-    /**
-     * MATERIAL_RATIO: items + weather 필수
-     * items: clothingId 필수, name(=styleTag) 권장, thicknessLevel/color optional
-     */
     private void validateMaterialRequest(RecommendationAiDto.MaterialRatioRequest req) {
         if (req == null) throw new IllegalArgumentException("req is required");
         if (req.weather == null) throw new IllegalArgumentException("weather is required");
@@ -219,8 +197,7 @@ public class RecommendationAiClient {
             if (body instanceof RecommendationAiDto.MaterialRatioResponse mr) {
                 return mr.results == null ? 0 : mr.results.size();
             }
-        } catch (Exception ignore) {
-        }
+        } catch (Exception ignore) {}
         return null;
     }
 }
