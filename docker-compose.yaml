@@ -27,16 +27,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # ✅ 모델 경로 기준점 (코드에서 이 값을 우선 사용)
       MODEL_BASE_PATH: /app/models
-
-      # (선택) 런타임 설정값이 필요하면 여기 계속 추가
-      # LOG_LEVEL: INFO
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health'); sys.exit(0 if r.status==200 else 1)\""
+          "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/recommend/blend-ratio/health'); urllib.request.urlopen('http://127.0.0.1:8000/recommend/material_ratio/health'); sys.exit(0)\""
         ]
       interval: 10s
       timeout: 10s
@@ -62,10 +58,13 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-1234}}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
-      AI_BATCH_PATH: ${AI_BATCH_PATH:-/comfort/batch}
-      AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-2}
-      AI_READ_TIMEOUT_SEC: ${AI_READ_TIMEOUT_SEC:-7}
+      AI_BLEND_RATIO_PATH: ${AI_BLEND_RATIO_PATH:-/recommend/blend-ratio}
+      AI_MATERIAL_RATIO_PATH: ${AI_MATERIAL_RATIO_PATH:-/recommend/material_ratio}
+      AI_CONNECT_TIMEOUT_MS: ${AI_CONNECT_TIMEOUT_MS:-2000}
+      AI_READ_TIMEOUT_MS: ${AI_READ_TIMEOUT_MS:-7000}
+
     ports:
       - "8080:8080"
     healthcheck:
@@ -95,14 +94,12 @@ services:
       - N8N_DATABASE_POSTGRES_USER=${POSTGRES_USER:-codion}
       - N8N_DATABASE_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-1234}
 
-      # 기타 설정들
       - N8N_ENCRYPTION_KEY=0bcf66ad39b743a1b932d2b98258b17e
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - N8N_SECURE_COOKIE=false
       - WEBHOOK_URL=http://localhost:5678/
     volumes:
       - ./n8n_data:/home/node/.n8n
-    # 👇 db가 먼저 켜져야 n8n이 붙을 수 있습니다.
     depends_on:
       db:
         condition: service_healthy

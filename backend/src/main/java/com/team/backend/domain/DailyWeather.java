@@ -26,42 +26,43 @@ public class DailyWeather {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 30)
+    @Column(name = "region", nullable = false, length = 30)
     private String region;
 
     @Column(name = "weather_date", nullable = false)
     private LocalDate date;
 
-    @Column(nullable = false)
+    @Column(name = "temperature", nullable = false)
     private Double temperature;
 
-    @Column(nullable = false)
+    @Column(name = "min_temperature", nullable = false)
     private Double minTemperature;
 
-    @Column(nullable = false)
+    @Column(name = "max_temperature", nullable = false)
     private Double maxTemperature;
 
-    // ✅ 체감온도 (DB 컬럼명 feels_like_temperature 로 저장)
+    // ✅ 체감온도 (DB 컬럼명 feels_like_temperature)
     @Column(name = "feels_like_temperature", nullable = false)
     private Double feelsLikeTemperature;
 
-    // ✅ 구름양 0~100 (DB 컬럼명 cloud_amount 로 저장)
+    // ✅ 구름양 0~100 (DB 컬럼명 cloud_amount)
     @Column(name = "cloud_amount", nullable = false)
     private Integer cloudAmount;
 
-    @Column(nullable = false, length = 20)
+    // ✅ 하늘 상태(예: CLEAR/CLOUDS/RAIN 등)
+    @Column(name = "sky", nullable = false, length = 20)
     private String sky;
 
-    @Column(nullable = false)
+    @Column(name = "precipitation_probability", nullable = false)
     private Integer precipitationProbability;
 
-    @Column(nullable = false)
+    @Column(name = "humidity", nullable = false)
     private Integer humidity;
 
-    @Column(nullable = false)
+    @Column(name = "wind_speed", nullable = false)
     private Double windSpeed;
 
-    @Column(nullable = false)
+    @Column(name = "fetched_at", nullable = false)
     private LocalDateTime fetchedAt;
 
     public void updateFrom(
