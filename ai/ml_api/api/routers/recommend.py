@@ -30,14 +30,19 @@ def recommend(payload: Dict[str, Any]):
         current_weather = req.weather
         results = []
         for item in req.items:
-            score = recommender_service.calculate_score(item, current_weather)
-            results.append({
-                "clothingId": item.clothingId,
-                "material_name": item.name,
-                "materialRatioScore": score,
-                "analysis": f" 적합도 {score}점"
-            })
+            try:
+                score = recommender_service.calculate_score(item, current_weather)
+                results.append({
+                    "clothingId": item.clothingId,
+                    "material_name": item.name,
+                    "materialRatioScore": score,
+                    "analysis": f"적합도 {score}점"
+                })
+            except Exception as e:
+                print(f"⚠️ 아이템({item.name}) 계산 중 에러 건너뜀: {e}")
+                continue
         results.sort(key=lambda x: x["materialRatioScore"], reverse=True)
-        return {"status": "success", "recommendations": results}
+        return {"results": results}
     except Exception as e:
-        return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
+        return {"results": []}
+        # return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
