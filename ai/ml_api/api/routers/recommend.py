@@ -34,10 +34,10 @@ def recommend(payload: Dict[str, Any]):
             results.append({
                 "clothingId": item.clothingId,
                 "material_name": item.name,
-                "score": score,
+                "materialRatioScore": score,
                 "analysis": f" 적합도 {score}점"
             })
-        results.sort(key=lambda x: x["score"], reverse=True)
+        results.sort(key=lambda x: x["materialRatioScore"], reverse=True)
         return {"status": "success", "recommendations": results}
     except Exception as e:
         return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
