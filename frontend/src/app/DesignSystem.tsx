@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 export const cn = (...classes: (string | undefined | boolean)[]) => classes.filter(Boolean).join(' ');
 
@@ -133,24 +134,39 @@ export const SectionHeader: React.FC<{ title: string; subtitle?: string; action?
 
 // --- Modal ---
 export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode }> = ({ isOpen, onClose, title, children, footer }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-navy-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}></div>
-      <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden relative animate-in zoom-in-95 duration-300">
-        <div className="px-10 pt-10 pb-6 flex items-center justify-between">
-          <h3 className="text-2xl font-black text-navy-900 tracking-tight">{title}</h3>
-          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-400 hover:text-navy-900 hover:bg-slate-100 rounded-full transition-all">
-            ✕
-          </button>
-        </div>
-        <div className="px-10 pb-10">{children}</div>
-        {footer && (
-          <div className="px-10 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    if (!isOpen) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 font-sans">
+            {/* 배경 (Backdrop) */}
+            <div
+                className="absolute inset-0 bg-navy-900/40 backdrop-blur-sm animate-in fade-in duration-300"
+                onClick={onClose}
+            />
+
+            {/* 모달 창 */}
+            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden relative animate-in zoom-in-95 duration-300 z-10">
+                {/* 헤더 */}
+                <div className="px-10 pt-10 pb-6 flex items-center justify-between">
+                    <h3 className="text-2xl font-black text-navy-900 tracking-tight">{title}</h3>
+                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-400 hover:text-navy-900 hover:bg-slate-100 rounded-full transition-all">
+                        ✕
+                    </button>
+                </div>
+
+                {/* 본문 */}
+                <div className="px-10 pb-10 max-h-[70vh] overflow-y-auto">
+                    {children}
+                </div>
+
+                {/* 푸터 */}
+                {footer && (
+                    <div className="px-10 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                        {footer}
+                    </div>
+                )}
+            </div>
+        </div>,
+        document.body
+    );
 };
