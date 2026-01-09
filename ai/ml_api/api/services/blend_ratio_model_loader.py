@@ -1,6 +1,6 @@
 import torch
 
-from api.config import MODEL_PATH, DEVICE, MODEL_CONFIG
+from api.blend_ratio_config import MODEL_PATH, DEVICE, MODEL_CONFIG
 from ml.core.models.comfort_mlp import ComfortMLP
 
 _model = None

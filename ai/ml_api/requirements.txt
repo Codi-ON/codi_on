@@ -18,3 +18,5 @@ requests
 python-dotenv
 scikit-learn
 lightgbm
+
+requests

@@ -1,10 +1,10 @@
 from typing import List
 import torch
 
-from api.config import DEVICE
-from api.schemas.predict_schema import Context, Item, Result
+from api.blend_ratio_config import DEVICE
+from api.schemas.blend_ratio_schema import Context, Item, Result
 from ml.pipeline.preprocess import build_feature_vector
-from .model_loader import load_model
+from .blend_ratio_model_loader import load_model
 
 
 THICKNESS_LOWER = {

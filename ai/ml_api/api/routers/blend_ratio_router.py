@@ -2,8 +2,8 @@ from typing import Any, Dict
 from fastapi import APIRouter
 from pydantic import ValidationError
 
-from ..schemas.predict_schema import ComfortBatchRequest, ComfortBatchResult
-from ..services.inference_service import predict_comfort_batch  # ✅ 상대 임포트
+from ..schemas.blend_ratio_schema import ComfortBatchRequest, ComfortBatchResult
+from ..services.blend_ratio_service import predict_comfort_batch  # ✅ 상대 임포트
 
 router = APIRouter(prefix="/recommend/blend-ratio", tags=["comfort"])
 

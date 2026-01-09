@@ -60,4 +60,5 @@ frontend/web/.env.*.local
 Icon?
 
 # ---------- n8n -----------
-n8n_data/database.sqlite
+n8n_data/*.sqlite*
+n8n_data/*.journal
