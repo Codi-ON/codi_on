@@ -37,6 +37,7 @@ def normalize_weather(weather_type: str) -> str:
     key = weather_type.upper()
     return WEATHER_MAP.get(key, "cloudy")
 
+
 def score_0_1_to_0_100(score: float) -> int:
     score = max(0.0, min(1.0, score))
     return int(round(score * 100))
@@ -91,8 +92,8 @@ def predict_comfort_batch(
 
             print("[DEBUG] raw_score:", raw_score)
 
-            comfort_score = score_0_1_to_0_100(raw_score)
-            # comfort_score = raw_score
+            # comfort_score = score_0_1_to_0_100(raw_score)
+            comfort_score = raw_score
             print("[DEBUG] comfort_score(0~100):", comfort_score)
 
             results.append(
@@ -111,6 +112,7 @@ def predict_comfort_batch(
                     # error=str(e),
                 )
             )
+    results.sort(key=lambda x: x.blendRatioScore, reverse=True)
 
     print("[DEBUG] ===== Inference End =====\n")
     return results
