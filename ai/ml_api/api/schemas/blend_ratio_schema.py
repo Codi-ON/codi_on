@@ -28,4 +28,5 @@ class Result(BaseModel):
     # error: Optional[str] = None
 
 class ComfortBatchResult(BaseModel):
+    date: Optional[str] = None
     results: List[Result]
