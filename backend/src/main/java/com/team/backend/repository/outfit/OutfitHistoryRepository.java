@@ -14,14 +14,26 @@ public interface OutfitHistoryRepository extends JpaRepository<OutfitHistory, Lo
     Optional<OutfitHistory> findBySessionKeyAndOutfitDate(String sessionKey, LocalDate outfitDate);
 
     @Query("""
-            select distinct h
-            from OutfitHistory h
-            left join fetch h.items i
-            where h.sessionKey = :sessionKey
-              and h.outfitDate >= :from
-              and h.outfitDate <  :toExclusive
-            order by h.outfitDate asc
-        """)
+        select h
+        from OutfitHistory h
+        left join fetch h.items i
+        where h.sessionKey = :sessionKey
+          and h.outfitDate = :outfitDate
+    """)
+    Optional<OutfitHistory> findBySessionKeyAndOutfitDateWithItems(
+            @Param("sessionKey") String sessionKey,
+            @Param("outfitDate") LocalDate outfitDate
+    );
+
+    @Query("""
+        select distinct h
+        from OutfitHistory h
+        left join fetch h.items i
+        where h.sessionKey = :sessionKey
+          and h.outfitDate >= :from
+          and h.outfitDate <  :toExclusive
+        order by h.outfitDate asc
+    """)
     List<OutfitHistory> findMonthlyWithItems(
             @Param("sessionKey") String sessionKey,
             @Param("from") LocalDate from,

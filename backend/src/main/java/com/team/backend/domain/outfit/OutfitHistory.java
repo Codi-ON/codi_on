@@ -2,6 +2,7 @@ package com.team.backend.domain.outfit;
 
 import com.team.backend.domain.enums.feadback.FeedbackRating;
 import com.team.backend.domain.enums.feadback.FeedbackRatingConverter;
+import com.team.backend.domain.enums.recommendation.RecommendationModelType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -14,7 +15,13 @@ import java.util.List;
 @Table(
         name = "outfit_history",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_outfit_history_session_date", columnNames = {"session_key", "outfit_date"})
+                @UniqueConstraint(
+                        name = "uk_outfit_history_session_date",
+                        columnNames = {"session_key", "outfit_date"}
+                )
+        },
+        indexes = {
+                @Index(name = "ix_outfit_history_session_date", columnList = "session_key,outfit_date")
         }
 )
 @Getter
@@ -43,7 +50,7 @@ public class OutfitHistory {
     @Column(name = "feedback_rating")
     private FeedbackRating feedbackRating;
 
-    // ===== weather snapshot (outfit_history에 저장된 값만 신뢰) =====
+    // weather snapshot (outfit_history에 저장된 값만 신뢰)
     @Column(name = "weather_temp")
     private Double weatherTemp;
 
@@ -55,6 +62,10 @@ public class OutfitHistory {
 
     @Column(name = "weather_cloud_amount")
     private Integer weatherCloudAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reco_strategy", length = 32)
+    private RecommendationModelType recoStrategy;
 
     @OneToMany(mappedBy = "outfitHistory", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -74,6 +85,10 @@ public class OutfitHistory {
 
     // ===== domain behaviors =====
 
+    public void setRecoStrategy(RecommendationModelType recoStrategy) {
+        this.recoStrategy = recoStrategy; // null 허용
+    }
+
     public void replaceItems(List<OutfitHistoryItem> newItems) {
         this.items.clear();
         if (newItems == null) return;
@@ -84,15 +99,10 @@ public class OutfitHistory {
         this.feedbackRating = null;
     }
 
-    /**
-     * 정책: 1회만 허용
-     * - 이미 feedbackRating 있으면 IllegalStateException
-     */
+    // 정책: 1회만 허용
     public void submitFeedbackOnce(FeedbackRating rating) {
         if (rating == null) throw new IllegalArgumentException("rating is required");
-        if (this.feedbackRating != null) {
-            throw new IllegalStateException("feedback already submitted");
-        }
+        if (this.feedbackRating != null) throw new IllegalStateException("feedback already submitted");
         this.feedbackRating = rating;
     }
 

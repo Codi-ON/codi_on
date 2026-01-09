@@ -4,10 +4,21 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "outfit_history_item")
+@Table(
+        name = "outfit_history_item",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_outfit_history_item_history_sort",
+                        columnNames = {"outfit_history_id", "sort_order"}
+                )
+        },
+        indexes = {
+                @Index(name = "ix_outfit_history_item_history", columnList = "outfit_history_id")
+        }
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
 public class OutfitHistoryItem {
 
@@ -15,7 +26,6 @@ public class OutfitHistoryItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // DTO에서 clothingId를 받는 구조 유지 (clothing_item.clothing_id와 매칭)
     @Column(name = "clothing_id", nullable = false)
     private Long clothingId;
 
@@ -27,6 +37,9 @@ public class OutfitHistoryItem {
     private OutfitHistory outfitHistory;
 
     public static OutfitHistoryItem of(OutfitHistory history, Long clothingId, int sortOrder) {
+        if (history == null) throw new IllegalArgumentException("history 값은 필수입니다");
+        if (clothingId == null) throw new IllegalArgumentException("clothingId 는 필수입니다");
+        if (sortOrder < 1) throw new IllegalArgumentException("sortOrder must be >= 1");
         return OutfitHistoryItem.builder()
                 .outfitHistory(history)
                 .clothingId(clothingId)

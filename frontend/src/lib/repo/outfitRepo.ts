@@ -1,78 +1,95 @@
 // src/lib/repo/outfitRepo.ts
-import { outfitApi, type TodayOutfitDto, type MonthlyHistoryDto, type SaveTodayOutfitRequest } from "@/lib/api/outfitApi";
+import {
+    outfitApi,
+    type MonthlyHistoryDto,
+    type SaveTodayOutfitRequest,
+    type TodayOutfitDto,
+} from "@/lib/api/outfitApi";
+import { HttpError } from "@/lib/http";
 
 type SaveInput =
-    | number[] // [topId, bottomId, outerId?]
+    | number[]
     | { clothingIds: number[] }
     | SaveTodayOutfitRequest
     | unknown;
 
+type SaveItem = SaveTodayOutfitRequest["items"][number];
+
 function isSaveTodayRequest(v: any): v is SaveTodayOutfitRequest {
-    return v && typeof v === "object" && Array.isArray(v.items);
+    return !!v && typeof v === "object" && Array.isArray(v.items);
+}
+
+function isInt(n: any): n is number {
+    return Number.isInteger(n);
 }
 
 function normalizeClothingIds(input: SaveInput): number[] {
-    // 1) number[]
-    if (Array.isArray(input)) return input.filter((n): n is number => Number.isInteger(n));
+    if (Array.isArray(input)) return input.filter(isInt);
 
-    // 2) { clothingIds: number[] }
     if (input && typeof input === "object" && Array.isArray((input as any).clothingIds)) {
-        return (input as any).clothingIds.filter((n: any): n is number => Number.isInteger(n));
+        return (input as any).clothingIds.filter(isInt);
     }
 
-    // 3) { items: [{ clothingId, sortOrder }] }
     if (isSaveTodayRequest(input)) {
-        return input.items
-            .map((it) => it?.clothingId)
-            .filter((n): n is number => Number.isInteger(n));
+        const items = (input.items ?? [])
+            .filter((it: any) => it && isInt(it.clothingId))
+            .slice()
+            .sort((a: any, b: any) => {
+                const ao = isInt(a.sortOrder) ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+                const bo = isInt(b.sortOrder) ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+                return ao - bo;
+            });
+
+        return items.map((it: any) => it.clothingId);
     }
 
     return [];
 }
 
 function toSaveTodayPayload(input: SaveInput): SaveTodayOutfitRequest {
-    // 이미 계약 형태면 sortOrder 정렬만 보장
     if (isSaveTodayRequest(input)) {
-        const items = input.items
-            .filter((it) => Number.isInteger(it?.clothingId))
-            .map((it, idx) => ({
+        const normalized: SaveItem[] = (input.items ?? [])
+            .filter((it: any) => it && isInt(it.clothingId))
+            .slice(0, 3)
+            .map((it: any, idx: number) => ({
                 clothingId: it.clothingId,
-                sortOrder: Number.isInteger(it.sortOrder) ? it.sortOrder : idx + 1,
+                sortOrder: idx + 1,
             }));
-
-        return { items };
+        return { items: normalized };
     }
 
-    // number[] / clothingIds -> items 로 변환
-    const clothingIds = normalizeClothingIds(input);
-    const uniq = Array.from(new Set(clothingIds)).slice(0, 3); // 3슬롯 가정(상의/하의/아우터 옵션)
-
+    const clothingIds = normalizeClothingIds(input).slice(0, 3);
     return {
-        items: uniq.map((clothingId, i) => ({
+        items: clothingIds.map((clothingId, idx) => ({
             clothingId,
-            sortOrder: i + 1,
+            sortOrder: idx + 1,
         })),
     };
 }
 
 export const outfitRepo = {
-    getTodayOutfit: async (): Promise<TodayOutfitDto> => {
-        return outfitApi.getToday();
+    // ✅ 핵심: 오늘 저장 없으면 null (정상 케이스)
+    getTodayOutfit: async (): Promise<TodayOutfitDto | null> => {
+        try {
+            return await outfitApi.getToday();
+        } catch (e) {
+            if (e instanceof HttpError && e.status === 404 && e.code === "NOT_FOUND") {
+                return null;
+            }
+            throw e;
+        }
     },
 
     getMonthlyOutfits: async (year: number, month: number): Promise<MonthlyHistoryDto> => {
         if (!Number.isInteger(year) || year < 2000) throw new Error("year 파라미터가 올바르지 않습니다.");
-        if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error("month 파라미터가 올바르지 않습니다. (1~12)");
+        if (!Number.isInteger(month) || month < 1 || month > 12)
+            throw new Error("month 파라미터가 올바르지 않습니다. (1~12)");
         return outfitApi.getMonthly(year, month);
     },
 
     saveTodayOutfit: async (input: SaveInput): Promise<TodayOutfitDto> => {
         const payload = toSaveTodayPayload(input);
-
-        if (!payload.items.length) {
-            throw new Error("저장할 clothingId가 없습니다. (items는 1개 이상 필요)");
-        }
-
+        if (!payload.items?.length) throw new Error("저장할 clothingId가 없습니다. (items는 1개 이상 필요)");
         return outfitApi.saveToday(payload);
     },
 };
