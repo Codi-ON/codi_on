@@ -1,6 +1,5 @@
 
 import React, { useState } from 'react';
-import { Button } from '../DesignSystem';
 
 interface UserLayoutProps {
   children: React.ReactNode;
@@ -57,9 +56,6 @@ export const UserLayout: React.FC<UserLayoutProps> = ({ children, activePage, on
         </nav>
 
         <div className="p-4 border-t border-navy-700">
-          <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-white" onClick={() => onNavigate?.('landing')}>
-            🚪 Logout
-          </Button>
         </div>
       </aside>
 

@@ -1,4 +1,3 @@
-// src/lib/api/outfitApi.ts
 import { sessionApi } from "@/lib/http";
 
 export type TodayOutfitItemDto = {
@@ -29,7 +28,6 @@ export type MonthlyHistoryDto = {
     days: MonthlyHistoryDayDto[];
 };
 
-// ✅ Swagger 계약: { items: [{ clothingId, sortOrder }] }
 export type SaveTodayOutfitRequest = {
     items: Array<{ clothingId: number; sortOrder: number }>;
 };

@@ -2,13 +2,15 @@
 import { sessionApi } from "@/lib/http";
 
 export const favoritesApi = {
-    getFavorites() {
+    async getFavorites(): Promise<number[]> {
         return sessionApi.get<number[]>("/api/favorites");
     },
-    add(clothingId: number) {
-        return sessionApi.post<unknown>(`/api/favorites/${clothingId}`);
+
+    async add(clothingId: number): Promise<void> {
+        await sessionApi.post<null>(`/api/favorites/${clothingId}`);
     },
-    remove(clothingId: number) {
-        return sessionApi.delete<unknown>(`/api/favorites/${clothingId}`);
+
+    async remove(clothingId: number): Promise<void> {
+        await sessionApi.delete<null>(`/api/favorites/${clothingId}`);
     },
 };

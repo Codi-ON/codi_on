@@ -1,9 +1,8 @@
-// src/lib/adapters/closetAdapter.ts
-import type { RecommendTodayItemDto } from "@/lib/api/closetApi";
+import type { ClothesSearchItemDto } from "@/lib/api/closetApi";
 import type { ClothingItem } from "@/shared/domain/clothing";
 
-export const clothesAdapter = {
-  toUi(dto: RecommendTodayItemDto): ClothingItem {
+export const closetAdapter = {
+  toDomain(dto: ClothesSearchItemDto): ClothingItem {
     return {
       id: dto.id,
       clothingId: dto.clothingId,
@@ -23,9 +22,5 @@ export const clothesAdapter = {
       selectedCount: dto.selectedCount ?? 0,
       favorited: !!dto.favorited,
     };
-  },
-
-  toUiList(dtos: RecommendTodayItemDto[]): ClothingItem[] {
-    return (dtos ?? []).map(this.toUi);
   },
 };

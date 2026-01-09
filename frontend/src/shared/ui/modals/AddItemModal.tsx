@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { X, Upload, Camera, Sparkles, Loader2, Layers, Percent } from "lucide-react";
 import { Modal, Button, Input } from '../../../app/DesignSystem';
 import { useAiService } from "@/lib/hooks/useAiService";
-import { clothesApi } from "@/lib/api/closetApi";
+import { closetApi } from "@/lib/api/closetApi";
 
 interface AddItemModalProps {
     isOpen: boolean;
@@ -136,7 +136,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose }) =
 
         try {
             console.log("🚀 백엔드 전송 데이터:", requestData);
-            await clothesApi.createClothing(requestData);
+            await closetApi.createClothing(requestData);
 
             alert("옷장에 저장되었습니다!");
             onClose();

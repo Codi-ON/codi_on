@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/repository/checklist/ChecklistJdbcRepository.java
 package com.team.backend.repository.checklist;
 
 import lombok.RequiredArgsConstructor;
@@ -18,28 +19,26 @@ public class ChecklistJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    /**
-     * 오늘(KST) 이미 체크리스트 제출한 recommendation_id가 있으면 반환 (멱등)
-     */
     public UUID findTodayChecklistRecommendationId(String sessionKey, LocalDate kstDate) {
         String sql = """
             SELECT recommendation_id
             FROM public.recommendation_event_log
             WHERE session_key = :sessionKey
               AND event_type = :eventType
-              AND ((created_at AT TIME ZONE '%s')::date = :kstDate)
+              AND ((created_at AT TIME ZONE :kstZone)::date = :kstDate)
               AND recommendation_id IS NOT NULL
             ORDER BY created_at DESC, id DESC
             LIMIT 1
-            """.formatted(KST);
+            """;
 
         MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("sessionKey", sessionKey)
                 .addValue("eventType", EVENT_CHECKLIST_SUBMITTED)
+                .addValue("kstZone", KST)
                 .addValue("kstDate", kstDate);
 
         try {
-            return jdbc.queryForObject(sql, p, (rs, rowNum) -> (UUID) rs.getObject("recommendation_id"));
+            return jdbc.queryForObject(sql, p, (rs, rowNum) -> rs.getObject("recommendation_id", UUID.class));
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
