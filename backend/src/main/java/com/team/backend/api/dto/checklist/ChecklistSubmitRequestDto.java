@@ -1,10 +1,8 @@
-// src/main/java/com/team/backend/api/dto/checklist/ChecklistSubmitRequestDto.java
 package com.team.backend.api.dto.checklist;
 
 import com.team.backend.domain.enums.ThicknessLevel;
 import com.team.backend.domain.enums.UsageType;
 import com.team.backend.domain.enums.feadback.OutfitTempFeedback;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
@@ -19,8 +17,8 @@ public class ChecklistSubmitRequestDto {
     @NotNull
     private UsageType usageType;
 
-    @NotEmpty
-    private List<ThicknessLevel> thicknessLevels;
+    @NotNull
+    private ThicknessLevel thicknessLevel;
 
     private String activityLevel;
 
@@ -31,9 +29,7 @@ public class ChecklistSubmitRequestDto {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("usageType", usageType.name());
 
-        List<String> levels = (thicknessLevels == null ? List.of()
-                : thicknessLevels.stream().filter(Objects::nonNull).map(Enum::name).toList());
-        p.put("thicknessLevels", levels);
+        p.put("thicknessLevel", thicknessLevel.name());
 
         if (activityLevel != null && !activityLevel.isBlank()) {
             p.put("activityLevel", activityLevel);
@@ -43,8 +39,7 @@ public class ChecklistSubmitRequestDto {
         p.put("directionScore", yesterdayTempFeedback.toDirectionScore());
         p.put("satisfactionScore", yesterdayTempFeedback.toSatisfactionScore());
 
-        // 호환/진화용
-        p.put("schemaVersion", "v1.1");
+        p.put("schemaVersion", "v2.0");
         return p;
     }
 }

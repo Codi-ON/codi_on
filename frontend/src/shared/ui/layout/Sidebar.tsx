@@ -16,10 +16,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ type, activePage, onNavigate, 
     { id: 'closet', label: '나의 옷장', icon: '🧥' },
     { id: 'checklist', label: '체크리스트', icon: '✅' },
     { id: 'reco', label: '스타일 추천', icon: '✨' },
-    { id: 'calendar', label: 'OOTD 달력', icon: '📅' },
-    { id: 'history', label: '히스토리', icon: '📜' },
+    { id: 'calendar', label: '히스토리', icon: '📅' },
+    // { id: 'history', label: '히스토리', icon: '📜' },
     { id: 'dashboard', label: '나의 통계', icon: '📊' },
-    { id: 'mypage', label: '마이페이지', icon: '👤' },
   ];
 
   const adminItems = [
@@ -65,7 +64,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ type, activePage, onNavigate, 
           ))}
           
           <div className="h-4"></div>
-          <div className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">Developer</div>
           <button
             onClick={() => { onNavigate('showcase'); onClose(); }}
             className={cn(
@@ -73,7 +71,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ type, activePage, onNavigate, 
               activePage === 'showcase' ? "bg-white/10 text-white" : "text-slate-500 hover:text-white hover:bg-slate-800"
             )}
           >
-            <span>🛠️</span> 쇼케이스 허브
           </button>
         </nav>
 
@@ -82,7 +79,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ type, activePage, onNavigate, 
             className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors text-sm font-bold w-full"
             onClick={() => onNavigate('landing')}
           >
-            <span>🚪</span> 로그아웃
           </button>
         </div>
       </aside>

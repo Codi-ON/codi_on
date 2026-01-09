@@ -20,8 +20,6 @@ public class ChecklistController {
 
     /**
      * 체크리스트 제출 (오늘 기준 멱등)
-     * - 최초 제출: recommendationId 생성 + CHECKLIST_SUBMITTED 1회 기록
-     * - 재호출: 기존 recommendationId 반환(추가 insert 없음)
      */
     @PostMapping("/submit")
     public ApiResponse<ChecklistSubmitResponseDto> submit(
@@ -29,5 +27,14 @@ public class ChecklistController {
             @RequestBody @Valid ChecklistSubmitRequestDto request
     ) {
         return ApiResponse.success(checklistService.submitToday(sessionKey, request));
+    }
+
+
+    @GetMapping("/today")
+    public ApiResponse<ChecklistSubmitResponseDto> today(
+            @RequestHeader(SESSION_KEY_HEADER) String sessionKey
+    ) {
+
+        return ApiResponse.success(checklistService.getToday(sessionKey));
     }
 }

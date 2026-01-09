@@ -1,10 +1,11 @@
+// src/state/outfitReco/outfitRecoSlice.ts
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { getUserMessage } from "@/lib/errors";
 
 import { recoApi } from "@/lib/api/recoApi";
 import { outfitRepo } from "@/lib/repo/outfitRepo";
 import type { TodayOutfitDto } from "@/lib/api/outfitApi";
-import type { ChecklistSubmitDto } from "@/pages/user/ChecklistPage";
+import type { ChecklistSubmitDto } from "@/shared/domain/checklist";
 
 export type FeedbackScore = 1 | 0 | -1; // GOOD(1), UNKNOWN(0), BAD(-1)
 
@@ -39,6 +40,31 @@ type RecoResponseDto = {
     outer: RecoItemDto[];
 };
 
+// ---- Candidates DTO (유연 파싱용, 정확 스키마 없어도 동작하게) ----
+type CandidateItemDto = {
+    clothingId: number;
+    name: string;
+    imageUrl?: string | null;
+    styleTag?: string | null;
+    brand?: string | null;
+    inCloset?: boolean;
+    score?: number; // 서버에서 내려옴(정렬되어 있다고 가정)
+};
+
+type CandidateCategoryDto = {
+    category: "TOP" | "BOTTOM" | "OUTER" | string;
+    candidates: CandidateItemDto[];
+};
+
+type CandidateModelDto = {
+    model?: string;
+    categories: CandidateCategoryDto[];
+};
+
+type CandidatesResponseDto = {
+    models: CandidateModelDto[];
+};
+
 export type SelectedOutfit = {
     top?: ClosetItem;
     bottom?: ClosetItem;
@@ -48,7 +74,12 @@ export type SelectedOutfit = {
 export type OutfitRecoState = {
     checklist: ChecklistSubmitDto | null;
 
+    // ✅ RecommendationPage가 쓰는 리스트(각 카테고리 3개만)
     recoList: RecommendationClosetList | null;
+
+    // ✅ 원본 후보군(추후 히스토리/디버깅/상세페이지 확장 대비)
+    candidatesRaw: CandidatesResponseDto | null;
+
     topIdx: number;
     bottomIdx: number;
     outerIdx: number;
@@ -59,11 +90,9 @@ export type OutfitRecoState = {
     saving: boolean;
     saveError: string | null;
 
-    // ✅ 컴포넌트가 찾는 이름으로 통일
     lastSavedTodayOutfit: TodayOutfitDto | null;
     selectedOutfitSnapshot: SelectedOutfit | null;
 
-    // 추천 만족도 피드백(버튼 GOOD/UNKNOWN/BAD)
     recoFeedbackScore: FeedbackScore;
 };
 
@@ -71,6 +100,8 @@ const initialState: OutfitRecoState = {
     checklist: null,
 
     recoList: null,
+    candidatesRaw: null,
+
     topIdx: 0,
     bottomIdx: 0,
     outerIdx: 0,
@@ -90,6 +121,10 @@ const initialState: OutfitRecoState = {
 type ThunkConfig = { rejectValue: string };
 
 const safeArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+function isRecoResponseDto(v: any): v is RecoResponseDto {
+    return v && typeof v === "object" && Array.isArray(v.top) && Array.isArray(v.bottom) && Array.isArray(v.outer);
+}
 
 function mapDtoToList(dto: RecoResponseDto): RecommendationClosetList {
     const toClosetItem = (x: RecoItemDto, label: ClosetItem["label"]): ClosetItem => ({
@@ -117,29 +152,86 @@ function mapDtoToList(dto: RecoResponseDto): RecommendationClosetList {
     return { top, bottom, outer };
 }
 
-export const fetchRecommendation = createAsyncThunk<
-    RecommendationClosetList,
-    void,
-    ThunkConfig
->("outfitReco/fetchRecommendation", async (_, { getState, rejectWithValue }) => {
-    try {
-        const state = getState() as { outfitReco: OutfitRecoState };
-        const checklist = state.outfitReco.checklist;
+/**
+ * candidates 배열이 score 내림차순으로 내려온다는 전제
+ * - 길이 >= 7  → 1,5,7 (idx 0,4,6)
+ * - 길이 <  7  → 1,3,5 (idx 0,2,4)
+ * - 없는 인덱스는 자동 스킵
+ */
+function pick3<T>(arr: T[]): T[] {
+    if (!arr.length) return [];
+    const indices = arr.length >= 7 ? [0, 4, 6] : [0, 2, 4];
+    const picked = indices.filter((i) => i < arr.length).map((i) => arr[i]);
+    return picked.length ? picked : [arr[0]];
+}
 
-        // ✅ checklist 포함해서 추천 호출 (백엔드가 받을 수 있게 계약 필요)
-        const dto = (await recoApi.getRecommendation({
-            region: "Seoul",
-            lat: 37.5665,
-            lon: 126.978,
-            limit: 50,
-            checklist: checklist ?? undefined,
-        } as any)) as unknown as RecoResponseDto;
+function toClosetItemFromCandidate(x: CandidateItemDto, label: ClosetItem["label"]): ClosetItem {
+    return {
+        id: x.clothingId ?? `${label}-${Math.random()}`,
+        clothingId: x.clothingId,
+        label,
+        name: x.name,
+        brand: (x.styleTag ?? x.brand ?? "CODION") || "CODION",
+        imageUrl: x.imageUrl ?? undefined,
+        inCloset: x.inCloset ?? true,
+    };
+}
 
-        return mapDtoToList(dto);
-    } catch (e) {
-        return rejectWithValue(getUserMessage(e));
+function mapCandidatesToList(raw: CandidatesResponseDto): RecommendationClosetList {
+    const models = safeArray<CandidateModelDto>((raw as any)?.models);
+    const first = models[0];
+    const categories = safeArray<CandidateCategoryDto>(first?.categories);
+
+    const byCategory = (cat: "TOP" | "BOTTOM" | "OUTER") => {
+        const found = categories.find((c) => String(c?.category).toUpperCase() === cat);
+        const candidates = safeArray<CandidateItemDto>((found as any)?.candidates)
+            .filter((x) => x && typeof x.clothingId === "number" && typeof x.name === "string");
+        return pick3(candidates);
+    };
+
+    const topPicked = byCategory("TOP").map((x) => toClosetItemFromCandidate(x, "상의"));
+    const bottomPicked = byCategory("BOTTOM").map((x) => toClosetItemFromCandidate(x, "하의"));
+    const outerPicked = byCategory("OUTER").map((x) => toClosetItemFromCandidate(x, "아우터"));
+
+    return { top: topPicked, bottom: bottomPicked, outer: outerPicked };
+}
+
+export const fetchRecommendation = createAsyncThunk<RecommendationClosetList, void, ThunkConfig>(
+    "outfitReco/fetchRecommendation",
+    async (_, { getState, rejectWithValue }) => {
+        try {
+            const state = getState() as { outfitReco: OutfitRecoState };
+            const checklist = state.outfitReco.checklist;
+
+            if (!checklist) throw new Error("체크리스트가 없습니다. 체크리스트부터 제출해 주세요.");
+
+            // ✅ ML 후보군 호출 (POST /api/recommend/candidates)
+            // region/lat/lon 고정(서울) 정책 반영
+            const raw = (await recoApi.getCandidates({
+                region: "Seoul",
+                lat: 37.5665,
+                lon: 126.978,
+                topNPerCategory: 10,
+                recommendationKey: "RECO-202601", // 필요 없으면 백에서 무시
+                checklist,
+            } as any)) as unknown;
+
+            // ✅ 구형(top/bottom/outer) 응답이 와도 깨지지 않게
+            if (isRecoResponseDto(raw)) {
+                return mapDtoToList(raw);
+            }
+
+            // ✅ candidates 응답
+            const candidatesRaw: CandidatesResponseDto = {
+                models: safeArray<CandidateModelDto>((raw as any)?.models),
+            };
+
+            return mapCandidatesToList(candidatesRaw);
+        } catch (e) {
+            return rejectWithValue(getUserMessage(e));
+        }
     }
-});
+);
 
 export const saveTodayOutfitThunk = createAsyncThunk<TodayOutfitDto, void, ThunkConfig>(
     "outfitReco/saveTodayOutfit",
@@ -185,7 +277,6 @@ const outfitRecoSlice = createSlice({
             state.recoFeedbackScore = action.payload;
         },
 
-        // ✅ 캘린더/히스토리에서 “저장 직후 UI merge”용 스냅샷
         setSelectedOutfitSnapshot(state) {
             if (!state.recoList || !state.recoList.top.length || !state.recoList.bottom.length) {
                 state.selectedOutfitSnapshot = null;
@@ -198,7 +289,6 @@ const outfitRecoSlice = createSlice({
             };
         },
 
-        // ✅ 네가 쓰려던 clearLastSaved 추가 (TS2304 해결)
         clearLastSaved(state) {
             state.lastSavedTodayOutfit = null;
         },
@@ -209,7 +299,6 @@ const outfitRecoSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            // fetchRecommendation
             .addCase(fetchRecommendation.pending, (state) => {
                 state.loading = true;
                 state.error = null;
@@ -226,7 +315,6 @@ const outfitRecoSlice = createSlice({
                 state.error = action.payload ?? "추천 불러오기에 실패했습니다.";
             })
 
-            // saveTodayOutfitThunk
             .addCase(saveTodayOutfitThunk.pending, (state) => {
                 state.saving = true;
                 state.saveError = null;

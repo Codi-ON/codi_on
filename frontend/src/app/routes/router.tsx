@@ -8,15 +8,6 @@ import RouteErrorState from "@/shared/ui/states/RouteErrorState"; // ✅ 추가
 const err = <RouteErrorState />;
 
 export const router = createBrowserRouter([
-  // plain(레이아웃 없이) 페이지
-  {
-    path: "/dev",
-    errorElement: err,
-    lazy: async () => {
-      const m = await import("@/pages/dev/DevRoutesPage");
-      return { Component: m.default };
-    },
-  },
 
   {
     path: "/",
