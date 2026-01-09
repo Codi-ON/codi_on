@@ -30,23 +30,56 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onClose }) => {
         scrollToBottom();
     }, [messages]);
 
+    const handleReset = () => {
+        if (window.confirm("대화 내용을 모두 지우고 초기화하시겠습니까?")) {
+            setMessages([
+                {
+                    id: Date.now(),
+                    role: 'bot',
+                    text: '대화가 초기화되었습니다. 새로운 주제로 대화해보세요! ✨'
+                }
+            ]);
+        }
+    };
+
     const handleSend = async () => {
         if (!input.trim() || loading) return;
 
         const userMsg = input;
         setInput(''); // 입력창 비우기
 
-        // 1. 사용자 메시지 추가
         const newMsgId = Date.now();
         setMessages(prev => [...prev, { id: newMsgId, role: 'user', text: userMsg }]);
 
-        // 2. AI 응답 요청
-        try {
-            const response = await sendMessage(userMsg);
-            // 3. 봇 응답 추가
-            setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: response }]);
-        } catch (error) {
-            setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: "죄송합니다. 오류가 발생했습니다." }]);
+        // 1. 사용자 메시지 추가
+        const sendWithLocation = (lat?: number, lon?: number) => {
+            sendMessage(userMsg, lat, lon)
+                .then((response) => {
+                    setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: response }]);
+                })
+                .catch(() => {
+                    setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: "오류가 발생했습니다." }]);
+                });
+        };
+
+        // 브라우저 위치 권한 확인 및 요청
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    // ✅ 위치 허용 시: 좌표와 함께 전송
+                    const { latitude, longitude } = position.coords;
+                    console.log("📍 위치 정보 전송:", latitude, longitude);
+                    sendWithLocation(latitude, longitude);
+                },
+                (error) => {
+                    // ❌ 차단/에러 시: 메시지만 전송 (n8n은 좌표 없으면 에러 날 수 있으니, 서울 좌표를 기본값으로 넣거나 n8n에서 처리)
+                    console.warn("위치 정보 실패, 그냥 전송합니다.");
+                    sendWithLocation(37.5665, 126.9780); // 예: 실패 시 서울 기본값 전송
+                }
+            );
+        } else {
+            // GPS 미지원 브라우저
+            sendWithLocation(37.5665, 126.9780);
         }
     };
 
@@ -109,6 +142,16 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onClose }) => {
                     className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                     disabled={loading}
                 />
+                <button
+                    onClick={handleReset}
+                    disabled={loading || messages.length <= 1} // 로딩 중이거나 메시지가 없으면 비활성화
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
+                    title="대화 초기화"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
                 <button
                     onClick={handleSend}
                     disabled={loading || !input.trim()}

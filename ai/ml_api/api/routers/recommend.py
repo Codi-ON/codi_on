@@ -38,13 +38,13 @@ def recommend(payload: Dict[str, Any]):
                 results.append({
                     "clothingId": item.clothingId,
                     "material_name": item.name,
-                    "score": score,
+                    "materialRatioScore": score,
                     "analysis": f"적합도 {score}점"
                 })
             except Exception as e:
                 print(f"⚠️ 아이템({item.name}) 계산 중 에러 건너뜀: {e}")
                 continue
-        results.sort(key=lambda x: x["score"], reverse=True)
+        results.sort(key=lambda x: x["materialRatioScore"], reverse=True)
         return {"results": results}
     except Exception as e:
         return {"results": []}

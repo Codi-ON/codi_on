@@ -1,5 +1,4 @@
-// src/lib/hooks/useCloset.ts
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { closetRepo } from "@/lib/repo/closetRepo";
 import { getUserMessage } from "@/lib/errors";
 import type { ClothingItem } from "@/shared/domain/clothing";
@@ -34,18 +33,12 @@ export function useClothes(limit = 30) {
 
             const next = !current.favorited;
 
-            // optimistic update
-            setItems((prev) =>
-                prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: next } : x))
-            );
+            setItems((prev) => prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: next } : x)));
 
             try {
                 await closetRepo.toggleFavorite(clothingId, next);
             } catch (e) {
-                // rollback
-                setItems((prev) =>
-                    prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: !next } : x))
-                );
+                setItems((prev) => prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: !next } : x)));
                 setError(getUserMessage(e));
             }
         },
