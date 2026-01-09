@@ -37,10 +37,10 @@ export const useAiService = () => {
     }, []);
 
     // 챗봇 대화
-    const sendMessage = useCallback(async (message: string) => {
+    const sendMessage = useCallback(async (message: string, lat?: number, lon?: number) => {
         setLoading(true);
         try {
-            const response = await aiApi.chatWithBot(message);
+            const response = await aiApi.chatWithBot(message, lat, lon);
             return response;
         } catch (err) {
             setError('메시지 전송 실패');

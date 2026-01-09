@@ -107,10 +107,16 @@ class WeatherRecommender:
             predicted_score = self.model.predict(features)[0]
             print(f"   -> 🤖 모델 예측 원본 점수: {predicted_score}")
 
-            final_score = max(0.0, min(100.0, predicted_score))
+            deduction = abs(predicted_score) * 33.0
+            final_score = 100.0 - deduction
+
+            final_score = max(0.0, min(100.0, final_score))
+
+            result_score = int(final_score)
+            print(f"   -> 💯 최종 변환 점수: {result_score}")
 
             # 100점 만점으로 변환
-            return int(final_score)
+            return int(result_score)
 
         except Exception as e:
             print(f"🔥 예측 중 에러 발생: {e}")

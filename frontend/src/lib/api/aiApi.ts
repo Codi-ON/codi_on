@@ -93,7 +93,7 @@ export const aiApi = {
     },
 
     // [API 2] 챗봇 (CodiON Chat)
-    chatWithBot: async (message: string) => {
+    chatWithBot: async (message: string, lat?: number, lon?: number) => {
         const url = import.meta.env.VITE_N8N_CHAT_WEBHOOK_URL;
 
         if (!url) {
@@ -104,6 +104,8 @@ export const aiApi = {
         try {
             const { data } = await n8nClient.post<ChatResponse | any>(url, {
                 message,
+                lat,
+                lon,
                 timestamp: new Date().toISOString()
             });
             // n8n 응답 필드 유연하게 처리
