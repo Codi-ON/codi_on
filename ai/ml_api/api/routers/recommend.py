@@ -47,8 +47,10 @@ def recommend(payload: Dict[str, Any]):
                 print(f"⚠️ 아이템({item.name}) 계산 중 에러 건너뜀: {e}")
                 continue
         results.sort(key=lambda x: x["materialRatioScore"], reverse=True)
-        return {"results": results,
-                "recoStrategy": None}
+        return {
+            "date": None,
+            "results": results,
+            "recoStrategy": None}
     except Exception as e:
         return {"results": []}
         # return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
