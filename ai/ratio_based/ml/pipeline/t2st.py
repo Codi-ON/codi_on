@@ -6,6 +6,7 @@ from ml.core.models.comfort_mlp import ComfortMLP
 from ml.pipeline.config import TRAIN_CONFIG
 from ml.pipeline.train_val import ComfortDataset
 
+# regression 모델 성능 평가 지표 계산
 def regression_metrics(y_true, y_pred):
     return {
         "MAE": np.mean(np.abs(y_true - y_pred)),
@@ -15,6 +16,7 @@ def regression_metrics(y_true, y_pred):
               / np.sum((y_true - np.mean(y_true))**2),
     }
 
+# 학습 완료 모델의 test set 성능 평가 및 결과 저장
 def test():
     cfg = TRAIN_CONFIG
     device = torch.device(

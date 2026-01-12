@@ -14,6 +14,7 @@ from ml.pipeline.config import TRAIN_CONFIG
 
 DATA_DIR = "../data/processed"
 
+# seed 고정
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -23,6 +24,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+# csv 기반 comfort dataset 정의
 class ComfortDataset(Dataset):
     def __init__(self, csv_path: str, use_tanh_target: bool):
         self.df = pd.read_csv(csv_path)
@@ -30,6 +32,7 @@ class ComfortDataset(Dataset):
         self.X = []
         self.y = []
 
+        # input vector 구성
         for _, row in self.df.iterrows():
             features = build_feature_vector(
                 c_ratio=row["C_ratio"],
@@ -47,6 +50,7 @@ class ComfortDataset(Dataset):
         self.X = torch.tensor(self.X, dtype=torch.float32)
         self.y = torch.tensor(self.y, dtype=torch.float32).unsqueeze(1)
 
+        # tanh 사용을 위한 target 범위 조정
         if use_tanh_target:
             self.y = self.y * 2.0 - 1.0
 
@@ -56,6 +60,7 @@ class ComfortDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
+# loss function 지정
 def get_loss_function(cfg):
     if cfg["loss"] == "mse":
         return nn.MSELoss()
@@ -64,6 +69,7 @@ def get_loss_function(cfg):
     else:
         raise ValueError(f"Unsupported loss: {cfg['loss']}")
 
+# optimizer 생성
 def get_optimizer(model, cfg):
     opt_name = cfg["optimizer"].lower()
     lr = cfg["learning_rate"]
@@ -104,6 +110,7 @@ def get_optimizer(model, cfg):
             f"Unsupported optimizer '{cfg['optimizer']}'. "
         )
 
+# validation loss 기준 early stop
 class EarlyStopping:
     def __init__(self, patience=10, min_delta=0.0):
         self.patience = patience
@@ -138,9 +145,10 @@ def train():
     )
     print(f"Using device: {device}")
 
-    # tanh 사용을 위한 target normalization
+    # tanh 사용을 위한 target 스케일링
     use_tanh_target = (cfg["activation"] == "tanh")
-    # Dataset & Loader
+
+    # train / validation dataset 구성
     train_dataset = ComfortDataset(
         csv_path=os.path.join(DATA_DIR, "train.csv"),
         use_tanh_target=use_tanh_target
@@ -150,6 +158,7 @@ def train():
         use_tanh_target=use_tanh_target
     )
 
+    # DataLoader 구성
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg["batch_size"],
@@ -165,6 +174,7 @@ def train():
         pin_memory=True
     )
 
+    # config 기반 모델 초기화
     model = ComfortMLP(
         input_dim=cfg["input_dim"],
         hidden_dims=cfg["hidden_dims"],
@@ -172,9 +182,11 @@ def train():
         dropout=cfg["dropout"],
     ).to(device)
 
+    # loss function, optimizer 설정
     loss_fn = get_loss_function(cfg)
     optimizer = get_optimizer(model, cfg)
 
+    # early stop 설정
     es = EarlyStopping(
         patience=cfg["es_patience"],
         min_delta=cfg["es_min_delta"]
@@ -183,6 +195,7 @@ def train():
     train_losses = []
     val_losses = []
 
+    # best model 추적
     best_train_loss = None # 결과 저장용 변수
     best_val_loss = float("inf") # 비교용 변수
     best_epoch = -1
@@ -193,7 +206,7 @@ def train():
     LOG_INTERVAL = max(1, 10)
 
     for epoch in range(cfg["epochs"]):
-        # ---- Train ----
+        # train
         model.train()
         train_loss = 0.0
 
@@ -212,7 +225,7 @@ def train():
         train_loss /= len(train_loader)
         train_losses.append(train_loss)
 
-        # ---- Validation ----
+        # validation
         model.eval()
         val_loss = 0.0
 
@@ -226,21 +239,21 @@ def train():
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
 
-        # ---- Logging ----
+        # logging
         if epoch % LOG_INTERVAL == 0 or epoch == cfg["epochs"] - 1:
             print(
                 f"[{epoch+1}/{cfg['epochs']}] "
                 f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f}"
             )
 
-        # ---- Best model (VAL 기준) ----
+        # Best model (VAL 기준)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_epoch = epoch + 1
             best_state = model.state_dict()
             best_train_loss = train_loss
 
-        # ---- Early Stopping ----
+        # early stop
         if es and es.step(val_loss):
             stop_epoch = epoch + 1
             print(f"Early stopping at epoch {stop_epoch}")
@@ -252,7 +265,7 @@ def train():
     val_loss_std = np.std(val_losses[-last_k:])
     # val_loss_std = np.std(val_losses)
 
-    # Save best model
+    # best model 저장
     model_save_dir = "../artifacts"
     os.makedirs(model_save_dir, exist_ok=True)
     model.load_state_dict(best_state)
@@ -268,6 +281,7 @@ def train():
     elapsed = time.time() - start_time
     print(f"Total time: {elapsed:.2f}s")
 
+    # 실험 결과(loss) 시각화
     plt.figure(figsize=(6, 4))
     plt.plot(train_losses, label="Train Loss")
     plt.plot(val_losses, label="Val Loss")

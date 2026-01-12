@@ -1,7 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-
+# ▼▼▼ 입력 ▼▼▼
 class Context(BaseModel):
     temperature: float = Field(..., description="Air temperature")
     humidity: float = Field(..., description="Relative humidity")
@@ -18,15 +18,17 @@ class Item(BaseModel):
     c_ratio: int = Field(..., ge=0, le=100)
     thickness: str
 
-class ComfortBatchRequest(BaseModel):
+class BlendRatioRecommendRequest(BaseModel):
     context: Context
     items: List[Item]
 
+# ▼▼▼ 출력 ▼▼▼
 class Result(BaseModel):
     clothingId: int
     blendRatioScore: Optional[float] = None
     # error: Optional[str] = None
 
-class ComfortBatchResult(BaseModel):
+class BlendRatioRecommendResponse(BaseModel):
     date: Optional[str] = None
     results: List[Result]
+    recoStrategy: Optional[str] = None

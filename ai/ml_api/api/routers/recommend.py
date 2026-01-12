@@ -7,7 +7,7 @@ from ..schemas.recommendation_schemas import RecommendationRequest
 from ..services.compute_bias import apply_bias_and_rerank
 from ..services.predictor import recommender_service  # ✅ 상대 임포트로 고정
 
-router = APIRouter(prefix="/recommend", tags=["recommend"])
+router = APIRouter(prefix="/recommend", tags=["materialRatioScore"])
 
 def _parse(payload: Dict[str, Any]) -> RecommendationRequest:
     if hasattr(RecommendationRequest, "model_validate"):  # pydantic v2
@@ -47,7 +47,8 @@ def recommend(payload: Dict[str, Any]):
                 print(f"⚠️ 아이템({item.name}) 계산 중 에러 건너뜀: {e}")
                 continue
         results.sort(key=lambda x: x["materialRatioScore"], reverse=True)
-        return {"results": results}
+        return {"results": results,
+                "recoStrategy": None}
     except Exception as e:
         return {"results": []}
         # return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
@@ -86,7 +87,7 @@ def recommend(payload: Dict[str, Any]):
             return {"results": []}
 
         reranked_items = apply_bias_and_rerank(
-            model_type="ml2",
+            model_type="MATERIAL_RATIO",
             scored_items=scored_items,
         )
 
@@ -101,6 +102,7 @@ def recommend(payload: Dict[str, Any]):
         return {
             "date": date.today().strftime("%Y-%m-%d"),
             "results": results,
+            "recoStrategy": None #"MATERIAL_RATIO"
         }
 
     except Exception as e:
