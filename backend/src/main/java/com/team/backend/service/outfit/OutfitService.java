@@ -48,14 +48,15 @@ public class OutfitService {
                         .build()
                 );
 
-        // 전략 저장 (null 허용)
-        RecommendationModelType reco = req.getRecoStrategy();
-        history.setRecoStrategy(reco);
-
-        // 오늘 아웃핏을 다시 저장하면 기존 피드백은 무효 처리하는 게 안전
+        history.setRecoStrategy(req.getRecoStrategy()); // null 허용
         history.resetFeedback();
 
-        // 아이템 교체 (orphanRemoval + cascade)
+        // ===== 핵심: 기존 items 먼저 삭제 후 flush =====
+        if (history.getId() != null) {
+            history.getItems().clear();                 // orphanRemoval 대상
+            outfitHistoryRepository.saveAndFlush(history); // DELETE 먼저 반영
+        }
+
         List<OutfitHistoryItem> newItems = new ArrayList<>(cleaned.size());
         for (OutfitRequestDto.Item it : cleaned) {
             newItems.add(OutfitHistoryItem.of(history, it.getClothingId(), it.getSortOrder()));
@@ -63,8 +64,7 @@ public class OutfitService {
         history.replaceItems(newItems);
 
         OutfitHistory saved = outfitHistoryRepository.save(history);
-        // LAZY 방지용 (응답 만들 때 items 접근)
-        saved.getItems().size();
+        saved.getItems().size(); // LAZY 방지
 
         return OutfitResponseDto.Today.from(saved);
     }
