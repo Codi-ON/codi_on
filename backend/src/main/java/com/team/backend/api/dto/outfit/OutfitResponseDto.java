@@ -9,15 +9,21 @@ import lombok.*;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 public class OutfitResponseDto {
 
     @Getter
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Today {
         private LocalDate date;
-        private List<Item> items;
+
+        @Builder.Default
+        private List<Item> items = new ArrayList<>();
 
         private Integer feedbackScore;
 
@@ -29,11 +35,14 @@ public class OutfitResponseDto {
         private RecommendationModelType recoStrategy;
 
         public static Today from(OutfitHistory h) {
+            if (h == null) return null;
+
             List<Item> items = new ArrayList<>();
-            if (h.getItems() != null) {
+            if (h.getItems() != null && !h.getItems().isEmpty()) {
                 List<OutfitHistoryItem> sorted = new ArrayList<>(h.getItems());
                 sorted.sort(Comparator.comparingInt(OutfitHistoryItem::getSortOrder));
                 for (OutfitHistoryItem it : sorted) {
+                    if (it == null) continue;
                     items.add(Item.builder()
                             .clothingId(it.getClothingId())
                             .sortOrder(it.getSortOrder())
@@ -59,9 +68,9 @@ public class OutfitResponseDto {
     }
 
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
     public static class MonthlyHistory {
         private int year;
         private int month;
@@ -69,13 +78,18 @@ public class OutfitResponseDto {
         @Builder.Default
         private List<MonthlyDay> days = new ArrayList<>();
 
-        public static MonthlyHistory of(java.time.YearMonth ym, List<OutfitHistory> rows) {
+        public static MonthlyHistory of(YearMonth ym, List<OutfitHistory> rows) {
+            if (ym == null) throw new IllegalArgumentException("ym is required");
+
             List<MonthlyDay> days = new ArrayList<>();
-            if (rows != null) {
+            if (rows != null && !rows.isEmpty()) {
                 for (OutfitHistory h : rows) {
-                    days.add(MonthlyDay.of(h));
+                    MonthlyDay d = MonthlyDay.of(h);
+                    if (d != null) days.add(d);
                 }
+                days.sort(Comparator.comparing(MonthlyDay::getDate));
             }
+
             return MonthlyHistory.builder()
                     .year(ym.getYear())
                     .month(ym.getMonthValue())
@@ -85,30 +99,38 @@ public class OutfitResponseDto {
     }
 
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
     public static class MonthlyDay {
         private String date;
 
         @Builder.Default
-        private List<Item> items = new ArrayList<>(); // ✅ List<Item>로 통일
+        private List<Item> items = new ArrayList<>();
 
         private Integer feedbackScore;
 
         private Double weatherTemp;
         private String condition;
+        private Double weatherFeelsLike;
+        private Integer weatherCloudAmount;
 
         private RecommendationModelType recoStrategy;
 
         public static MonthlyDay of(OutfitHistory h) {
+            if (h == null) return null;
+
             Today t = Today.from(h);
+            if (t == null || t.getDate() == null) return null;
+
             return MonthlyDay.builder()
                     .date(t.getDate().toString())
                     .items(t.getItems())
                     .feedbackScore(t.getFeedbackScore())
                     .weatherTemp(t.getWeatherTemp())
                     .condition(t.getCondition())
+                    .weatherFeelsLike(t.getWeatherFeelsLike())
+                    .weatherCloudAmount(t.getWeatherCloudAmount())
                     .recoStrategy(t.getRecoStrategy())
                     .build();
         }
@@ -116,6 +138,8 @@ public class OutfitResponseDto {
 
     @Getter
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Item {
         private Long clothingId;
         private int sortOrder;

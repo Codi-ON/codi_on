@@ -1,6 +1,7 @@
 // src/main/java/com/team/backend/repository/outfit/OutfitHistoryRepository.java
 package com.team.backend.repository.outfit;
 
+import com.team.backend.domain.DailyWeather;
 import com.team.backend.domain.outfit.OutfitHistory;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
@@ -43,5 +44,18 @@ public interface OutfitHistoryRepository extends JpaRepository<OutfitHistory, Lo
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from OutfitHistoryItem i where i.outfitHistory.id = :historyId")
     int deleteByHistoryId(@Param("historyId") Long historyId);
+
+    @Query("""
+                select w
+                from DailyWeather w
+                where w.region = :region
+                  and w.date >= :from
+                  and w.date <  :toExclusive
+            """)
+    List<DailyWeather> findRange(
+            @Param("region") String region,
+            @Param("from") LocalDate from,
+            @Param("toExclusive") LocalDate toExclusive
+    );
 
 }
