@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-# 구조만 생성, train 시 config에서 지정한 수치를 사용하여 동작
+# ComfortMLP 모델 정의, config 값에 의해 구조가 결정
 class ComfortMLP(nn.Module):
     def __init__(
         self,

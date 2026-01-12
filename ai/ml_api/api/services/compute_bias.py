@@ -3,9 +3,9 @@ from collections import defaultdict
 
 from .config import ALPHA
 from .blend_ratio_service import predict_comfort_batch
-from ..schemas.blend_ratio_schema import ComfortBatchRequest
+from ..schemas.blend_ratio_schema import BlendRatioRecommendRequest
 
-def run_blend_ratio(req: ComfortBatchRequest):
+def run_blend_ratio(req: BlendRatioRecommendRequest):
     raw_results = predict_comfort_batch(
         context=req.context,
         items=req.items,

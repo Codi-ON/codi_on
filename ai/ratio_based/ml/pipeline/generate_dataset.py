@@ -7,6 +7,7 @@ from ml.core.features.utci import weather_to_utci
 from ml.core.features.cloth_properties import get_cloth_properties
 from ml.core.scoring.compute_comfort import compute_comfort_score
 
+# 날씨 raw data를 환경 요구 변수로 치환
 def build_environment_context(weather: dict) -> dict:
     utci = weather_to_utci(
         Ta=weather["Ta"],
@@ -35,12 +36,14 @@ def build_environment_context(weather: dict) -> dict:
         "weather_type": weather_type,
     }
 
+# 시뮬레이션 데이터셋 생성
 def generate_dataset() -> pd.DataFrame:
     rows = []
 
     cotton_ratios = [100, 80, 60, 40, 20, 0]
     thickness_levels = ["thin", "normal", "thick"]
 
+    # range(최소값, 최대값, 간격)
     ta_list = range(-10, 36, 5)
     rh_list = range(30, 91, 10)
     va_list = np.arange(0.5, 8.1, 1.5)
@@ -51,11 +54,12 @@ def generate_dataset() -> pd.DataFrame:
     def allowed_weather_mains(ta: float):
         mains = ["Clear", "Clouds"]
         if Ta > 0:
-            mains.append("Rain")   # 0도 이상이면 비 가능
+            mains.append("Rain") # 0℃ 초과 -> 비
         else:
-            mains.append("Snow")   # 0도 이하면 눈 가능
+            mains.append("Snow") # 0℃ 이하 -> 눈
         return mains
 
+    # 옷 정보
     for c_ratio, thickness in itertools.product(
         cotton_ratios, thickness_levels
     ):
@@ -70,6 +74,7 @@ def generate_dataset() -> pd.DataFrame:
             "AP": props["AP"],
         }
 
+        # 날씨 정보
         for Ta, RH, Va, cloud in itertools.product(
             ta_list, rh_list, va_list, cloud_list
         ):
@@ -97,21 +102,21 @@ def generate_dataset() -> pd.DataFrame:
                     )
 
                     rows.append({
-                        "C_ratio": c_ratio,
-                        "thickness": thickness,
-                        "R_ct": clothing_response["R_ct"],
-                        "R_et": clothing_response["R_et"],
-                        "AP": clothing_response["AP"],
+                        "C_ratio": c_ratio, # 면 비율
+                        "thickness": thickness, # 두께
+                        "R_ct": clothing_response["R_ct"], # 열 저항
+                        "R_et": clothing_response["R_et"], # 증기 저항
+                        "AP": clothing_response["AP"], # 공기 투과도
 
-                        "Ta": Ta,
-                        "RH": RH,
-                        "Va": Va,
-                        "cloud": cloud,
-                        "UTCI": env["UTCI"],
-                        "temp_range": env["temp_range"],
-                        "weather_type": env["weather_type"],
+                        "Ta": Ta, # 기온
+                        "RH": RH, # 상대습도
+                        "Va": Va, # 풍속
+                        "cloud": cloud, # 구름량
+                        "UTCI": env["UTCI"], # UTCI
+                        "temp_range": env["temp_range"], # 일교차
+                        "weather_type": env["weather_type"], # 날씨 타입
 
-                        "comfort_score": comfort_score,
+                        "comfort_score": comfort_score, # comfort score
                     })
 
     return pd.DataFrame(rows)

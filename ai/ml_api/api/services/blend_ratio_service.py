@@ -38,11 +38,6 @@ def normalize_weather(weather_type: str) -> str:
     return WEATHER_MAP.get(key, "cloudy")
 
 
-def score_0_1_to_0_100(score: float) -> int:
-    score = max(0.0, min(1.0, score))
-    return int(round(score * 100))
-
-
 def predict_comfort_batch(
     context: Context,
     items: List[Item],
@@ -88,18 +83,14 @@ def predict_comfort_batch(
             print("[DEBUG] model input shape:", x.shape)
 
             with torch.no_grad():
-                raw_score = model(x).item()
+                score = model(x).item()
 
-            print("[DEBUG] raw_score:", raw_score)
-
-            # comfort_score = score_0_1_to_0_100(raw_score)
-            comfort_score = raw_score
-            print("[DEBUG] comfort_score(0~100):", comfort_score)
+            print("[DEBUG] comfort_score:", score)
 
             results.append(
                 Result(
                     clothingId=it.clothingId,
-                    blendRatioScore=comfort_score,
+                    blendRatioScore=score,
                 )
             )
 
