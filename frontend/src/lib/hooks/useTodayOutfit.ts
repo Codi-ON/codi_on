@@ -6,25 +6,16 @@ import type { TodayOutfitDto } from "@/lib/api/outfitApi";
 type Status = "idle" | "loading" | "saving" | "error";
 
 export type UseTodayOutfitOptions = {
-    /**
-     * mount 시 자동 조회 여부 (default: true)
-     */
     autoFetch?: boolean;
-
-    /**
-     * 초기값 주입 (캘린더 navigation state 등으로 받은 recentlySaved를 먼저 보여줄 때)
-     */
     initialData?: TodayOutfitDto | null;
+    onError?: (message: string, raw: unknown) => void;
 
     /**
-     * 네트워크/서버 오류 발생 시 후킹(선택)
+     * ✅ repo가 sessionKey를 "필수"로 받는 구조라면 여기도 사실상 필수
      */
-    onError?: (message: string, raw: unknown) => void;
+    sessionKey: string;
 };
 
-/**
- * axios 기반 에러 메시지 추출(우리 sessionApi 기준)
- */
 function toErrorMessage(e: unknown): string {
     const anyE = e as any;
     return (
@@ -36,19 +27,13 @@ function toErrorMessage(e: unknown): string {
     );
 }
 
-/**
- * Today Outfit 전용 훅
- * - 상태: idle/loading/saving/error
- * - 레이스 가드: refresh/save 연속 호출 시 마지막 요청만 반영
- */
-export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
-    const { autoFetch = true, initialData = null, onError } = options;
+export function useTodayOutfit(options: UseTodayOutfitOptions) {
+    const { autoFetch = true, initialData = null, onError, sessionKey } = options;
 
     const [status, setStatus] = useState<Status>("idle");
     const [error, setError] = useState<string | null>(null);
     const [todayOutfit, setTodayOutfit] = useState<TodayOutfitDto | null>(initialData);
 
-    // 마지막 요청만 UI 반영하도록 가드
     const reqSeqRef = useRef(0);
     const mountedRef = useRef(true);
 
@@ -69,9 +54,9 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
         });
 
         try {
-            const data = await outfitRepo.getTodayOutfit();
+            // ✅ 2번째 인자로 sessionKey 전달
+            const data = await outfitRepo.getTodayOutfit(sessionKey);
 
-            // 레이스 가드: 최신 호출만 반영
             if (reqSeqRef.current !== seq) return data;
 
             safeSet(() => {
@@ -82,8 +67,6 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
             return data;
         } catch (e) {
             const msg = toErrorMessage(e);
-
-            // 레이스 가드
             if (reqSeqRef.current !== seq) throw e;
 
             safeSet(() => {
@@ -94,7 +77,7 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
             onError?.(msg, e);
             throw e;
         }
-    }, [onError, safeSet]);
+    }, [onError, safeSet, sessionKey]);
 
     const save = useCallback(
         async (input: OutfitSaveInput): Promise<TodayOutfitDto> => {
@@ -106,7 +89,8 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
             });
 
             try {
-                const saved = await outfitRepo.saveTodayOutfit(input);
+                // ✅ 2번째 인자로 sessionKey 전달
+                const saved = await outfitRepo.saveTodayOutfit(input, sessionKey);
 
                 if (reqSeqRef.current !== seq) return saved;
 
@@ -118,7 +102,6 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
                 return saved;
             } catch (e) {
                 const msg = toErrorMessage(e);
-
                 if (reqSeqRef.current !== seq) throw e;
 
                 safeSet(() => {
@@ -130,13 +113,9 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
                 throw e;
             }
         },
-        [onError, safeSet]
+        [onError, safeSet, sessionKey]
     );
 
-    /**
-     * 캘린더에서 navigation state(recentlySaved 등)로 받은 DTO 주입
-     * - 서버 호출 없이 화면만 갱신할 때 사용
-     */
     const setLocal = useCallback((dto: TodayOutfitDto | null) => {
         safeSet(() => setTodayOutfit(dto));
     }, [safeSet]);
@@ -145,9 +124,6 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
         safeSet(() => setError(null));
     }, [safeSet]);
 
-    /**
-     * 상태 초기화(원하면 사용)
-     */
     const reset = useCallback(() => {
         safeSet(() => {
             setStatus("idle");
@@ -164,7 +140,6 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
     }, []);
 
     useEffect(() => {
-        // initialData가 바뀌는 케이스도 반영 (선택)
         safeSet(() => setTodayOutfit(initialData ?? null));
     }, [initialData, safeSet]);
 
@@ -178,28 +153,15 @@ export function useTodayOutfit(options: UseTodayOutfitOptions = {}) {
             todayOutfit,
             status,
             error,
-
             isLoading,
             isSaving,
-
             refresh,
             save,
-
             setLocal,
             clearError,
             reset,
+            sessionKey,
         }),
-        [
-            todayOutfit,
-            status,
-            error,
-            isLoading,
-            isSaving,
-            refresh,
-            save,
-            setLocal,
-            clearError,
-            reset,
-        ]
+        [todayOutfit, status, error, isLoading, isSaving, refresh, save, setLocal, clearError, reset, sessionKey]
     );
 }

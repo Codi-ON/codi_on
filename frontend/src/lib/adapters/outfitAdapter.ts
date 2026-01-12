@@ -51,7 +51,8 @@ export function normalizeISO(dateLike: unknown): string {
 }
 
 function toRecoStrategy(v: unknown): RecoStrategy | null {
-    return v === "BLEND_RATIO" || v === "MATERIAL_RATIO" ? v : null;
+    // ✅ 서버가 string | null 로 내려와도 안전하게 좁힘
+    return v === "BLEND_RATIO" || v === "MATERIAL_RATIO" ? (v as RecoStrategy) : null;
 }
 
 function weatherIconFromCondition(cond?: string | null): string {
@@ -96,6 +97,18 @@ function titleFromSelected(selected?: SelectedOutfit | null): string {
     return parts.length ? parts.join(" · ") : "오늘의 아웃핏";
 }
 
+/**
+ * ✅ Monthly/day 아이템도 TodayOutfitItemDto와 “완전히 동일”하다고 보장 못함
+ * - imageUrl만 뽑아쓰도록 최소 필드 기반으로 안전 처리
+ */
+function imagesFromAnyItems(items: any[] | undefined | null): string[] {
+    const arr = Array.isArray(items) ? items : [];
+    return arr
+        .map((it) => (it && typeof it === "object" ? (it as any).imageUrl : null))
+        .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+        .slice(0, 3);
+}
+
 /** ---------- transformers ---------- */
 function dayToEntry(day: MonthlyHistoryDayDto): HistoryEntryUI {
     const dateISO = normalizeISO(day.date);
@@ -103,13 +116,6 @@ function dayToEntry(day: MonthlyHistoryDayDto): HistoryEntryUI {
     const cond = typeof day.condition === "string" ? day.condition : null;
     const score = typeof day.feedbackScore === "number" ? day.feedbackScore : null;
     const strategy = toRecoStrategy(day.recoStrategy);
-
-    const imgs = Array.isArray(day.items)
-        ? (day.items as TodayOutfitItemDto[])
-            .map((it) => it?.imageUrl ?? null)
-            .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-            .slice(0, 3)
-        : [];
 
     return {
         id: `day-${dateISO}`,
@@ -126,7 +132,8 @@ function dayToEntry(day: MonthlyHistoryDayDto): HistoryEntryUI {
         recoStrategy: strategy,
         machineIcon: machineIconFromStrategy(strategy),
 
-        images: imgs,
+        // ✅ MonthlyHistoryDayDto.items는 optional이라 안전 파싱
+        images: imagesFromAnyItems((day as any).items),
     };
 }
 
@@ -197,7 +204,11 @@ function uniqNumbers(ids: number[]): number[] {
     return out;
 }
 
-/** ✅ 저장 시 함께 보낼 메타(recoStrategy, recommendationKey) */
+/**
+ * ✅ 저장 시 함께 보낼 메타
+ * - outfitApi.SaveTodayOutfitRequest에 recoStrategy만 정의돼 있음
+ * - recommendationKey는 백이 받는다면 payload에 포함해서 전송(구조적 타이핑)
+ */
 function extractSaveMeta(input: unknown): {
     recoStrategy?: RecoStrategy | null;
     recommendationKey?: string | null;
@@ -218,24 +229,24 @@ function extractSaveMeta(input: unknown): {
 
 export const outfitSaveAdapter = {
     /**
-     * ✅ SaveTodayOutfitRequest + (옵션) recoStrategy/recommendationKey 포함
-     * - SaveTodayOutfitRequest 타입에 해당 필드가 아직 없다면,
-     *   백엔드 계약에 맞춰 보내기 위해 cast 처리(구조적 타이핑)합니다.
+     * ✅ SaveTodayOutfitRequest + (옵션) recommendationKey 포함
+     * - TS 타입은 좁게, 런타임 payload는 계약에 맞춰 확장 가능
      */
     toSaveTodayPayload(input: unknown): SaveTodayOutfitRequest {
         const clothingIds = uniqNumbers(extractIds(input));
         const meta = extractSaveMeta(input);
 
-        const payload = {
+        const payload: any = {
             items: clothingIds.map((clothingId, idx) => ({
                 clothingId,
                 sortOrder: idx + 1,
             })),
-            ...(meta.recoStrategy ? { recoStrategy: meta.recoStrategy } : {}),
-            ...(meta.recommendationKey ? { recommendationKey: meta.recommendationKey } : {}),
         };
 
-        return payload as unknown as SaveTodayOutfitRequest;
+        if (meta.recoStrategy) payload.recoStrategy = meta.recoStrategy;
+        if (meta.recommendationKey) payload.recommendationKey = meta.recommendationKey;
+
+        return payload as SaveTodayOutfitRequest;
     },
 
     // 기존 호출명 호환 alias
@@ -277,7 +288,11 @@ export const outfitAdapter = {
      * ✅ “응답 DTO 없이” 로컬 Map만 즉시 업데이트하고 싶을 때(낙관적 업데이트용)
      * - 보통은 서버 응답(TodayOutfitDto)을 mergeRecentlySaved로 덮어쓰는 걸 권장
      */
-    applyFeedback(base: Map<string, HistoryEntryUI>, dateISO: string, score: -1 | 0 | 1): Map<string, HistoryEntryUI> {
+    applyFeedback(
+        base: Map<string, HistoryEntryUI>,
+        dateISO: string,
+        score: -1 | 0 | 1
+    ): Map<string, HistoryEntryUI> {
         const next = new Map(base);
         const prev = next.get(dateISO);
         if (!prev) return next;

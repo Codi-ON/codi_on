@@ -20,25 +20,52 @@ export type OutfitSaveInput =
     recommendationKey?: string | null;
 };
 
+/**
+ * ✅ sessionKey를 모든 호출에 명시적으로 주입하는 Repo
+ * - 이유: “저장”과 “히스토리 조회”가 같은 세션키를 써야 최근 저장이 바로 보임
+ * - 원칙: outfitRepo 레벨에서는 항상 sessionKey를 받는다
+ *
+ * 사용 예)
+ *   const sessionKey = effectiveSessionKey;
+ *   await outfitRepo.saveTodayOutfit(clothingIds, sessionKey);
+ *   const today = await outfitRepo.getTodayOutfit(sessionKey);
+ */
 export const outfitRepo = {
-    getTodayOutfit(): Promise<TodayOutfitDto> {
-        return outfitApi.getToday();
+    /**
+     * 오늘 아웃핏 조회
+     */
+    getTodayOutfit(sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.getToday({ sessionKey });
     },
 
-    saveTodayOutfit(input: OutfitSaveInput): Promise<TodayOutfitDto> {
+    /**
+     * 오늘 아웃핏 저장
+     * - input은 number[]든 items든 다 받아서 adapter에서 payload로 통일
+     */
+    saveTodayOutfit(input: OutfitSaveInput, sessionKey: string): Promise<TodayOutfitDto> {
         const body = outfitSaveAdapter.toSaveTodayPayload(input);
-        return outfitApi.saveToday(body);
+        return outfitApi.saveToday(body, { sessionKey });
     },
 
-    postTodayFeedback(rating: 1 | 0 | -1): Promise<TodayOutfitDto> {
-        return outfitApi.postTodayFeedback({ rating });
+    /**
+     * 오늘 피드백 등록
+     */
+    postTodayFeedback(rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.postTodayFeedback({ rating }, { sessionKey });
     },
 
-    postOutfitFeedbackByDate(dateISO: string, rating: 1 | 0 | -1): Promise<TodayOutfitDto> {
-        return outfitApi.postFeedbackByDate(dateISO, { rating });
+    /**
+     * 특정 날짜 피드백 등록
+     */
+    postOutfitFeedbackByDate(dateISO: string, rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.postFeedbackByDate(dateISO, { rating }, { sessionKey });
     },
 
-    getMonthlyOutfits(year: number, month: number): Promise<MonthlyHistoryDto> {
-        return outfitApi.getMonthly({ year, month });
+    /**
+     * 월별 히스토리 조회
+     */
+    getMonthlyOutfits(year: number, month: number, sessionKey: string): Promise<MonthlyHistoryDto> {
+        return outfitApi.getMonthly({ year, month }, { sessionKey });
     },
+
 } as const;

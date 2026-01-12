@@ -75,6 +75,27 @@ export type SelectedOutfit = {
     outer?: ClosetItem;
 };
 
+/**
+ * ✅ A안: “최근 저장한 아웃핏”을 API 없이도 그리기 위한 ViewModel
+ * - 저장 시점 스냅샷(selectedOutfitSnapshot) 기반으로 생성
+ * - TodayPage/History 카드에서 바로 렌더 가능한 최소 스펙
+ */
+export type OutfitHistoryVmItem = {
+    category: "TOP" | "BOTTOM" | "OUTER";
+    clothingId: number;
+    name: string;
+    imageUrl?: string | null;
+    sortOrder: number; // 0,1,2
+};
+
+export type OutfitHistoryVm = {
+    id: string;            // 프론트 key
+    outfitDate: string;    // YYYY-MM-DD
+    title?: string | null;
+    thumbnailUrl?: string | null;
+    items: OutfitHistoryVmItem[];
+};
+
 export type OutfitRecoState = {
     checklist: ChecklistSubmitDto | null;
 
@@ -104,6 +125,9 @@ export type OutfitRecoState = {
     // ✅ 저장 시점에 화면에서 선택된 outfit(이름/브랜드/이미지 등) 스냅샷
     selectedOutfitSnapshot: SelectedOutfit | null;
 
+    // ✅ A안: 최근 저장 히스토리 3개 (API 실패/미연결이어도 렌더 가능)
+    recentHistory: OutfitHistoryVm[];
+
     // ✅ 머신(모델) 키: 혼합율/소재
     recoModelKey: RecommendationModelKey;
 
@@ -129,6 +153,8 @@ const initialState: OutfitRecoState = {
 
     lastSavedTodayOutfit: null,
     selectedOutfitSnapshot: null,
+
+    recentHistory: [],
 
     recoModelKey: "UNKNOWN",
 
@@ -218,6 +244,57 @@ function parseModelKey(raw?: string | null): RecommendationModelKey {
     if (v.includes("MATERIAL")) return "MATERIAL_RATIO";
     if (v.includes("BLEND")) return "BLEND_RATIO";
     return "UNKNOWN";
+}
+
+// ✅ A안 helper: 오늘 날짜 ISO
+function toIsoDateYYYYMMDD(d = new Date()) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+// ✅ A안 helper: snapshot → history vm
+function buildHistoryVmFromSnapshot(snapshot: SelectedOutfit | null, outfitDate: string): OutfitHistoryVm {
+    const items: OutfitHistoryVmItem[] = [];
+
+    if (snapshot?.top) {
+        items.push({
+            category: "TOP",
+            clothingId: snapshot.top.clothingId,
+            name: snapshot.top.name,
+            imageUrl: snapshot.top.imageUrl ?? null,
+            sortOrder: 0,
+        });
+    }
+
+    if (snapshot?.bottom) {
+        items.push({
+            category: "BOTTOM",
+            clothingId: snapshot.bottom.clothingId,
+            name: snapshot.bottom.name,
+            imageUrl: snapshot.bottom.imageUrl ?? null,
+            sortOrder: 1,
+        });
+    }
+
+    if (snapshot?.outer) {
+        items.push({
+            category: "OUTER",
+            clothingId: snapshot.outer.clothingId,
+            name: snapshot.outer.name,
+            imageUrl: snapshot.outer.imageUrl ?? null,
+            sortOrder: 2,
+        });
+    }
+
+    return {
+        id: `local-${outfitDate}`,
+        outfitDate,
+        title: "저장한 아웃핏",
+        thumbnailUrl: null,
+        items,
+    };
 }
 
 // ---- Thunk return types ----
@@ -349,6 +426,7 @@ const outfitRecoSlice = createSlice({
         clearLastSaved(state) {
             state.lastSavedTodayOutfit = null;
             state.selectedOutfitSnapshot = null;
+            state.recentHistory = []; // ✅ 같이 정리
         },
 
         resetOutfitReco() {
@@ -392,6 +470,14 @@ const outfitRecoSlice = createSlice({
 
                 // ✅ 저장된 건은 어떤 모델로 추천된 건지 같이 유지
                 state.recoModelKey = action.payload.modelKey;
+
+                // ✅ A안 핵심: recentHistory 업서트 (최근 3개)
+                const outfitDate =
+                    (action.payload.saved as any)?.outfitDate ?? toIsoDateYYYYMMDD();
+
+                const vm = buildHistoryVmFromSnapshot(action.payload.snapshot, outfitDate);
+                const next = [vm, ...state.recentHistory.filter((h) => h.outfitDate !== outfitDate)];
+                state.recentHistory = next.slice(0, 3);
             })
             .addCase(saveTodayOutfitThunk.rejected, (state, action) => {
                 state.saving = false;
@@ -435,3 +521,7 @@ export const selectSelectedOutfitSnapshot = (s: any) => s.outfitReco.selectedOut
 
 export const selectRecoFeedbackScore = (s: any) => s.outfitReco.recoFeedbackScore as FeedbackScore;
 export const selectChecklist = (s: any) => s.outfitReco.checklist as ChecklistSubmitDto | null;
+
+// ✅ A안: 최근 저장 히스토리 (API 없이도 렌더)
+export const selectRecentHistory = (s: any) =>
+    s.outfitReco.recentHistory as OutfitHistoryVm[];
