@@ -48,7 +48,7 @@ def batch(payload: Dict[str, Any]):
         return _empty_result()
 
 # feedback 기반 재정렬
-@router.post("/yesterday-feedback")
+@router.post("/yesterday-feedback-blend")
 def yesterday_feedback(payload: Dict[str, Any]):
     try:
         req = _parse(payload)

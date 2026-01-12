@@ -53,7 +53,7 @@ def recommend(payload: Dict[str, Any]):
         return {"results": []}
         # return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
 
-@router.post("/yesterday-feedback2")
+@router.post("/yesterday-feedback-material")
 def recommend(payload: Dict[str, Any]):
     # 422/500 방지: dict로 받고 내부에서 수동검증 + 예외 봉합
     try:
