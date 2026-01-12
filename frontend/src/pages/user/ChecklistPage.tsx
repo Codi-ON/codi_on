@@ -24,7 +24,7 @@ import type {
   ThicknessLevel,
   ActivityLevel,
   YesterdayTempFeedback,
-  ChecklistSubmitDto,
+  ChecklistSubmitDto, YesterdayFeedback,
 } from "@/shared/domain/checklist";
 
 import { useChecklistToday, useChecklistSubmit } from "@/lib/hooks/useChecklist";
@@ -34,7 +34,7 @@ const STORAGE_KEY = "codion.checklist.answer.v1";
 type DraftChecklistAnswer = {
   usageType?: UsageType;
   thicknessLevel?: ThicknessLevel; // UI 2번 질문 결과(THICK/NORMAL/THIN)
-  yesterdayTempFeedback?: YesterdayTempFeedback;
+  yesterdayTempFeedback?: YesterdayFeedback;
 };
 
 type QuestionKey = keyof DraftChecklistAnswer;
@@ -82,10 +82,10 @@ const questions: Array<Question<any>> = [
     subtitle: "누적 피드백으로 다음 추천을 미세조정합니다.",
     cols: 4,
     options: [
-      { label: "더웠어요", value: "HOT" as YesterdayTempFeedback, icon: ThermometerSun },
-      { label: "딱 좋았어요", value: "OK" as YesterdayTempFeedback, icon: ThumbsUp },
-      { label: "추웠어요", value: "COLD" as YesterdayTempFeedback, icon: ThermometerSnowflake },
-      { label: "모르겠어요", value: "UNKNOWN" as YesterdayTempFeedback, icon: HelpCircle },
+      { label: "더웠어요", value: "HOT" as YesterdayFeedback, icon: ThermometerSun },
+      { label: "딱 좋았어요", value: "OK" as YesterdayFeedback, icon: ThumbsUp },
+      { label: "추웠어요", value: "COLD" as YesterdayFeedback, icon: ThermometerSnowflake },
+      { label: "모르겠어요", value: "UNKNOWN" as YesterdayFeedback, icon: HelpCircle },
     ],
   },
 ];
@@ -98,7 +98,7 @@ function mapThicknessToActivity(level: ThicknessLevel): ActivityLevel {
   return "NORMAL";
 }
 
-function normalizeYesterdayFeedback(v: YesterdayTempFeedback): YesterdayTempFeedback {
+function normalizeYesterdayFeedback(v: YesterdayFeedback): YesterdayFeedback {
   // 백이 UNKNOWN을 허용하지 않으면 여기서 OK로 내려도 됨.
   // 우선은 UNKNOWN 그대로 보냄(백이 받도록 맞추는 게 정석)
   return v;
