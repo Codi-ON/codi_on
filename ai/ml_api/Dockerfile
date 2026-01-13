@@ -9,14 +9,17 @@ RUN apt-get update \
 
 # requirements
 COPY ml_api/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir -r /app/requirements.txt -i http://mirror.kakao.com/pypi/simple --trusted-host mirror.kakao.com
 
 # FastAPI app -> /app/api
 COPY ml_api/api /app/api
 
 # models
-COPY ratio_based/ml /app/models/ratio_based/ml
-COPY material_weather/ml /app/models/material_weather/ml
+#COPY material_weather/ml /app/models/material_weather/ml
+#COPY ratio_based/ml /app/models/ratio_based/ml
+
+COPY material_weather /app/models/material_weather
+COPY ratio_based /app/models/ratio_based
 
 # ✅ 핵심: api / ml 모두 import 되게 + 모델 베이스 경로 고정
 ENV PYTHONPATH=/app:/app/models/ratio_based:/app/models/material_weather
