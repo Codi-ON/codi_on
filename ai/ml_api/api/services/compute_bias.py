@@ -3,11 +3,12 @@ from collections import defaultdict
 
 from .config import ALPHA
 from .blend_ratio_service import predict_comfort_batch
-from ..schemas.blend_ratio_schema import BlendRatioRecommendRequest
+from ..schemas.blend_ratio_schema import BlendRatioFeedbackRequest
 
-def run_blend_ratio(req: BlendRatioRecommendRequest):
+
+def run_blend_ratio(req: BlendRatioFeedbackRequest):
     raw_results = predict_comfort_batch(
-        context=req.context,
+        context=req.weather,
         items=req.items,
     )
 

@@ -4,7 +4,6 @@ from pydantic import ValidationError
 from datetime import date
 
 from ..schemas.recommendation_schemas import RecommendationRequest
-from ..services.compute_bias import apply_bias_and_rerank
 from ..services.predictor import recommender_service  # ✅ 상대 임포트로 고정
 
 router = APIRouter(prefix="/recommend", tags=["materialRatioScore"])
@@ -54,59 +53,3 @@ def recommend(payload: Dict[str, Any]):
     except Exception as e:
         return {"results": []}
         # return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
-
-@router.post("/yesterday-feedback-material")
-def recommend(payload: Dict[str, Any]):
-    # 422/500 방지: dict로 받고 내부에서 수동검증 + 예외 봉합
-    try:
-        req = _parse(payload)
-    except ValidationError as e:
-        return {"status": "fail", "message": "VALIDATION_ERROR", "details": str(e)}
-    except Exception as e:
-        return {"status": "error", "message": "INTERNAL_ERROR", "details": str(e)}
-
-    try:
-        current_weather = req.weather
-        scored_items = []
-
-        for item in req.items:
-            if not item.name or item.name.strip() == "":
-                continue
-
-            try:
-                score = recommender_service.calculate_score(item, current_weather)
-
-                scored_items.append({
-                    "clothingId": item.clothingId,
-                    "score": score,
-                })
-
-            except Exception as e:
-                print(f"아이템({item.name}) 계산 중 에러 건너뜀: {e}")
-                continue
-
-        if not scored_items:
-            return {"results": []}
-
-        reranked_items = apply_bias_and_rerank(
-            model_type="MATERIAL_RATIO",
-            scored_items=scored_items,
-        )
-
-        results = [
-            {
-                "clothingId": it["clothingId"],
-                "materialRatioScore": it["score"],
-            }
-            for it in reranked_items
-        ]
-
-        return {
-            "date": date.today().strftime("%Y-%m-%d"),
-            "results": results,
-            "recoStrategy": None #"MATERIAL_RATIO"
-        }
-
-    except Exception as e:
-        print("[ERROR][/yesterday-feedback2]", repr(e))
-        return {"results": []}

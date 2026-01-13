@@ -22,6 +22,21 @@ class BlendRatioRecommendRequest(BaseModel):
     context: Context
     items: List[Item]
 
+class Weather(BaseModel):
+    temperature: Optional[float]
+    feelsLikeTemperature: Optional[float]
+    maxTemperature: Optional[float]
+    minTemperature: Optional[float]
+    humidity: Optional[int]
+    windSpeed: Optional[float]
+    cloudAmount: Optional[int]
+    sky: Optional[str]
+    precipitationProbability: Optional[int]
+
+class BlendRatioFeedbackRequest(BaseModel):
+    weather: Weather
+    items: List[Item]
+
 # ▼▼▼ 출력 ▼▼▼
 class Result(BaseModel):
     clothingId: int
@@ -32,3 +47,6 @@ class BlendRatioRecommendResponse(BaseModel):
     date: Optional[str] = None
     results: List[Result]
     recoStrategy: Optional[str] = None
+
+class BlendRatioFeedbackResponse(BaseModel):
+    results: List[Result]
