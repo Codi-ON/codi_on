@@ -15,5 +15,5 @@ class MonthlyFeedbackRequest(BaseModel):
     feedbackId: str
     range: FeedbackRange
     prevBias: int = Field(ge=0, le=100)
-    inputs: List[FeedbackInput]
+    samples: List[FeedbackInput]
     requestModels: List[str]
