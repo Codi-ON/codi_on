@@ -1,15 +1,15 @@
 // src/pages/user/CalendarPage.tsx
-import React, {useCallback, useEffect, useMemo, useState} from "react";
-import {Card, Button, Badge, cn} from "@/app/DesignSystem";
-import {RefreshCw, ChevronLeft, ChevronRight, Heart} from "lucide-react";
-import {useSearchParams, useNavigate} from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Card, Button, Badge, cn } from "@/app/DesignSystem";
+import { RefreshCw, ChevronLeft, ChevronRight, Heart } from "lucide-react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
-import {sessionApi} from "@/lib/http";
-import {outfitRepo} from "@/lib/repo/outfitRepo";
-import type {MonthlyHistoryDto, TodayOutfitDto, TodayOutfitItemDto, RecoStrategy} from "@/lib/api/outfitApi";
+import { sessionApi } from "@/lib/http";
+import { outfitRepo } from "@/lib/repo/outfitRepo";
+import {MonthlyHistoryDto, TodayOutfitItemDto, RecoStrategy, outfitApi} from "@/lib/api/outfitApi";
 
-import {useAppDispatch, useAppSelector} from "@/state/hooks/hooks";
-import {fetchFavorites, optimisticSet, toggleFavorite} from "@/state/favorites/favoritesSlice";
+import { useAppDispatch, useAppSelector } from "@/state/hooks/hooks";
+import { fetchFavorites, optimisticSet, toggleFavorite } from "@/state/favorites/favoritesSlice";
 
 /** ---------- types (UI) ---------- */
 type ClothesSummaryItem = {
@@ -45,41 +45,26 @@ type LoadStatus = "idle" | "loading" | "error";
 function pad2(n: number) {
     return n < 10 ? `0${n}` : `${n}`;
 }
-
 function toISODate(d: Date) {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-
 function fromISODate(iso: string): Date {
     const [y, m, day] = iso.split("-").map((v) => parseInt(v, 10));
     return new Date(y, (m ?? 1) - 1, day ?? 1);
 }
-
 function sameMonth(a: Date, y: number, m1to12: number) {
     return a.getFullYear() === y && a.getMonth() === m1to12 - 1;
 }
-
 function startOfMonth(year: number, month1to12: number) {
     return new Date(year, month1to12 - 1, 1);
 }
-
 function daysInMonth(year: number, month1to12: number) {
     return new Date(year, month1to12, 0).getDate();
 }
-
-function formatKoreanDate(iso: string): string {
-    // "YYYY년 M월 D일" (ko-KR long month)
-    const d = fromISODate(iso);
-    try {
-        return new Intl.DateTimeFormat("ko-KR", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        }).format(d);
-    } catch {
-        // fallback
-        return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
-    }
+function toKoreanDateLabel(iso: string): string {
+    const [y, m, d] = iso.split("-").map((v) => parseInt(v, 10));
+    if (!y || !m || !d) return iso;
+    return `${y}년 ${m}월 ${d}일`;
 }
 
 /** ---------- icons / labels ---------- */
@@ -91,27 +76,30 @@ function weatherIcon(cond: string | null): string {
     if (c.includes("sun") || c.includes("맑") || c.includes("clear")) return "☀️";
     return "🌤️";
 }
-
 function recoMeta(strategy: RecoStrategy | null): { emoji: string; label: string; tooltip: string } {
-    if (strategy === "BLEND_RATIO") return {emoji: "🧩", label: "혼용률", tooltip: ""};
-    if (strategy === "MATERIAL_RATIO") return {emoji: "🧵", label: "소재", tooltip: ""};
-    return {emoji: "⚙️", label: "기본", tooltip: ""};
+    if (strategy === "BLEND_RATIO") return { emoji: "🧩", label: "혼용률", tooltip: "" };
+    if (strategy === "MATERIAL_RATIO") return { emoji: "🧵", label: "소재", tooltip: "" };
+    return { emoji: "⚙️", label: "기본", tooltip: "" };
 }
-
 function clampFeedback(v: unknown): -1 | 0 | 1 | null {
     if (v === 1 || v === 0 || v === -1) return v;
     return null;
 }
-
 function toRecoStrategy(v: unknown): RecoStrategy | null {
     if (v === "BLEND_RATIO" || v === "MATERIAL_RATIO") return v;
+    return null;
+}
+function feedbackEmoji(score: -1 | 0 | 1 | null | undefined): string | null {
+    if (score === 1) return "👍";
+    if (score === 0) return "😐";
+    if (score === -1) return "👎";
     return null;
 }
 
 /** ---------- API helper: clothes summary ---------- */
 async function fetchClothesSummary(ids: number[]): Promise<ClothesSummaryItem[]> {
     if (!ids.length) return [];
-    return sessionApi.post<ClothesSummaryItem[]>("/api/clothes/summary", {ids});
+    return sessionApi.post<ClothesSummaryItem[]>("/api/clothes/summary", { ids });
 }
 
 /** ---------- assemble monthly -> UI map (merge clothes summary) ---------- */
@@ -171,33 +159,22 @@ function buildCalendarCells(year: number, month1to12: number): Cell[] {
 
     for (let i = firstDow - 1; i >= 0; i--) {
         const d = new Date(year, month1to12 - 1, 1 - (i + 1));
-        cells.push({key: `p-${i}`, date: d, inMonth: false});
+        cells.push({ key: `p-${i}`, date: d, inMonth: false });
     }
     for (let day = 1; day <= totalDays; day++) {
         const d = new Date(year, month1to12 - 1, day);
-        cells.push({key: `c-${day}`, date: d, inMonth: true});
+        cells.push({ key: `c-${day}`, date: d, inMonth: true });
     }
     while (cells.length < 42) {
         const last = cells[cells.length - 1].date;
         const next = new Date(last);
         next.setDate(last.getDate() + 1);
-        cells.push({key: `n-${cells.length}`, date: next, inMonth: false});
+        cells.push({ key: `n-${cells.length}`, date: next, inMonth: false });
     }
 
     return cells;
 }
-function toKoreanDateLabel(iso: string): string {
-    const [y, m, d] = iso.split("-").map((v) => parseInt(v, 10));
-    if (!y || !m || !d) return iso;
-    return `${y}년 ${m}월 ${d}일`;
-}
 
-function feedbackEmoji(score: -1 | 0 | 1 | null | undefined): string | null {
-    if (score === 1) return "👍";
-    if (score === 0) return "😐";
-    if (score === -1) return "👎";
-    return null;
-}
 
 /** ---------- main page ---------- */
 export default function CalendarPage() {
@@ -217,7 +194,6 @@ export default function CalendarPage() {
 
     const [status, setStatus] = useState<LoadStatus>("idle");
     const [error, setError] = useState<string | null>(null);
-
     const [dayMap, setDayMap] = useState<Map<string, DayUI>>(new Map());
 
     useEffect(() => {
@@ -247,9 +223,7 @@ export default function CalendarPage() {
             const ids: number[] = [];
             for (const d of monthly.days ?? []) {
                 const items = Array.isArray(d?.items) ? d.items : [];
-                for (const it of items) {
-                    if (typeof it?.clothingId === "number") ids.push(it.clothingId);
-                }
+                for (const it of items) if (typeof it?.clothingId === "number") ids.push(it.clothingId);
             }
             const uniq = Array.from(new Set(ids));
 
@@ -271,14 +245,6 @@ export default function CalendarPage() {
     const selectedDay = useMemo(() => dayMap.get(selectedISO) ?? null, [dayMap, selectedISO]);
     const cells = useMemo(() => buildCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
     const monthTitle = useMemo(() => `${viewYear}년 ${viewMonth}월`, [viewYear, viewMonth]);
-
-    const hasAnyRecord = useMemo(() => {
-        for (const [, d] of dayMap) {
-            const dt = fromISODate(d.dateISO);
-            if (sameMonth(dt, viewYear, viewMonth) && (d.items?.length ?? 0) > 0) return true;
-        }
-        return false;
-    }, [dayMap, viewYear, viewMonth]);
 
     const onClickDay = useCallback(
         (iso: string) => {
@@ -313,15 +279,14 @@ export default function CalendarPage() {
 
     const toggleFav = useCallback(
         (clothingId: number, next: boolean) => {
-            dispatch(optimisticSet({clothingId, next}));
-            dispatch(toggleFavorite({clothingId, next}));
+            dispatch(optimisticSet({ clothingId, next }));
+            dispatch(toggleFavorite({ clothingId, next }));
         },
         [dispatch]
     );
-    const navigate = useNavigate();
 
+    const navigate = useNavigate();
     const ROUTE_CHECKLIST = "/checklist";
-    const ROUTE_TODAY_RECO = "/recommendation";
 
     return (
         <div className="w-full">
@@ -333,28 +298,30 @@ export default function CalendarPage() {
                             <div>
                                 <div className="text-xs tracking-widest text-muted-foreground">HISTORY CALENDAR</div>
                                 <div className="mt-2 text-2xl font-bold">{monthTitle}</div>
-
-
                             </div>
 
-                            {/* month controls + single refresh */}
+                            {/* month controls + refresh */}
                             <div className="flex items-center gap-2">
-                                <Button variant="ghost" size="icon" onClick={onPrevMonth} aria-label="prev month">
-                                    <ChevronLeft className="h-4 w-4"/>
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={onNextMonth} aria-label="next month">
-                                    <ChevronRight className="h-4 w-4"/>
-                                </Button>
                                 <Button
                                     variant="ghost"
-                                    size="icon"
-                                    onClick={loadMonthly}
-                                    aria-label="refresh"
-                                    disabled={status === "loading"}
-                                    title="새로고침"
+                                    size="sm"
+                                    className="h-12 w-12 p-0"
+                                    onClick={onPrevMonth}
+                                    aria-label="prev month"
                                 >
-                                    <RefreshCw className={cn("h-4 w-4", status === "loading" && "animate-spin")}/>
+                                    <ChevronLeft className="h-5 w-5" />
                                 </Button>
+
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-12 w-12 p-0"
+                                    onClick={onNextMonth}
+                                    aria-label="next month"
+                                >
+                                    <ChevronRight className="h-5 w-5" />
+                                </Button>
+
                             </div>
                         </div>
 
@@ -374,46 +341,52 @@ export default function CalendarPage() {
                             {cells.map((cell) => {
                                 const iso = toISODate(cell.date);
                                 const inMonth = cell.inMonth;
+                                const dow = cell.date.getDay(); // 0=Sun, 6=Sat
                                 const isToday = iso === todayISO;
                                 const isSelected = iso === selectedISO;
 
                                 const d = dayMap.get(iso);
                                 const hasSaved = (d?.items?.length ?? 0) > 0;
 
-                                // 마커는 "기록 있음"만 체크로 통일 (요청)
+                                // 마커는 "기록 있음"만 체크
                                 const marker = hasSaved ? "✓" : null;
+
+                                const dayColorClass =
+                                    dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-slate-900";
 
                                 return (
                                     <button
                                         key={cell.key}
                                         onClick={() => onClickDay(iso)}
                                         className={cn(
-                                            "relative h-[74px] rounded-2xl border bg-white text-left transition",
-                                            "hover:shadow-sm",
+                                            "relative h-[74px] rounded-2xl border text-left transition",
+                                            "bg-white hover:shadow-sm",
                                             !inMonth && "opacity-40",
                                             isSelected && "border-foreground",
-                                            isToday && "bg-orange-50", // 오늘 날짜 연한 주황 유지
+                                            isToday && "bg-orange-50",
                                             "p-2"
                                         )}
                                     >
-                                        {/* day number: 무조건 좌측 상단 고정 */}
+                                        {/* day number: 좌측 상단, 주말 색 반영 */}
                                         <div
                                             className={cn(
                                                 "absolute left-2 top-2 text-base font-extrabold tracking-tight",
+                                                dayColorClass,
                                                 !inMonth && "text-muted-foreground"
                                             )}
                                         >
                                             {cell.date.getDate()}
                                         </div>
 
-                                        {/* marker: 우측 상단 (숫자와 겹치지 않음) */}
+                                        {/* marker: 우측 상단, 주황색으로 강조 */}
                                         {marker && (
                                             <div
                                                 className={cn(
                                                     "absolute right-2 top-2",
                                                     "h-6 min-w-6 rounded-full",
                                                     "flex items-center justify-center",
-                                                    "bg-slate-50 border text-sm font-semibold"
+                                                    "bg-orange-500 border border-orange-500 text-white",
+                                                    "text-sm font-bold shadow-sm"
                                                 )}
                                                 title="저장됨"
                                             >
@@ -437,7 +410,7 @@ export default function CalendarPage() {
                             </div>
                         </div>
 
-                        {/* KPI 3-up (가로 3칸) : 카드 내부는 세로 스택 */}
+                        {/* KPI 3-up */}
                         <div className="mt-3 grid grid-cols-3 gap-2">
                             {/* MACHINE */}
                             <div className="rounded-2xl border bg-white p-3">
@@ -445,20 +418,11 @@ export default function CalendarPage() {
                                 <div className="mt-1">
                                     {(() => {
                                         const s = selectedDay?.recoStrategy ?? null;
-                                        const label =
-                                            s === "MATERIAL_RATIO" ? "소재" :
-                                                s === "BLEND_RATIO" ? "혼용률" :
-                                                    "기본";
-                                        return (
-                                            <Badge className="rounded-full px-2 py-0.5 text-xs font-semibold">
-                                                {label}
-                                            </Badge>
-                                        );
+                                        const label = s === "MATERIAL_RATIO" ? "소재" : s === "BLEND_RATIO" ? "혼용률" : "기본";
+                                        return <Badge className="rounded-full px-2 py-0.5 text-xs font-semibold">{label}</Badge>;
                                     })()}
                                 </div>
-                                <div className="mt-1 text-[11px] text-slate-500">
-                                    {recoMeta(selectedDay?.recoStrategy ?? null).tooltip}
-                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">{recoMeta(selectedDay?.recoStrategy ?? null).tooltip}</div>
                             </div>
 
                             {/* WEATHER */}
@@ -467,23 +431,17 @@ export default function CalendarPage() {
                                 <div className="mt-1 flex items-center gap-2">
                                     <div className="text-xl leading-none">{weatherIcon(selectedDay?.condition ?? null)}</div>
                                     <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
-                                        {typeof selectedDay?.weatherTemp === "number"
-                                            ? `${Math.round(selectedDay.weatherTemp)}°`
-                                            : "—"}
+                                        {typeof selectedDay?.weatherTemp === "number" ? `${Math.round(selectedDay.weatherTemp)}°` : "—"}
                                     </div>
                                 </div>
-                                <div className="mt-1 text-[11px] text-slate-500">
-                                    {selectedDay?.condition ?? "—"}
-                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">{selectedDay?.condition ?? "—"}</div>
                             </div>
 
                             {/* FEEDBACK */}
                             <div className="rounded-2xl border bg-white p-3">
                                 <div className="text-[11px] font-medium text-slate-500">피드백</div>
                                 <div className="mt-1 flex items-center gap-2">
-                                    <div className="text-xl leading-none">
-                                        {feedbackEmoji(selectedDay?.feedbackScore ?? null) ?? "—"}
-                                    </div>
+                                    <div className="text-xl leading-none">{feedbackEmoji(selectedDay?.feedbackScore ?? null) ?? "—"}</div>
                                     <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
                                         {selectedDay?.feedbackScore === 1
                                             ? "좋음"
@@ -529,22 +487,13 @@ export default function CalendarPage() {
                                             return (
                                                 <div
                                                     key={`${selectedISO}-${slot}-${clothingId}`}
-                                                    className={cn(
-                                                        "rounded-2xl border bg-white p-3",
-                                                        isEmpty && "border-dashed"
-                                                    )}
+                                                    className={cn("rounded-2xl border bg-white p-3", isEmpty && "border-dashed")}
                                                 >
                                                     <div className="flex items-center justify-between gap-3">
                                                         {/* LEFT: image */}
                                                         <div className="relative h-[76px] w-[76px] overflow-hidden rounded-2xl bg-slate-100 flex-none">
-
                                                             {!isEmpty && it?.imageUrl ? (
-                                                                // eslint-disable-next-line @next/next/no-img-element
-                                                                <img
-                                                                    src={it.imageUrl}
-                                                                    alt={it.name ?? "item"}
-                                                                    className="h-full w-full object-cover"
-                                                                />
+                                                                <img src={it.imageUrl} alt={it.name ?? "item"} className="h-full w-full object-cover" />
                                                             ) : (
                                                                 <div className="h-full w-full flex items-center justify-center text-[11px] text-slate-400">
                                                                     {isEmpty ? "EMPTY" : "NO IMG"}
@@ -552,29 +501,23 @@ export default function CalendarPage() {
                                                             )}
                                                         </div>
 
-                                                        {/* CENTER: category text (요청: 사진/카테고리/좋아요만) */}
+                                                        {/* CENTER: category */}
                                                         <div className="min-w-0 flex-1">
                                                             <div className="text-[11px] font-medium text-slate-500">카테고리</div>
                                                             <div className={cn("mt-1 text-base font-semibold", isEmpty ? "text-slate-300" : "text-slate-900")}>
-                                                                {isEmpty ? emptyText : (it?.category ?? slot)}
+                                                                {isEmpty ? emptyText : it?.category ?? slot}
                                                             </div>
                                                         </div>
 
-                                                        {/* RIGHT: like */}
                                                         <Button
                                                             variant="ghost"
-                                                            size="icon"
-                                                            className="h-10 w-10"
+                                                            size="sm"
+                                                            className="h-12 w-12"
                                                             disabled={isEmpty}
                                                             onClick={() => !isEmpty && toggleFav(clothingId, !isFav)}
                                                             title={isEmpty ? "빈 슬롯" : isFav ? "좋아요 해제" : "좋아요"}
                                                         >
-                                                            <Heart
-                                                                className={cn(
-                                                                    "h-5 w-5",
-                                                                    isFav ? "text-red-500 fill-current" : "text-slate-400"
-                                                                )}
-                                                            />
+                                                            <Heart className={cn("h-6 w-6", isFav ? "text-red-500 fill-current" : "text-slate-400")} />
                                                         </Button>
                                                     </div>
                                                 </div>
@@ -588,7 +531,6 @@ export default function CalendarPage() {
                                     <div className="mt-2 rounded-xl border bg-orange-50 p-3 text-sm text-slate-700">
                                         옷이 부족하면 추천 정확도가 떨어질 수 있어요. 먼저 체크리스트를 작성해 주세요.
                                     </div>
-                                    {/* 오늘 추천 버튼 제거 */}
                                     <div className="mt-3">
                                         <Button className="w-full" onClick={() => navigate(ROUTE_CHECKLIST)}>
                                             체크리스트로

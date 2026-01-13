@@ -1,7 +1,8 @@
 // src/lib/repo/outfitRepo.ts
-import { outfitApi } from "@/lib/api/outfitApi";
-import type { MonthlyHistoryDto, TodayOutfitDto } from "@/lib/api/outfitApi";
-import { outfitSaveAdapter } from "@/lib/adapters/outfitAdapter";
+import {outfitApi} from "@/lib/api/outfitApi";
+import type {MonthlyHistoryDto, TodayOutfitDto} from "@/lib/api/outfitApi";
+import {outfitSaveAdapter} from "@/lib/adapters/outfitAdapter";
+import {getSessionKey} from "@/lib/session/sessionKey.ts";
 
 /**
  * 저장 입력 허용 범위(프론트 편의용):
@@ -35,7 +36,7 @@ export const outfitRepo = {
      * 오늘 아웃핏 조회
      */
     getTodayOutfit(sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.getToday({ sessionKey });
+        return outfitApi.getToday({sessionKey});
     },
 
     /**
@@ -44,28 +45,31 @@ export const outfitRepo = {
      */
     saveTodayOutfit(input: OutfitSaveInput, sessionKey: string): Promise<TodayOutfitDto> {
         const body = outfitSaveAdapter.toSaveTodayPayload(input);
-        return outfitApi.saveToday(body, { sessionKey });
+        return outfitApi.saveToday(body, {sessionKey});
     },
 
     /**
      * 오늘 피드백 등록
      */
     postTodayFeedback(rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.postTodayFeedback({ rating }, { sessionKey });
+        return outfitApi.postTodayFeedback({rating}, {sessionKey});
     },
 
     /**
      * 특정 날짜 피드백 등록
      */
     postOutfitFeedbackByDate(dateISO: string, rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.postFeedbackByDate(dateISO, { rating }, { sessionKey });
+        return outfitApi.postFeedbackByDate(dateISO, {rating}, {sessionKey});
     },
 
     /**
      * 월별 히스토리 조회
      */
-    getMonthlyOutfits(year: number, month: number, sessionKey: string): Promise<MonthlyHistoryDto> {
-        return outfitApi.getMonthly({ year, month }, { sessionKey });
+    async getMonthlyOutfits(year: number, month: number): Promise<MonthlyHistoryDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
+        return outfitApi.getMonthly({year, month}, {sessionKey});
     },
 
 } as const;

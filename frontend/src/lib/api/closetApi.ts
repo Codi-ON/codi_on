@@ -5,10 +5,15 @@ export type ClothesCategory = "TOP" | "BOTTOM" | "OUTER" | "ONE_PIECE";
 export type SeasonType = "SPRING" | "SUMMER" | "AUTUMN" | "WINTER";
 
 export interface GetClothesParams {
-    category?: string;
-    season?: string;
+    category?: ClothesCategory | "ALL";
+    season?: SeasonType | "ALL";
     limit?: number;
     sort?: string;
+}
+
+export interface GetClosetItemsParams {
+    category?: ClothesCategory;
+    limit?: number;
 }
 
 export type ClothesSearchItemDto = {
@@ -48,10 +53,6 @@ export interface CreateClothingRequest {
     imageUrl?: string;
 }
 
-/**
- * ✅ 캘린더 merge용 summary DTO
- * - 백 응답 예시: { clothingId, name, imageUrl, category }
- */
 export type ClothesSummaryItemDto = {
     clothingId: number;
     name: string;
@@ -59,28 +60,52 @@ export type ClothesSummaryItemDto = {
     category?: ClothesCategory | string | null;
 };
 
-export type ClothesSummaryRequest = {
-    ids: number[];
-};
+function unwrapList<T>(raw: any): T[] {
+    // case A) http.ts에서 이미 배열만 반환
+    if (Array.isArray(raw)) return raw as T[];
+
+    // case B) axios response.data 형태로 한 번 더 감싸진 경우
+    const maybe = raw?.data ?? raw;
+    if (Array.isArray(maybe)) return maybe as T[];
+
+    // case C) { success, ..., data: [...] }
+    if (Array.isArray(maybe?.data)) return maybe.data as T[];
+
+    return [];
+}
 
 export const closetApi = {
+    /**
+     * - server: { success, code, message, data: [...] } or [...]
+     */
     async getClothes(params: GetClothesParams = {}): Promise<ClothesSearchItemDto[]> {
-        return sessionApi.get<ClothesSearchItemDto[]>("/api/clothes/search", { params });
+        const raw = await sessionApi.get<any>("/api/clothes", { params });
+        return unwrapList<ClothesSearchItemDto>(raw);
+    },
+
+    /**
+     * - Header: X-Session-Key 필수
+     * - Query: category, limit
+     */
+    async getClosetItems(
+        params: GetClosetItemsParams = {},
+        sessionKey: string
+    ): Promise<ClothesSearchItemDto[]> {
+        const raw = await sessionApi.get<any>("/api/closet/items", {
+            params,
+            headers: { "X-Session-Key": sessionKey },
+        });
+        return unwrapList<ClothesSearchItemDto>(raw);
     },
 
     async createClothing(data: CreateClothingRequest) {
         return sessionApi.post<any>("/api/clothes", data);
     },
 
-    /**
-     * ✅ (추가) clothes summary 배치 조회
-     * - POST /api/clothes/summary
-     * - Body: { ids: number[] }
-     * - Response: (서버가 success/data 래핑이면 http.ts에서 unwrap되도록 되어 있어야 함)
-     */
     async getClothesSummary(ids: number[]): Promise<ClothesSummaryItemDto[]> {
         const uniq = Array.from(new Set((ids ?? []).filter((x) => Number.isFinite(x))));
         if (!uniq.length) return [];
-        return sessionApi.post<ClothesSummaryItemDto[]>("/api/clothes/summary", { ids: uniq });
+        const raw = await sessionApi.post<any>("/api/clothes/summary", { ids: uniq });
+        return unwrapList<ClothesSummaryItemDto>(raw);
     },
 } as const;
