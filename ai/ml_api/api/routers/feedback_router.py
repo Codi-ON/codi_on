@@ -5,12 +5,14 @@ from pydantic import ValidationError
 from ..schemas.blend_ratio_schema import BlendRatioFeedbackRequest
 from ..schemas.recommendation_schemas import RecommendationRequest
 from ..services.compute_bias import apply_bias_and_rerank, run_blend_ratio
-from ..services.feedback_service import run_feedback_recommend
 from ..services.predictor import recommender_service
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
 _LAST_BACKEND_PAYLOAD = None
+
+def clamp_score(score: float) -> int:
+    return max(0, min(100, int(score + 0.5)))
 
 def _parse(schema, payload: Dict[str, Any]):
     if hasattr(schema, "model_validate"):
@@ -73,7 +75,7 @@ def feedback_adaptive(
                     {
                         "clothingId": it["clothingId"],
                         # BLEND 점수는 0~1 → 0~100 변환
-                        "score": int(it["score"] * 100 + 0.5),
+                        "score": clamp_score(it["score"] * 100),
                     }
                     for it in blend_bias_result["results"]
                 ],
@@ -145,7 +147,7 @@ def feedback_adaptive(
         })
 
     # ---------- bias scale (router responsibility) ----------
-    user_bias_scaled = int(50 + raw_user_bias * 50)
+    user_bias_scaled = int((raw_user_bias + 1.0) * 50)
     user_bias_scaled = max(0, min(100, user_bias_scaled))
 
     return {
