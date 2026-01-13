@@ -1,6 +1,7 @@
 from ml.core.features.cloth_properties import get_cloth_properties
 from ml.core.features.utci import weather_to_utci
 
+# 날씨 타입의 one-hot encoding
 def one_hot_weather(weather_type: str) -> list:
     mapping = {
         "clear": [1, 0, 0, 0],
@@ -12,6 +13,7 @@ def one_hot_weather(weather_type: str) -> list:
         raise ValueError("Unknown weather type")
     return mapping[weather_type]
 
+# 입력된 raw data를 전처리하여 input vector로 구성
 def build_feature_vector(
         c_ratio: float,
         thickness: str,

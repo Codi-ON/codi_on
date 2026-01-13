@@ -12,12 +12,15 @@ def get_base_cloth_df() -> pd.DataFrame:
     }
     return pd.DataFrame(data)
 
+# data augmentation
+# 열저항(R_ct) 보간(interpolation)
 def interpolate_r_ct(df: pd.DataFrame) -> pd.Series:
     return df["R_ct"].interpolate(
         method="linear",
         limit_area="inside"
     )
 
+# 증기 저항(R_et) 외삽(extrapolation)
 def extrapolate_r_et(df: pd.DataFrame) -> np.ndarray:
     mask = df["R_et"].notna()
 
@@ -30,6 +33,7 @@ def extrapolate_r_et(df: pd.DataFrame) -> np.ndarray:
 
     return f_ret(df["C_ratio"])
 
+# 공기 투과도(AP) 외삽(extrapolation)
 def extrapolate_ap(df: pd.DataFrame) -> np.ndarray:
     mask = df["AP"].notna()
 
@@ -42,6 +46,7 @@ def extrapolate_ap(df: pd.DataFrame) -> np.ndarray:
 
     return f_ap(df["C_ratio"])
 
+# 테이블 채우기
 def build_cloth_property_table() -> pd.DataFrame:
     df = get_base_cloth_df()
     result_df = df.copy()
@@ -52,6 +57,7 @@ def build_cloth_property_table() -> pd.DataFrame:
 
     return result_df
 
+# 물성치 계산
 def get_cloth_properties(
         c_ratio: float,
         thickness: str = "normal",
@@ -67,6 +73,7 @@ def get_cloth_properties(
     base_r_et = np.interp(c_ratio, table["C_ratio"], table["R_et"])
     base_ap = np.interp(c_ratio, table["C_ratio"], table["AP"])
 
+    # 두께에 따른 물성치 보정 계수
     THICKNESS_SCALE = {
         "thin":   {"R_ct": 0.85, "R_et": 0.90, "AP": 1.15},
         "normal": {"R_ct": 1.00, "R_et": 1.00, "AP": 1.00},

@@ -15,10 +15,12 @@ def minmaxnorm(x, minx, maxx):
     v = (x - minx) / (maxx - minx)
     return max(min(v, 1.0), 0.0)
 
+# utci에 따라 추위와 더위 단계 구분
 def infer_regime_from_utci(utci: float) -> str:
     heat_demand = minmaxnorm(utci - 26.0, 0.0, 20.0)
     return "heat" if heat_demand > 0.0 else "cold_neutral"
 
+# 추위와 더위 모두 공정하게 split
 def split_dataset(
     csv_path: str,
     output_dir: str,
@@ -28,7 +30,7 @@ def split_dataset(
 ):
     assert 0 < train_ratio < 1
     assert 0 <= val_ratio < 1
-    assert train_ratio + val_ratio < 1, "train_ratio + val_ratio must be < 1"
+    assert train_ratio + val_ratio < 1
 
     df = pd.read_csv(csv_path)
 
@@ -71,8 +73,8 @@ def split_dataset(
     print("\nDataset split completed (regime-aware, no regime saved)")
     print(f" - Total : {len(df)}")
     print(f" - Train : {len(train_df)}")
-    print(f" - Val   : {len(val_df)}")
-    print(f" - Test  : {len(test_df)}")
+    print(f" - Val : {len(val_df)}")
+    print(f" - Test : {len(test_df)}")
 
 if __name__ == "__main__":
     split_dataset(

@@ -18,6 +18,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onClose }) => {
     const [messages, setMessages] = useState<Message[]>([
         { id: 1, role: 'bot', text: '안녕하세요! 김코디님, 무엇을 도와드릴까요? 오늘 날씨나 코디 추천에 대해 물어보세요.' }
     ]);
+    const [isResetPending, setIsResetPending] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -36,23 +37,56 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onClose }) => {
         const userMsg = input;
         setInput(''); // 입력창 비우기
 
-        // 1. 사용자 메시지 추가
-        const newMsgId = Date.now();
-        setMessages(prev => [...prev, { id: newMsgId, role: 'user', text: userMsg }]);
+        setMessages(prev => [...prev, { id: Date.now(), role: 'user', text: userMsg }]);
 
-        // 2. AI 응답 요청
-        try {
-            const response = await sendMessage(userMsg);
-            // 3. 봇 응답 추가
-            setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: response }]);
-        } catch (error) {
-            setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: "죄송합니다. 오류가 발생했습니다." }]);
+        const sendWithLocation = async (lat?: number, lon?: number) => {
+            try {
+                // useAiService -> aiApi -> n8n 순서로 위치 정보(lat, lon) 전달
+                const response = await sendMessage(userMsg, lat, lon);
+                setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: response }]);
+            } catch (error) {
+                setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: "죄송합니다. 오류가 발생했습니다." }]);
+            }
+        };
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    // 위치 허용 시: 실제 좌표와 함께 전송
+                    const { latitude, longitude } = position.coords;
+                    console.log("📍 위치 정보 전송:", latitude, longitude);
+                    sendWithLocation(latitude, longitude);
+                },
+                (error) => {
+                    // 차단/에러 시: 서울 좌표(기본값)로 전송
+                    console.warn("위치 정보 실패(기본값 사용):", error.message);
+                    sendWithLocation(37.5665, 126.9780);
+                }
+            );
+        } else {
+            // GPS 미지원 브라우저: 서울 좌표(기본값)로 전송
+            sendWithLocation(37.5665, 126.9780);
         }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             handleSend();
+        }
+    };
+
+    const handleReset = () => {
+        if (messages.length <= 1) return;
+
+        if (isResetPending) {
+            setMessages([{ id: Date.now(), role: 'bot', text: '대화가 초기화되었습니다. ✨' }]);
+            setIsResetPending(false); // 상태 복귀
+        } else {
+            // [1단계] 처음 눌렀다 -> "진짜요?" 상태로 변경
+            setIsResetPending(true);
+
+            // (옵션) 3초 뒤에 안 누르면 다시 원래대로 복귀 (사용자 실수 방지)
+            setTimeout(() => setIsResetPending(false), 3000);
         }
     };
 
@@ -115,6 +149,28 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onClose }) => {
                     className="p-2 bg-orange-500 text-white rounded-full hover:bg-orange-600 disabled:bg-slate-300 transition-colors"
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                </button>
+                <button
+                    onClick={handleReset}
+                    disabled={loading || messages.length <= 1}
+                    className={`
+                        p-2 rounded-full transition-all duration-200 flex items-center gap-1
+                        ${isResetPending
+                        ? 'bg-red-500 text-white w-24 justify-center hover:bg-red-600' // 확인 모드일 때 (빨강, 넓게)
+                        : 'text-slate-400 hover:text-red-500 hover:bg-red-50' // 평소 (회색 아이콘)
+                    }
+                    `}
+                    title="대화 초기화"
+                >
+                    {isResetPending ? (
+                        // 확인 모드일 때 보여줄 텍스트
+                        <span className="text-xs font-bold whitespace-nowrap">초기화</span>
+                    ) : (
+                        // 평소에 보여줄 아이콘
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    )}
                 </button>
             </div>
         </div>
