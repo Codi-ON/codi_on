@@ -6,8 +6,20 @@ from .config import ALPHA
 from .blend_ratio_service import predict_comfort_batch
 from ..schemas.blend_ratio_schema import BlendRatioFeedbackRequest
 
+THICKNESS_LOWER = {
+    "THIN": "thin",
+    "NORMAL": "normal",
+    "THICK": "thick",
+}
+
+def normalize_thickness(thickness: str) -> str:
+    return THICKNESS_LOWER[thickness.upper()]
 
 def run_blend_ratio(req: BlendRatioFeedbackRequest):
+    for item in req.items:
+        if item.thickness:
+            item.thickness = normalize_thickness(item.thickness)
+
     raw_results = predict_comfort_batch(
         context=req.weather,
         items=req.items,
