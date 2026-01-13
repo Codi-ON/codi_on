@@ -38,23 +38,28 @@ DEFAULT_MET = 1.5  # 활동량 (걷기/통학 기준)
 def calculate_pmv_standard(ta, tr, vel, rh, met, clo, wme=0):
     """표준 ISO 7730 PMV 계산식 (Overflow 방지 적용)"""
     try:
-        pa = rh * 10 * math.exp(16.6536 - 4030.183 / (ta + 235))
-    except Exception:
-        return 999  # 에러 발생 시 999 리턴
+        # 1. 입력값 방어 로직 (극단적 값 보정)
+        if ta < -50 or ta > 50: return 999  # 절대적인 온도 범위 초과
+        if vel < 0: vel = 0.1
+        if rh < 0: rh = 0
 
-    icl = 0.155 * clo
-    m = met * 58.15
-    w = wme * 58.15
-    mw = m - w
-    if icl <= 0.078:
-        fcl = 1 + 1.29 * icl
-    else:
-        fcl = 1.05 + 0.645 * icl
-
-    # 열평형 반복 계산
-    tcl = ta
-    for _ in range(30):
         try:
+            pa = rh * 10 * math.exp(16.6536 - 4030.183 / (ta + 235))
+        except Exception:
+            return 999  # 에러 발생 시 999 리턴
+
+        icl = 0.155 * clo
+        m = met * 58.15
+        w = wme * 58.15
+        mw = m - w
+        if icl <= 0.078:
+            fcl = 1 + 1.29 * icl
+        else:
+            fcl = 1.05 + 0.645 * icl
+
+        # 열평형 반복 계산
+        tcl = ta
+        for _ in range(30):
             hc = 12.1 * math.sqrt(vel)
             if hc < 2.38 * abs(tcl - ta) ** 0.25: hc = 2.38 * abs(tcl - ta) ** 0.25
 
@@ -63,22 +68,23 @@ def calculate_pmv_standard(ta, tr, vel, rh, met, clo, wme=0):
                     3.96 * 10 ** -8 * fcl * ((tcl + 273) ** 4 - (tr + 273) ** 4) + fcl * hc * (tcl - ta))
 
             tcl = 0.8 * tcl + 0.2 * tcl_new
-        except OverflowError:
-            return 999  # 계산 중 숫자가 너무 커지면 즉시 중단
 
-    # PMV 최종 산출
-    try:
+        # PMV 최종 산출
+
         ts = 0.303 * math.exp(-0.036 * m) + 0.028
         pmv = ts * (mw - 3.05 * 0.001 * (5733 - 6.99 * mw - pa) - 0.42 * (mw - 58.15)
                     - 1.7 * 10 ** -5 * m * (5867 - pa) - 0.0014 * m * (34 - ta)
                     - 3.96 * 10 ** -8 * fcl * ((tcl + 273) ** 4 - (tr + 273) ** 4) - fcl * hc * (tcl - ta))
-    except Exception:
-        return 999
 
-    if abs(pmv) > 10:
-        return 999
 
-    return pmv
+        if abs(pmv) > 10:
+            return 999
+
+        return pmv
+
+    except Exception as e:
+        # 수학적 계산 에러(Overflow, DivZero 등) 발생 시 무조건 999 반환
+        return 999
 
 
 def get_corrected_pmv(raw_pmv, vel):
@@ -99,9 +105,17 @@ def get_corrected_pmv(raw_pmv, vel):
 print("🧪 [Level 5] ISO 7730 + 논문 보정 기반 데이터 30만개 생성 중...")
 data = []
 
+def get_clo_from_warmth(w):
+    # 정수 구간별 선형 보간 (Linear Interpolation)
+    if w <= 1: return 0.15
+    if w <= 2: return 0.15 + (0.4 - 0.15) * (w - 1)  # 1~2 사이
+    if w <= 3: return 0.4 + (0.7 - 0.4) * (w - 2)    # 2~3 사이
+    if w <= 4: return 0.7 + (1.5 - 0.7) * (w - 3)    # 3~4 사이
+    return 1.5 + (2.8 - 1.5) * (w - 4)               # 4~5 사이
+
 for _ in range(300000):
     # 날씨
-    temp = random.uniform(-10, 35)
+    temp = random.uniform(-20, 35)
     humidity = random.uniform(0, 95)
     wind_speed = random.uniform(0.1, 10)
 
@@ -112,81 +126,89 @@ for _ in range(300000):
         temp_diff = random.uniform(2, 8)
 
     # 소재
-    warmth = random.randint(1, 5)
-    fabric_clo_map = {1: 0.15, 2: 0.4, 3: 0.7, 4: 1.5, 5: 2.8}
-    base_clo = fabric_clo_map[warmth]
-    fabric_clo = base_clo * random.uniform(0.9, 1.1)  # 보온력 ±10% 변동
-    breathability = random.randint(1, 5)
-    water_res = random.randint(1, 5)
+    warmth = round(random.uniform(1.0, 5.0), 1)
+    breathability = round(random.uniform(1.0, 5.0), 1)
+    water_res = round(random.uniform(1.0, 5.0), 1)
     precip_prob = random.randint(0, 100)
+    fabric_clo_map = {1: 0.15, 2: 0.4, 3: 0.7, 4: 1.5, 5: 2.8}
+    base_clo = get_clo_from_warmth(warmth)
+    fabric_clo = base_clo * random.uniform(0.95, 1.05)  # 보온력 ±10% 변동
 
     # 로직 판별
     raw_pmv = calculate_pmv_standard(temp, temp, wind_speed, humidity, DEFAULT_MET, fabric_clo)
 
     # 이상치 제거
     if raw_pmv == 999:
-        continue
-
-    final_pmv = get_corrected_pmv(raw_pmv, wind_speed)
-
-    # 1. 기본 점수 계산 (PMV 기반 + 현실적 날씨 제약을 고려함)
-    # PMV 0(쾌적)이면 100점, 멀어질수록 감점
-    dist = abs(final_pmv)
-
-    # 더운 건(양수) 못 참아도, 추운 건(음수) 참는다
-    if final_pmv > 0:
-        base_score = 100 - (dist * 50.0)  # 더우면 점수 폭락 (패딩 방지)
+        score = 10  # 계산 불가 시 기본 점수
     else:
-        base_score = 100 - (dist * 15.0)  # 추우면 관대함 (코트 허용)
+        # PMV 보정 및 거리 계산
+        final_pmv = get_corrected_pmv(raw_pmv, wind_speed)
+        dist = abs(final_pmv)  # 0에 가까울수록 쾌적
 
-    score = base_score
+        # =================================================================
+        # 🎯 [Part 1] 열적 쾌적성 점수 (Max 60점)
+        # =================================================================
+        # 정규분포 곡선(Bell Curve) 사용: 0점일 때 60점 만점, 멀어질수록 부드럽게 감소
+        thermal_score = 60 * math.exp(-0.3 * (dist ** 2))
 
-    # --- [사용자 요청 반영] 제약 조건의 점수화 (Soft Penalty) ---
+        # [보정] 더운 것(양수)은 추운 것보다 참기 힘드므로 점수를 더 깎음
+        if final_pmv > 0:
+            thermal_score *= 0.8
 
-    # (A) 열적 쾌적성 (Thermal Comfort) - 모델의 의미 보존
-    # PMV가 -3 ~ +3 범위를 벗어나면 "사람이 살 수 없는 환경" -> 강력한 페널티
-    # (기존 is_suitable=False 대신 점수를 깎아서 모델이 '왜 안 좋은지' 학습하게 함)
-    if dist > 3.0:
-        score -= 50
+        # 너무 극단적인 온도(PMV > 3.5)는 쾌적 점수 0점 처리
+        if dist > 3.5:
+            thermal_score = 0
 
-    # (B) 일교차 보정 (Diurnal Range Correction)
-    # 한국 가을/겨울 특성: 일교차(10도 이상) 큰 날 두꺼운 패딩 입으면 낮에 짐 됨
-    if temp_diff >= 10.0:
-        if warmth >= 5:  # 패딩류
-            score -= 30  # "낮에 더워요" 감점
-        elif warmth == 1:  # 얇은 반팔
-            score -= 30  # "밤에 추워요" 감점
+        # =================================================================
+        # 🛡️ [Part 2] 기능성/보호 점수 (Max 25점)
+        # =================================================================
+        protection_score = 25  # 기본 만점 시작
 
-    # (C) 물리적 제약 (Physical Constraints) - 한국 비바람 특성
-    # 비(Precip)가 오면 습도(RH)와 바람(Wind)의 영향력이 커짐
-    if precip_prob > 30:  # 비 올 확률 30% 이상
-        # 방수(Water Res) 기능 없으면 감점
-        if water_res < 3:
-            score -= 40
+        # 비 올 확률이 40% 이상일 때
+        if precip_prob > 40:
+            if water_res == 1.5:  # 완전 비방수 (린넨, 얇은 면)
+                protection_score = 5  # 크게 깎지만 0점은 아님
+            elif water_res == 2.5:  # 약한 방수 (울, 데님)
+                protection_score = 15  # 적당히 깎음
+            # water_res 3 이상은 만점(25점) 유지
 
-        # 비 오면 체감상 더 추움 -> 보온성 부족하면 추가 감점
-        if final_pmv < 0:
-            score -= 10
+        # =================================================================
+        # 🍃 [Part 3] 상황/쾌적 점수 (Max 15점)
+        # =================================================================
+        comfort_score = 15  # 기본 만점 시작
 
-    # 습도 제약: 습도 높고(80%+) 통기성(Breath) 안 좋으면 불쾌지수 폭발
-    if humidity > 80 and breathability < 3:
-        score -= 20
+        # 습도가 높은데(80%+) 통기성이 나쁨
+        if humidity > 80 and breathability < 2.5:
+            comfort_score -= 5
 
-    # --- [추가] 10도 날씨 "코트 vs 패딩" 밸런스 패치 ---
-    # 8~15도 사이는 코트(Warmth 4)와 가디건/자켓(Warmth 3)의 황금기
-    if 8.0 <= temp <= 15.0:
-        if warmth == 4: score += 15  # 코트 가산점
-        if warmth == 3: score += 10  # 가디건 가산점
-        if warmth >= 5: score -= 20  # 패딩 감점 (10도에 패딩은 오버)
+        # 일교차가 큰데(10도+) 옷이 너무 얇거나 두꺼움
+        if temp_diff >= 10:
+            if warmth == 1: comfort_score -= 5  # 밤에 추움
+            if warmth == 5: comfort_score -= 5  # 낮에 더움
 
-    # 점수 범위 정리 (0~100) 및 노이즈
-    score += random.uniform(-3, 3)
-    score = max(0, min(100, score))
+        # =================================================================
+        # 🔥 [Part 4] 절대 규칙 (Hard Veto) - 곱하기 방식
+        # =================================================================
+        multiplier = 1.0
 
-    # Feature 순서: [temp, humidity, precip_prob, wind_speed, temp_diff, warmth, breathability, water_res]
-    # 노이즈 추가
-    noise_temp = temp + random.normalvariate(0, 0.5)  # 평균 0, 표준편차 0.5도 오차
-    noise_hum = humidity + random.normalvariate(0, 2.0)  # 습도 2% 오차
+        # 겨울(5도 미만)에 얇은 옷(Warmth 1~2) 절대 금지
+        if temp < 5.0 and warmth <= 2.5:
+            multiplier = 0.0
+
+        # 여름(28도 이상)에 두꺼운 옷(Warmth 4~5) 절대 금지
+        if temp > 28.0 and warmth >= 3.5:
+            multiplier = 0.0
+
+        # 최종 합산
+        score = (thermal_score + protection_score + comfort_score) * multiplier
+
+        # 5. 점수 정리 및 데이터 추가
+    score += random.uniform(-3, 3)  # 약간의 노이즈 추가
+    score = max(0, min(100, score))  # 0~100 사이로 고정
+
+    # 노이즈가 섞인 Feature 생성
+    noise_temp = temp + random.normalvariate(0, 0.5)
+    noise_hum = humidity + random.normalvariate(0, 2.0)
     data.append([noise_temp, noise_hum, precip_prob, wind_speed, temp_diff, warmth, breathability, water_res, score])
 
 # DataFrame 생성

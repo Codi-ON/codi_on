@@ -74,16 +74,15 @@ class WeatherRecommender:
             input_temp = weather.temperature
             input_humidity = weather.humidity
             input_precip = weather.precipitationProbability
-            input_wind = weather.windSpeed  # [추가된 필드]
-
-            # [핵심] 일교차 계산 (Max - Min)
+            raw_wind = weather.windSpeed
+            input_wind = min(raw_wind, 1.0)
             input_temp_diff = weather.maxTemperature - weather.minTemperature
         except AttributeError as e:
             print(f"⚠️ 날씨 데이터 필드 누락: {e}")
             return 0.0
 
         # 4. 모델 입력 데이터 구성 (순서 중요!)
-        # 학습 순서: [temp, humidity, precip, wind, temp_diff, warmth, breath, water]
+        # 학습 순서: [temp, humidity, precip, wind, temp_diff, warmth, breathability, water_res]
         features = np.array([[
             input_temp,
             input_humidity,
@@ -107,10 +106,17 @@ class WeatherRecommender:
             predicted_score = self.model.predict(features)[0]
             print(f"   -> 🤖 모델 예측 원본 점수: {predicted_score}")
 
-            deduction = abs(predicted_score) * 33.0
-            final_score = 100.0 - deduction
+            # (1) 겨울철(5도 미만) 얇은 옷(Warmth 1~2) 절대 금지
+            if input_temp < 5.0 and feats['warmth'] <= 2.5:
+                print(f"   영하권 얇은 옷({item_name}, W={feats['warmth']}) 차단")
+                predicted_score = 0
 
-            final_score = max(0.0, min(100.0, final_score))
+            # (2) 한여름(28도 이상) 두꺼운 옷(Warmth 4~5) 절대 금지
+            elif input_temp > 28.0 and feats['warmth'] >= 3.5:
+                print(f"   폭염 두꺼운 옷({item_name}, W={feats['warmth']}) 차단")
+                predicted_score = 0
+
+            final_score = max(0.0, min(100.0, predicted_score))
 
             result_score = int(final_score)
             print(f"   -> 💯 최종 변환 점수: {result_score}")
