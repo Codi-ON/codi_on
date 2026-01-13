@@ -1,192 +1,639 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/pages/user/TodayPage.tsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { SectionHeader, Card, Button, cn } from "../../app/DesignSystem";
 import { WeatherHeroSection } from "../../shared/ui/sections/WeatherHeroSection";
-import { MapPin, RefreshCw, Sparkles, ChevronRight, CheckCircle2, History, ThermometerSun, Activity } from "lucide-react";
+import {
+    MapPin,
+    RefreshCw,
+    Sparkles,
+    CheckCircle2,
+    History as HistoryIcon,
+    ThermometerSun,
+    Activity,
+    Info,
+    Shirt,
+    Layers,
+    Wind,
+} from "lucide-react";
 
-import OutfitQuickRecoModal, { RecommendationClosetList } from "@/pages/user/_components/OutfitQuickRecoModal";
 import { useWeather } from "@/lib/hooks/useWeather";
-import { normalizeWeeklyTo7, pickTomorrow, lastWeekly, WeatherData } from "@/shared/domain/weather";
-
-import { fetchFavorites } from "@/state/favorites/favoritesSlice";
-import type { RootState, AppDispatch } from "@/app/store";
+import { normalizeWeeklyTo7 } from "@/shared/domain/weather";
+import type { RootState } from "@/app/store";
 import { getUserMessage } from "@/lib/errors";
-import { closetRepo } from "@/lib/repo/closetRepo";
-
-import { fmtTemp1 } from "@/shared/utils/format";
 import { useAiService } from "@/lib/hooks/useAiService";
+import { Tooltip } from "@/shared/ui/components/Tooltip";
 
-// ---- TodayPage에서 필요한 최소 필드만 ----
-type ClothesItemDto = {
+import {
+    selectLastSavedTodayOutfit,
+    selectSelectedOutfitSnapshot,
+    selectRecoModelKey,
+    selectRecentHistory,
+} from "@/state/outfitReco/outfitRecoSlice";
+import { useAppSelector } from "@/state/hooks/hooks";
+
+import { closetApi, type ClothesSummaryItemDto } from "@/lib/api/closetApi";
+import { outfitRepo } from "@/lib/repo/outfitRepo";
+import type { TodayOutfitDto } from "@/lib/api/outfitApi";
+import { buildTodayPreviewVM, type TodayWeatherMiniDto } from "@/lib/adapters/todayPreviewAdapter";
+
+/**
+ * =========================
+ * Endpoints (요청대로 RECENT_HISTORY_ENDPOINT 건드리지 않음)
+ * =========================
+ */
+const TODAY_RECO_ENDPOINT = "/api/recommend/today/by-category";
+const RECENT_HISTORY_ENDPOINT = "/api/outfits/today"; // ✅ 유지(요청사항)
+
+/**
+ * ✅ 임시 고정 세션키
+ */
+const TEMP_SESSION_KEY = "f817a912-162f-474e-abe2-52dc5236c1a2";
+
+/**
+ * 날씨 “요약” API (실제 경로 맞추기)
+ */
+const TODAY_WEATHER_ENDPOINT = "/api/weather/today";
+
+/**
+ * =========================
+ * Types
+ * =========================
+ */
+type Category = "TOP" | "BOTTOM" | "OUTER" | "ONE_PIECE";
+
+type RecommendedItemDto = {
     id: number;
     clothingId: number;
     name: string;
-    category: "TOP" | "BOTTOM" | "OUTER" | "ONE_PIECE";
+    category: Category;
     imageUrl?: string | null;
     brand?: string | null;
+    favorited?: boolean;
 };
 
+type ApiResponse<T> = {
+    success: boolean;
+    code: string;
+    message: string;
+    data: T;
+};
+
+type OutfitHistoryDto = {
+    id: string | number;
+    outfitDate?: string; // YYYY-MM-DD
+    title?: string | null;
+    thumbnailUrl?: string | null;
+    feedbackScore?: number | null; // ✅ (있을 때만 사용)
+    items?: Array<{
+        category?: Category;
+        clothingId?: number;
+        name?: string;
+        imageUrl?: string | null;
+        sortOrder?: number;
+    }>;
+};
+
+const SkeletonBlock = ({ className }: { className: string }) => (
+    <div className={`animate-pulse rounded-xl bg-slate-100 ${className}`} />
+);
+
+function isFiniteNumber(v: unknown): v is number {
+    return typeof v === "number" && Number.isFinite(v);
+}
+
+function pick3<T>(arr: T[]) {
+    return arr.slice(0, 3);
+}
+
+function byCategory(items: RecommendedItemDto[]) {
+    const top = items.filter((x) => x.category === "TOP");
+    const bottom = items.filter((x) => x.category === "BOTTOM");
+    const outer = items.filter((x) => x.category === "OUTER");
+    return { top, bottom, outer };
+}
+
+function formatDateKR(iso?: string) {
+    if (!iso) return "-";
+    const y = iso.slice(0, 4);
+    const m = iso.slice(5, 7);
+    const d = iso.slice(8, 10);
+    return `${y}.${m}.${d}`;
+}
+
+function categoryKr(c: Category) {
+    if (c === "TOP") return "상의";
+    if (c === "BOTTOM") return "하의";
+    if (c === "OUTER") return "아우터";
+    return "원피스";
+}
+
+function toISO(date: Date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
+/**
+ * =========================
+ * Modal: Today 3x3 By Category
+ * =========================
+ */
+function TodayRecoByCategoryModal({
+                                      open,
+                                      onClose,
+                                      loading,
+                                      error,
+                                      data,
+                                  }: {
+    open: boolean;
+    onClose: () => void;
+    loading: boolean;
+    error: string | null;
+    data: { top: RecommendedItemDto[]; bottom: RecommendedItemDto[]; outer: RecommendedItemDto[] } | null;
+}) {
+    if (!open) return null;
+
+    const col = [
+        { key: "top", title: "상의", icon: <Shirt size={16} className="text-slate-500" /> },
+        { key: "bottom", title: "하의", icon: <Layers size={16} className="text-slate-500" /> },
+        { key: "outer", title: "아우터", icon: <Wind size={16} className="text-slate-500" /> },
+    ] as const;
+
+    const getItems = (k: (typeof col)[number]["key"]) => {
+        if (!data) return [];
+        return pick3(data[k]);
+    };
+
+    const Placeholder = ({ label }: { label: string }) => (
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <div className="text-xs font-black text-slate-600">{label}</div>
+            <div className="mt-1 text-[11px] font-bold text-slate-500 leading-5">
+                아직 추천할 아이템이 부족합니다.
+                <br />
+                옷장 등록을 먼저 해주세요.
+            </div>
+        </div>
+    );
+
+    const ItemCard = ({ it }: { it: RecommendedItemDto }) => (
+        <div className="rounded-2xl border border-slate-100 bg-white p-3 hover:border-slate-200 transition">
+            <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                    {it.imageUrl ? (
+                        <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-300">
+                            NO IMG
+                        </div>
+                    )}
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="text-xs font-black text-slate-800 truncate">{it.name}</div>
+                    <div className="mt-0.5 text-[10px] font-bold text-slate-400 truncate">
+                        {it.brand ? it.brand : categoryKr(it.category)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 z-[9999]">
+            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <div className="text-base font-black text-slate-900">전체 코디 리스트</div>
+                            <div className="text-xs font-bold text-slate-500 mt-1">날씨 기반 추천 (카테고리별 3개)</div>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={onClose}>
+                            닫기
+                        </Button>
+                    </div>
+
+                    <div className="p-6">
+                        {loading ? (
+                            <div className="grid md:grid-cols-3 gap-6">
+                                {[1, 2, 3].map((i) => (
+                                    <div key={i} className="space-y-3">
+                                        <SkeletonBlock className="h-6 w-24" />
+                                        <SkeletonBlock className="h-16 w-full" />
+                                        <SkeletonBlock className="h-16 w-full" />
+                                        <SkeletonBlock className="h-16 w-full" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : error ? (
+                            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
+                                <div className="text-sm font-black">추천 리스트 로드 실패</div>
+                                <div className="text-xs font-bold mt-1">{error}</div>
+                            </div>
+                        ) : !data ? (
+                            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center">
+                                <div className="text-sm font-black text-slate-700">추천 데이터가 없습니다</div>
+                                <div className="text-xs font-bold text-slate-500 mt-1">API 응답을 확인하세요.</div>
+                            </div>
+                        ) : (
+                            <div className="grid md:grid-cols-3 gap-6">
+                                {col.map((c) => {
+                                    const items = getItems(c.key);
+                                    return (
+                                        <div key={c.key} className="space-y-3">
+                                            <div className="flex items-center gap-2">
+                                                {c.icon}
+                                                <div className="text-sm font-black text-slate-800">{c.title}</div>
+                                                <span className="text-[10px] font-black text-slate-400">({items.length}/3)</span>
+                                            </div>
+
+                                            {items.length === 0 ? (
+                                                <Placeholder label={`${c.title} 없음`} />
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {items.map((it) => (
+                                                        <ItemCard key={it.clothingId} it={it} />
+                                                    ))}
+                                                    {items.length < 3
+                                                        ? Array.from({ length: 3 - items.length }).map((_, idx) => (
+                                                            <div
+                                                                key={`pad-${c.key}-${idx}`}
+                                                                className="rounded-2xl border border-dashed border-slate-200 bg-white/50 p-3"
+                                                            >
+                                                                <div className="text-[11px] font-bold text-slate-400">빈 슬롯</div>
+                                                            </div>
+                                                        ))
+                                                        : null}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                        <div className="text-[11px] font-bold text-slate-500">추천 결과는 데이터가 쌓일수록 안정화됩니다.</div>
+                        <Button variant="primary" size="sm" onClick={onClose}>
+                            확인
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * =========================
+ * ✅ Preview UI (요청 레이아웃)
+ * - 1번 레이아웃 + 2번 정보(dateLine/slotLine)
+ * - 가운데 정렬 + 이모지 크게
+ * - OUTER 미선택은 "비활성"처럼
+ * =========================
+ */
+function parseSlots(slotLine: string) {
+    // "👕 ...  |  👖 ...  |  🧥 ..."
+    const parts = slotLine.split("|").map((s) => s.trim());
+    const safe = (i: number) => parts[i] ?? "";
+
+    const parse = (s: string) => {
+        const icon = s.slice(0, 2).trim(); // emoji 1~2 codepoint 대응(실전에서 충분)
+        const label = s.replace(icon, "").trim();
+        const isMissing = label.includes("미선택");
+        return { icon, label, isMissing };
+    };
+
+    return [
+        { title: "상의", ...parse(safe(0)) },
+        { title: "하의", ...parse(safe(1)) },
+        { title: "아우터", ...parse(safe(2)) },
+    ];
+}
+
+/**
+ * =========================
+ * TodayPage
+ * =========================
+ */
 const TodayPage: React.FC = () => {
     const navigate = useNavigate();
-    const dispatch = useDispatch<AppDispatch>();
+
+    const lastSavedTodayOutfit = useAppSelector(selectLastSavedTodayOutfit);
+    const selectedOutfitSnapshot = useAppSelector(selectSelectedOutfitSnapshot);
+    const recoModelKey = useAppSelector(selectRecoModelKey);
+
+    const reduxRecentHistory = useAppSelector(selectRecentHistory); // ✅ 서버 실패 fallback + 전날 피드백 탐색용
 
     const region = "Seoul";
 
-    // ✅ 로그인 닉네임 / 게스트 분기
-    const sessionNickname = useSelector((s: RootState) => (s as any).session?.nickname as string | undefined);
-    const isLoggedIn = useSelector((s: RootState) => Boolean((s as any).session?.isLoggedIn));
+    const sessionKeyFromStore = useSelector(
+        (s: RootState) => ((s as any).session?.sessionKey ?? (s as any).session?.key) as string | undefined
+    );
+    const effectiveSessionKey = sessionKeyFromStore ?? TEMP_SESSION_KEY;
+
     const displayName = useMemo(() => {
-        const nick = (sessionNickname ?? "").trim();
-        return isLoggedIn && nick ? nick : "Guest";
-    }, [isLoggedIn, sessionNickname]);
+        return effectiveSessionKey === TEMP_SESSION_KEY ? "코디온" : "Guest";
+    }, [effectiveSessionKey]);
 
     // ---------------------------
-    // Weather
+    // Weather (메인 위젯)
     // ---------------------------
     const { data: weather, loading: weatherLoading, error: weatherError, refresh: refreshWeather } = useWeather(region);
 
-    const [openReco, setOpenReco] = useState(false);
-
-    const weatherVm: WeatherData | null = useMemo(() => {
+    const weatherVm = useMemo(() => {
         if (!weather) return null;
-        // 도메인에서 7일 정규화는 유지(다른 곳에서 쓸 수 있음)
         const weekly7 = normalizeWeeklyTo7(weather);
-        return { ...weather, weekly: weekly7 };
+        const uvIndex = (weather as any).uvIndex ?? (weather as any).uvi ?? null;
+        return { ...(weather as any), uvIndex, weekly: weekly7 };
     }, [weather]);
 
-    const weekly7 = weatherVm?.weekly ?? [];
-    useMemo(() => pickTomorrow(weekly7), [weekly7]);
-    useMemo(() => lastWeekly(weekly7), [weekly7]);
+    // ---------------------------
+    // AI comment
+    // ---------------------------
+    const { fetchDailyComment } = useAiService();
+    const [aiComment, setAiComment] = useState<string | null>(null);
 
-    // ✅ 여기서 터졌던 포인트: weatherVm null / maxTemp null
-    const contextChips = useMemo(() => {
-        if (!weatherVm) return ["날씨 로딩 중", "—", "—"];
+    useEffect(() => {
+        const defaultLat = 37.5665;
+        const defaultLon = 126.978;
 
-        const t = typeof weatherVm.temp === "number" ? weatherVm.temp : null;
-        const fl = typeof weatherVm.feelsLike === "number" ? weatherVm.feelsLike : null;
+        if (!navigator.geolocation) {
+            fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+            return;
+        }
 
-        const diff =
-            typeof weatherVm.maxTemp === "number" && typeof weatherVm.minTemp === "number"
-                ? weatherVm.maxTemp - weatherVm.minTemp
-                : null;
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                fetchDailyComment(latitude, longitude).then(setAiComment);
+            },
+            () => {
+                fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+            }
+        );
+    }, [fetchDailyComment]);
 
-        return [
-            t == null ? "—" : `${fmtTemp1(t)}C`.replace("°", "°"), // 기존 뉘앙스 유지
-            diff == null ? "일교차 —" : `일교차 ${Math.round(diff)}°C`,
-            fl == null ? "체감 —" : `체감 ${fmtTemp1(fl)}C`.replace("°", "°"),
-        ];
+    // ---------------------------
+    // Recommendation modal
+    // ---------------------------
+    const [openReco, setOpenReco] = useState(false);
+    const [recoLoading, setRecoLoading] = useState(false);
+    const [recoError, setRecoError] = useState<string | null>(null);
+    const [recoData, setRecoData] = useState<{ top: RecommendedItemDto[]; bottom: RecommendedItemDto[]; outer: RecommendedItemDto[] } | null>(
+        null
+    );
+
+    const fetchTodayReco = useCallback(async () => {
+        setRecoLoading(true);
+        setRecoError(null);
+
+        try {
+            const headers: Record<string, string> = { Accept: "application/json" };
+            if (effectiveSessionKey && effectiveSessionKey.trim().length > 0) headers["X-Session-Key"] = effectiveSessionKey;
+
+            const res = await fetch(TODAY_RECO_ENDPOINT, { method: "GET", headers });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const json = (await res.json()) as ApiResponse<RecommendedItemDto[]>;
+            const list = Array.isArray(json?.data) ? json.data : [];
+            const grouped = byCategory(list);
+            setRecoData({ top: grouped.top, bottom: grouped.bottom, outer: grouped.outer });
+        } catch (e) {
+            setRecoError(getUserMessage(e));
+            setRecoData(null);
+        } finally {
+            setRecoLoading(false);
+        }
+    }, [effectiveSessionKey]);
+
+    useEffect(() => {
+        if (!openReco) return;
+        void fetchTodayReco();
+    }, [openReco, fetchTodayReco]);
+
+    // ---------------------------
+    // History (최근 3개) - endpoint 고정 유지
+    // ---------------------------
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState<string | null>(null);
+    const [history, setHistory] = useState<OutfitHistoryDto[]>([]);
+
+    const fetchRecentHistory = useCallback(async () => {
+        setHistoryLoading(true);
+        setHistoryError(null);
+
+        try {
+            const res = await fetch(RECENT_HISTORY_ENDPOINT, {
+                method: "GET",
+                headers: { Accept: "application/json", "X-Session-Key": effectiveSessionKey },
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const json = (await res.json()) as ApiResponse<OutfitHistoryDto[]>;
+            const list = Array.isArray(json?.data) ? json.data : [];
+            setHistory(list.slice(0, 3));
+        } catch (e) {
+            const msg = getUserMessage(e);
+            setHistoryError(msg);
+
+            // ✅ 서버 실패 시 reduxRecentHistory로 fallback
+            if (Array.isArray(reduxRecentHistory) && reduxRecentHistory.length > 0) {
+                setHistory((reduxRecentHistory as unknown as OutfitHistoryDto[]).slice(0, 3));
+            } else {
+                setHistory([]);
+            }
+        } finally {
+            setHistoryLoading(false);
+        }
+    }, [effectiveSessionKey, reduxRecentHistory]);
+
+    useEffect(() => {
+        void fetchRecentHistory();
+    }, [fetchRecentHistory]);
+
+    // ---------------------------
+    // ✅ Today Preview (adapter 기반, "진짜 데이터")
+    // - today: outfitRepo.getTodayOutfit(sessionKey) (없으면 lastSaved fallback)
+    // - weather: /api/weather/today (없으면 weatherVm fallback)
+    // - summary: /api/clothes/summary
+    // - feedback: 전날 > 오늘 > 없음
+    // ---------------------------
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+
+    const [todayOutfit, setTodayOutfit] = useState<TodayOutfitDto | null>(null);
+    const [weatherMini, setWeatherMini] = useState<TodayWeatherMiniDto | null>(null);
+    const [summary, setSummary] = useState<ClothesSummaryItemDto[]>([]);
+
+    const yesterdayISO = useMemo(() => toISO(new Date(Date.now() - 24 * 60 * 60 * 1000)), []);
+    const effectiveFeedbackScore = useMemo(() => {
+        // 1) 전날 피드백(서버 history or redux history)
+        const y1 = (history as any[])?.find((x) => x?.outfitDate === yesterdayISO)?.feedbackScore;
+        if (typeof y1 === "number") return y1;
+
+        const y2 = (reduxRecentHistory as any[])?.find((x) => x?.dateISO === yesterdayISO)?.feedbackScore;
+        if (typeof y2 === "number") return y2;
+
+        // 2) 오늘 피드백(현재 outfit)
+        const t = (todayOutfit as any)?.feedbackScore;
+        if (typeof t === "number") return t;
+
+        // 3) lastSaved에라도 있으면
+        const ls = (lastSavedTodayOutfit as any)?.feedbackScore;
+        if (typeof ls === "number") return ls;
+
+        return null;
+    }, [history, reduxRecentHistory, yesterdayISO, todayOutfit, lastSavedTodayOutfit]);
+
+    const canGoChecklist = effectiveFeedbackScore == null;
+
+    const fetchTodayPreview = useCallback(async () => {
+        setPreviewLoading(true);
+        setPreviewError(null);
+
+        try {
+            // 1) 오늘 아웃핏 (repo)
+            let today: TodayOutfitDto | null = null;
+            try {
+                today = await outfitRepo.getTodayOutfit(effectiveSessionKey);
+            } catch {
+                // repo 실패 시 lastSaved fallback
+                today = (lastSavedTodayOutfit as TodayOutfitDto) ?? null;
+            }
+            setTodayOutfit(today);
+
+            // 2) 날씨 mini (/api/weather/today)
+            let mini: TodayWeatherMiniDto | null = null;
+            try {
+                const wRes = await fetch(TODAY_WEATHER_ENDPOINT, {
+                    method: "GET",
+                    headers: { Accept: "application/json", "X-Session-Key": effectiveSessionKey },
+                });
+                if (wRes.ok) {
+                    const wJson = (await wRes.json()) as ApiResponse<any>;
+                    const d = wJson?.data ?? null;
+                    mini = {
+                        temperature: typeof d?.temperature === "number" ? d.temperature : null,
+                        feelsLikeTemperature: typeof d?.feelsLikeTemperature === "number" ? d.feelsLikeTemperature : null,
+                        sky: d?.sky ?? null,
+                    };
+                }
+            } catch {
+                // ignore
+            }
+
+            // fallback: weatherVm로 대체
+            if (!mini && weatherVm) {
+                mini = {
+                    temperature: (weatherVm as any)?.temperature ?? (weatherVm as any)?.temp ?? null,
+                    feelsLikeTemperature: (weatherVm as any)?.feelsLikeTemperature ?? (weatherVm as any)?.feelsLike ?? null,
+                    sky: (weatherVm as any)?.sky ?? (weatherVm as any)?.condition ?? null,
+                };
+            }
+            setWeatherMini(mini);
+
+            // 3) summary
+            const ids =
+                Array.isArray(today?.items) && today?.items?.length
+                    ? today!.items
+                        .map((x) => x?.clothingId)
+                        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+                    : [];
+
+            const s = await closetApi.getClothesSummary(ids);
+            setSummary(s ?? []);
+        } catch (e) {
+            setPreviewError(getUserMessage(e));
+            setTodayOutfit(null);
+            setWeatherMini(null);
+            setSummary([]);
+        } finally {
+            setPreviewLoading(false);
+        }
+    }, [effectiveSessionKey, lastSavedTodayOutfit, weatherVm]);
+
+    useEffect(() => {
+        void fetchTodayPreview();
+    }, [fetchTodayPreview]);
+
+    // adapter VM
+    const previewVM = useMemo(() => {
+        if (!todayOutfit) return null;
+
+        const patchedToday: any = {
+            ...todayOutfit,
+            feedbackScore: effectiveFeedbackScore,
+        };
+
+        return buildTodayPreviewVM({
+            today: patchedToday,
+            weather: weatherMini,
+            summary,
+        });
+    }, [todayOutfit, effectiveFeedbackScore, weatherMini, summary]);
+
+    // ---------------------------
+    // “오늘 날씨 리포트” 멘트
+    // ---------------------------
+    const conclusion = useMemo(() => {
+        if (aiComment && aiComment.trim().length > 0) {
+            const one = aiComment.replace(/\s+/g, " ").trim();
+            return one.length > 38 ? `${one.slice(0, 38)}…` : one;
+        }
+
+        const fl = isFiniteNumber((weatherVm as any)?.feelsLike) ? (weatherVm as any).feelsLike : null;
+        const wind = isFiniteNumber((weatherVm as any)?.windSpeed) ? (weatherVm as any).windSpeed : null;
+        const pop = isFiniteNumber((weatherVm as any)?.pop) ? (weatherVm as any).pop : null;
+
+        if (fl != null && fl <= 0) return "오늘은 체감 온도 대비 보온이 중요합니다.";
+        if (wind != null && wind >= 6) return "오늘은 바람 대비 아우터 선택이 중요합니다.";
+        if (pop != null && pop >= 50) return "오늘은 우산/방수 대비가 중요합니다.";
+        return "오늘은 기본 레이어링으로 체온 유지가 중요합니다.";
+    }, [aiComment, weatherVm]);
+
+    const evidenceChips = useMemo(() => {
+        const chips: Array<{ text: string; mock?: boolean; icon?: React.ReactNode }> = [];
+
+        const tMax = isFiniteNumber((weatherVm as any)?.maxTemp) ? (weatherVm as any).maxTemp : null;
+        const tMin = isFiniteNumber((weatherVm as any)?.minTemp) ? (weatherVm as any).minTemp : null;
+        const fl = isFiniteNumber((weatherVm as any)?.feelsLike) ? (weatherVm as any).feelsLike : null;
+
+        if (tMax != null && tMin != null) {
+            chips.push({
+                text: `큰 일교차 ${Math.round(tMax - tMin)}°C`,
+                mock: false,
+                icon: <ThermometerSun size={14} className="text-orange-500" />,
+            });
+        } else {
+            chips.push({ text: "큰 일교차", mock: true, icon: <ThermometerSun size={14} className="text-orange-500" /> });
+        }
+
+        if (fl != null) {
+            chips.push({
+                text: fl <= 0 ? "체감 온도 낮음" : "체감 온도 보통",
+                mock: false,
+                icon: <Activity size={14} className="text-navy-900" />,
+            });
+        } else {
+            chips.push({ text: "체감 온도 낮음", mock: true, icon: <Activity size={14} className="text-navy-900" /> });
+        }
+
+        return chips.slice(0, 3);
     }, [weatherVm]);
 
     // ---------------------------
-    // Favorites (Redux)
+    // “데이터 업데이트”
     // ---------------------------
-    const favoriteIds = useSelector((s: RootState) => s.favorites.ids);
-    const favoriteSet = useMemo(() => new Set<number>(favoriteIds), [favoriteIds]);
-
-    useEffect(() => {
-        dispatch(fetchFavorites());
-    }, [dispatch]);
-
-    // ---------------------------
-    // Clothes (Public)
-    // ---------------------------
-    const [clothes, setClothes] = useState<ClothesItemDto[]>([]);
-    const [clothesLoading, setClothesLoading] = useState(false);
-    const [clothesError, setClothesError] = useState<string | null>(null);
-
-    const refreshClothes = async () => {
-        setClothesLoading(true);
-        setClothesError(null);
-        try {
-            const list = (await closetRepo.getClothes({ limit: 30 })) as unknown as ClothesItemDto[];
-            setClothes(Array.isArray(list) ? list : []);
-        } catch (e) {
-            setClothesError(getUserMessage(e));
-            setClothes([]);
-        } finally {
-            setClothesLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        refreshClothes();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // ---------------------------
-    // QuickRecoModal data (real)
-    // ---------------------------
-    const recoList: RecommendationClosetList = useMemo(() => {
-        const grouped: RecommendationClosetList = { top: [], bottom: [], outer: [] };
-
-        for (const dto of clothes) {
-            // favorites merge(확장 가능)
-            favoriteSet.has(dto.clothingId);
-
-            const uiItem = {
-                id: dto.clothingId,
-                label: dto.category === "TOP" ? "상의" : dto.category === "BOTTOM" ? "하의" : "아우터",
-                name: dto.name,
-                brand: dto.brand ?? undefined,
-                imageUrl: dto.imageUrl ?? null,
-                inCloset: true,
-            };
-
-            switch (dto.category) {
-                case "TOP":
-                    grouped.top.push(uiItem as any);
-                    break;
-                case "BOTTOM":
-                    grouped.bottom.push(uiItem as any);
-                    break;
-                case "OUTER":
-                    grouped.outer.push(uiItem as any);
-                    break;
-                case "ONE_PIECE":
-                    break;
-            }
-        }
-
-        return grouped;
-    }, [clothes, favoriteSet]);
-    // ---------------------
-    // AI service Hook
-    // ---------------------
-    const { fetchDailyComment } = useAiService();
-    const [aiComment, setAiComment] = useState<string | null>(null);
-    useEffect(() => {
-        // 1. 기본값 (서울 좌표) 설정
-        const defaultLat = 37.5665;
-        const defaultLon = 126.9780;
-
-        // 2. 위치 정보 요청 함수
-        const getLocationAndFetch = () => {
-            // 브라우저가 위치 기능을 지원하는지 확인
-            if (!navigator.geolocation) {
-                console.warn("이 브라우저는 위치 정보를 지원하지 않습니다.");
-                fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
-                return;
-            }
-
-            // 위치 요청 (성공 시, 실패 시 콜백)
-            navigator.geolocation.getCurrentPosition(
-                // ✅ 성공했을 때 (실제 위치 사용)
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    console.log(`📍 현재 위치 발견: ${latitude}, ${longitude}`);
-                    fetchDailyComment(latitude, longitude).then(setAiComment);
-                },
-                // ❌ 실패했을 때 (사용자 거부 등 -> 서울 기본값 사용)
-                (error) => {
-                    console.warn("위치 정보 가져오기 실패(기본값 사용):", error.message);
-                    fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
-                }
-            );
-        };
-
-        getLocationAndFetch();
-    }, [fetchDailyComment]);
+    const onRefreshAll = useCallback(() => {
+        refreshWeather();
+        void fetchTodayReco();
+        void fetchRecentHistory();
+        void fetchTodayPreview();
+    }, [refreshWeather, fetchTodayReco, fetchRecentHistory, fetchTodayPreview]);
 
     return (
         <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -199,12 +646,8 @@ const TodayPage: React.FC = () => {
                             variant="outline"
                             size="sm"
                             icon={RefreshCw}
-                            onClick={() => {
-                                refreshWeather();
-                                refreshClothes();
-                                dispatch(fetchFavorites());
-                            }}
-                            disabled={weatherLoading || clothesLoading}
+                            onClick={onRefreshAll}
+                            disabled={weatherLoading || recoLoading || historyLoading || previewLoading}
                         >
                             데이터 업데이트
                         </Button>
@@ -215,55 +658,78 @@ const TodayPage: React.FC = () => {
                 }
             />
 
-            {weatherLoading && <div className="text-sm font-bold text-slate-400">날씨 불러오는 중...</div>}
-            {weatherError && <div className="text-sm font-bold text-red-500">{weatherError}</div>}
+            {weatherLoading ? <div className="text-sm font-bold text-slate-400">날씨 불러오는 중...</div> : null}
+            {weatherError ? <div className="text-sm font-bold text-red-500">{weatherError}</div> : null}
 
-            {/* ✅ weatherVm 있을 때만 렌더 */}
-            {weatherVm && <WeatherHeroSection data={weatherVm} />}
+            {weatherVm ? (
+                <div className="relative overflow-visible">
+                    <div className="absolute left-1/2 top-4 -translate-x-[110%] z-[50] pointer-events-auto">
+                        <Tooltip
+                            side="bottom"
+                            align="end"
+                            content={
+                                <div className="space-y-2">
+                                    <div className="text-[11px] font-black text-slate-800">데이터 안내</div>
+                                    <div className="whitespace-pre-line text-[11px] font-bold text-slate-600 leading-5">
+                                        OpenWeather 무료 API 기반이라 습도/풍속/강수확률은 실제 체감과 오차가 있을 수 있습니다.
+                                    </div>
+                                </div>
+                            }
+                        >
+                            <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-slate-200 bg-white/90 backdrop-blur text-slate-500 hover:bg-white"
+                                aria-label="날씨 데이터 안내"
+                            >
+                                <Info size={14} />
+                            </button>
+                        </Tooltip>
+                    </div>
+
+                    <WeatherHeroSection data={weatherVm as any} />
+                </div>
+            ) : null}
 
             <div className="grid lg:grid-cols-12 gap-10">
+                {/* LEFT */}
                 <div className="lg:col-span-8 space-y-10">
-                    <Card title="AI 스타일링 분석 리포트" subtitle="데이터 기반 맞춤형 의복 지수 분석">
+                    <Card title="오늘 날씨 리포트">
                         <div className="grid md:grid-cols-2 gap-12">
                             <div className="space-y-8">
                                 <div className="p-8 bg-navy-900 text-white rounded-[40px] shadow-2xl shadow-navy-900/20 relative overflow-hidden">
                                     <Sparkles className="absolute -top-4 -right-4 w-24 h-24 text-white/5" />
+
                                     <div className="flex items-center gap-2 mb-4">
-                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">AI</div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personal Stylist Insight</span>
+                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">
+                                            AI
+                                        </div>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Today Weather Report
+                    </span>
                                     </div>
-                                    <p className="text-xl font-bold leading-snug">
-                                        {aiComment ? (
-                                            /* AI 멘트가 도착하면 보여주기 */
-                                            <>
-                                                <span className="text-orange-400 mr-1">{displayName}님,</span>
-                                                {aiComment}
-                                            </>
-                                        ) : (
-                                            /* 로딩 중일 때 보여줄 스켈레톤 (깜빡이는 효과) */
-                                            <span className="animate-pulse text-slate-400">
-                                                현재 날씨와 스타일을 분석하여<br/>
-                                                오늘의 코디를 생성하고 있습니다...
-                                            </span>
-                                        )}
+
+                                    <p className="text-xl font-black leading-snug">
+                                        <span className="text-orange-400 mr-1">{displayName}님,</span>
+                                        {conclusion}
                                     </p>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">오늘의 주요 추천 사유</h4>
                                     <div className="flex flex-wrap gap-2">
-                                        <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100">
-                                            <ThermometerSun size={14} className="text-orange-500" />
-                                            {weatherVm && typeof weatherVm.maxTemp === "number" && typeof weatherVm.minTemp === "number"
-                                                ? `일교차 ${Math.round(weatherVm.maxTemp - weatherVm.minTemp)}°C`
-                                                : "일교차 —"}
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100">
-                                            <Activity size={14} className="text-navy-900" /> 낮은 활동량 선호
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100">
-                                            <Sparkles size={14} className="text-blue-500" /> 최근 즐겨찾는 색감
-                                        </div>
+                                        {evidenceChips.map((c, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 border border-slate-100"
+                                            >
+                                                {c.icon}
+                                                {c.mock ? (
+                                                    <span className="px-2 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black">
+                            예시
+                          </span>
+                                                ) : null}
+                                                <span>{c.text}</span>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -271,9 +737,27 @@ const TodayPage: React.FC = () => {
                             <div className="space-y-6">
                                 <ul className="space-y-4">
                                     {[
-                                        { text: "오전 10시까지 윈드브레이커 권장", color: "text-orange-500" },
-                                        { text: "자외선 지수가 높으니 린넨 소재 추천", color: "text-emerald-500" },
-                                        { text: "오후 6시 이후 갑작스러운 풍속 증가 대비", color: "text-blue-500" },
+                                        {
+                                            text:
+                                                isFiniteNumber((weatherVm as any)?.feelsLike) && (weatherVm as any).feelsLike <= 0
+                                                    ? "체감이 낮아 보온 레이어링을 우선 권장합니다."
+                                                    : "기본 레이어링으로 컨디션 유지가 좋습니다.",
+                                            color: "text-orange-500",
+                                        },
+                                        {
+                                            text:
+                                                isFiniteNumber((weatherVm as any)?.windSpeed) && (weatherVm as any).windSpeed >= 6
+                                                    ? "바람이 강해 아우터 선택에 신경 쓰는 게 좋습니다."
+                                                    : "바람 영향은 크지 않아 보입니다.",
+                                            color: "text-emerald-500",
+                                        },
+                                        {
+                                            text:
+                                                isFiniteNumber((weatherVm as any)?.pop) && (weatherVm as any).pop >= 50
+                                                    ? "강수 가능성이 있어 우산/방수 대비를 고려하세요."
+                                                    : "강수 가능성은 낮은 편입니다.",
+                                            color: "text-blue-500",
+                                        },
                                     ].map((tip, i) => (
                                         <li
                                             key={i}
@@ -285,58 +769,201 @@ const TodayPage: React.FC = () => {
                                     ))}
                                 </ul>
 
-                                <Button variant="primary" className="w-full h-14" onClick={() => setOpenReco(true)} disabled={clothesLoading}>
+                                <Button variant="primary" className="w-full h-14" onClick={() => setOpenReco(true)} disabled={recoLoading}>
                                     전체 코디 리스트 확인
                                 </Button>
 
-                                {clothesLoading && <div className="text-xs font-bold text-slate-400">옷 목록 불러오는 중...</div>}
-                                {clothesError && <div className="text-xs font-bold text-slate-500">{clothesError}</div>}
+                                {recoLoading ? <div className="text-xs font-bold text-slate-400">추천 리스트 불러오는 중...</div> : null}
+                                {recoError ? <div className="text-xs font-bold text-slate-500">{recoError}</div> : null}
                             </div>
                         </div>
                     </Card>
                 </div>
 
+                {/* RIGHT */}
                 <div className="lg:col-span-4 space-y-10">
-                    <Card title="최근 코디 히스토리" className="h-full">
-                        <div className="space-y-6">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className="flex items-center gap-4 group cursor-pointer">
-                                    <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 group-hover:shadow-lg transition-all">
-                                        <img
-                                            src={`https://picsum.photos/100/100?random=${i + 20}`}
-                                            alt="History"
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                                        />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-xs font-black text-navy-900 truncate">어반 미니멀 룩</div>
-                                        <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">2024.05.{15 - i} · 18°C ☀️</div>
-                                    </div>
-                                    <ChevronRight className="text-slate-300 group-hover:text-navy-900 transition-colors" size={16} />
-                                </div>
-                            ))}
+                    <Card title="최근 저장한 아웃핏" className="h-full">
+                        <div className="space-y-8">
+                            {/* 상태 */}
+                            {previewLoading ? (
+                                <div className="text-[11px] font-bold text-slate-400">데이터 병합 중...</div>
+                            ) : null}
+                            {previewError ? (
+                                <div className="text-[11px] font-bold text-slate-400">미리보기 실패: {previewError}</div>
+                            ) : null}
+                            {previewVM ? (
+                                <div className="rounded-3xl border border-slate-100 bg-white placeholder-amber-50">
+                                    {/* 상단: 날짜(텍스트) + 날씨/피드백(칩) */}
+                                    {(() => {
+                                        const raw = previewVM.dateLine ?? ""; // "2026.01.13 • ☀️ -4° / 체감 -10° • 피드백 😐"
+                                        const date = (raw.split("•")[0] ?? "").trim();
 
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full text-[10px] uppercase tracking-widest font-black"
-                                icon={History}
-                                onClick={() => navigate("/history")}
-                            >
-                                전체 히스토리 보기
-                            </Button>
+                                        const afterFirstDot = raw.split("•")[1]?.trim() ?? "";
+                                        const skyEmoji = afterFirstDot ? afterFirstDot.split(" ")[0] : "🌤️";
+
+                                        const fbEmoji = raw.includes("피드백")
+                                            ? (raw.split("피드백")[1] ?? "").trim().slice(0, 2).trim()
+                                            : "—";
+
+                                        return (
+                                            <div className="text-center">
+                                                <div className="text-[12px] font-black text-slate-400 tracking-wide">
+                                                    {date || "-"}
+                                                </div>
+
+                                                <div className="mt-4 flex items-center justify-center gap-6">
+                                                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5">
+                                                        <span className="text-[11px] font-black text-slate-500">날씨</span>
+                                                        <span className="text-[18px] leading-none">{skyEmoji}</span>
+                                                    </div>
+
+                                                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5">
+                                                        <span className="text-[11px] font-black text-slate-500">피드백</span>
+                                                        <span className="text-[18px] leading-none">{fbEmoji || "—"}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                        {/* 상의/하의/아우터만 */}
+                                        <div className="mt-6 grid grid-cols-3 gap-4">
+                                            {parseSlots(previewVM.slotLine)
+                                                .slice(0, 3)
+                                                .map((x) => (
+                                                    <div
+                                                        key={x.title}
+                                                        className={cn(
+                                                            "rounded-2xl p-5 text-center",
+                                                            x.isMissing ? "bg-slate-50 text-slate-400" : "bg-white"
+                                                        )}
+                                                    >
+                                                        <div className={cn("text-[36px] leading-none", x.isMissing && "opacity-40")}>
+                                                            {x.icon}
+                                                        </div>
+                                                        <div className="mt-2 text-[12px] font-black text-slate-500">{x.title}</div>
+                                                        <div
+                                                            className={cn(
+                                                                "mt-1 text-[12px] font-black",
+                                                                x.isMissing ? "text-slate-400" : "text-slate-700"
+                                                            )}
+                                                        >
+                                                            {x.isMissing ? "미선택" : "선택 완료"}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                        </div>
+
+                                        {/* 저장된 값 있으면: 히스토리만 */}
+                                        <div className="mt-4 flex items-center justify-center">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                icon={HistoryIcon}
+                                                onClick={() =>
+                                                    navigate("/calendar", {
+                                                        state: {
+                                                            sessionKey: effectiveSessionKey,
+                                                            recentlySaved: lastSavedTodayOutfit,
+                                                            selectedSnapshot: selectedOutfitSnapshot,
+                                                            recoModelKey,
+                                                        },
+                                                    })
+                                                }
+                                            >
+                                                전체 히스토리 보기
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                            ) : (
+                                /* ✅ 저장된 값 없으면: 두 버튼 활성화 */
+                                <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 text-center">
+                                    <div className="text-sm font-black text-slate-700">표시할 아웃핏이 없습니다</div>
+                                    <div className="text-xs font-bold text-slate-500 mt-1 leading-5">
+                                        저장된 아웃핏이 없으면
+                                        <br />
+                                        체크리스트로 이동해 추천을 생성하세요.
+                                    </div>
+
+                                    <div className="mt-4 flex items-center justify-center gap-3">
+                                        <Button variant="primary" size="sm" onClick={() => navigate("/checklist")}>
+                                            체크리스트 작성하기
+                                        </Button>
+
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            icon={HistoryIcon}
+                                            onClick={() =>
+                                                navigate("/calendar", {
+                                                    state: {
+                                                        sessionKey: effectiveSessionKey,
+                                                        recentlySaved: lastSavedTodayOutfit,
+                                                        selectedSnapshot: selectedOutfitSnapshot,
+                                                        recoModelKey,
+                                                    },
+                                                })
+                                            }
+                                        >
+                                            전체 히스토리 보기
+                                        </Button>
+                                    </div>
+
+                                    {historyError ? (
+                                        <div className="mt-3 text-[11px] font-bold text-slate-400">
+                                            히스토리 로드 실패: {historyError}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            )}
+
+                            {/* 최근 3개 리스트 */}
+                            <div className="space-y-3">
+                                {historyLoading ? (
+                                    <>
+                                        <SkeletonBlock className="h-16 w-full" />
+                                        <SkeletonBlock className="h-16 w-full" />
+                                        <SkeletonBlock className="h-16 w-full" />
+                                    </>
+                                ) : history.length === 0 ? null : (
+                                    history.slice(0, 3).map((h) => (
+                                        <div
+                                            key={String(h.id)}
+                                            className="rounded-2xl border border-slate-100 bg-white p-4 hover:border-slate-200 hover:shadow-sm transition cursor-pointer"
+                                            onClick={() =>
+                                                navigate("/calendar", {
+                                                    state: {
+                                                        sessionKey: effectiveSessionKey,
+                                                        recentlySaved: lastSavedTodayOutfit,
+                                                        selectedSnapshot: selectedOutfitSnapshot,
+                                                        recoModelKey,
+                                                    },
+                                                })
+                                            }
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-[11px] font-bold text-slate-500 truncate">
+                                                        {formatDateKR((h as any)?.outfitDate)} • 피드백{" "}
+                                                        {typeof (h as any)?.feedbackScore === "number" ? (h as any).feedbackScore : "—"}
+                                                    </div>
+                                                    <div className="mt-1 text-sm font-black text-slate-900 truncate">
+                                                        👕/👖/🧥 히스토리 상세 보기
+                                                    </div>
+                                                </div>
+                                                <div className="text-slate-300">›</div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </Card>
                 </div>
             </div>
 
-            <OutfitQuickRecoModal
-                open={openReco}
-                onClose={() => setOpenReco(false)}
-                recoList={recoList}
-                contextChips={contextChips}
-                onGoRecommendation={() => setOpenReco(false)}
-            />
+            <TodayRecoByCategoryModal open={openReco} onClose={() => setOpenReco(false)} loading={recoLoading} error={recoError} data={recoData} />
         </div>
     );
 };

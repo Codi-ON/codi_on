@@ -1,53 +1,167 @@
-import { useCallback, useEffect, useState } from "react";
-import { outfitRepo } from "@/lib/repo/outfitRepo";
+// src/lib/hooks/useTodayOutfit.ts
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { outfitRepo, type OutfitSaveInput } from "@/lib/repo/outfitRepo";
 import type { TodayOutfitDto } from "@/lib/api/outfitApi";
 
 type Status = "idle" | "loading" | "saving" | "error";
 
-export function useTodayOutfit() {
+export type UseTodayOutfitOptions = {
+    autoFetch?: boolean;
+    initialData?: TodayOutfitDto | null;
+    onError?: (message: string, raw: unknown) => void;
+
+    /**
+     * ✅ repo가 sessionKey를 "필수"로 받는 구조라면 여기도 사실상 필수
+     */
+    sessionKey: string;
+};
+
+function toErrorMessage(e: unknown): string {
+    const anyE = e as any;
+    return (
+        anyE?.response?.data?.message ||
+        anyE?.response?.data?.error ||
+        anyE?.message ||
+        (typeof anyE === "string" ? anyE : null) ||
+        "Unknown Error"
+    );
+}
+
+export function useTodayOutfit(options: UseTodayOutfitOptions) {
+    const { autoFetch = true, initialData = null, onError, sessionKey } = options;
+
     const [status, setStatus] = useState<Status>("idle");
     const [error, setError] = useState<string | null>(null);
-    const [todayOutfit, setTodayOutfit] = useState<TodayOutfitDto | null>(null);
+    const [todayOutfit, setTodayOutfit] = useState<TodayOutfitDto | null>(initialData);
 
-    const refresh = useCallback(async () => {
-        setStatus("loading");
-        setError(null);
-        try {
-            const data = await outfitRepo.getTodayOutfit();
-            setTodayOutfit(data);
-            setStatus("idle");
-        } catch (e: any) {
-            setStatus("error");
-            setError(e?.message ?? "Unknown Error");
-        }
+    const reqSeqRef = useRef(0);
+    const mountedRef = useRef(true);
+
+    const isLoading = status === "loading";
+    const isSaving = status === "saving";
+
+    const safeSet = useCallback((fn: () => void) => {
+        if (!mountedRef.current) return;
+        fn();
     }, []);
 
-    const save = useCallback(async (clothingIds: number[]) => {
-        if (!clothingIds?.length) return;
-        setStatus("saving");
-        setError(null);
+    const refresh = useCallback(async (): Promise<TodayOutfitDto> => {
+        const seq = ++reqSeqRef.current;
+
+        safeSet(() => {
+            setStatus("loading");
+            setError(null);
+        });
+
         try {
-            const saved = await outfitRepo.saveTodayOutfit(clothingIds);
-            setTodayOutfit(saved); // ✅ 저장 응답을 정본으로 사용
-            setStatus("idle");
-            return saved;
-        } catch (e: any) {
-            setStatus("error");
-            setError(e?.message ?? "Unknown Error");
+            // ✅ 2번째 인자로 sessionKey 전달
+            const data = await outfitRepo.getTodayOutfit(sessionKey);
+
+            if (reqSeqRef.current !== seq) return data;
+
+            safeSet(() => {
+                setTodayOutfit(data);
+                setStatus("idle");
+            });
+
+            return data;
+        } catch (e) {
+            const msg = toErrorMessage(e);
+            if (reqSeqRef.current !== seq) throw e;
+
+            safeSet(() => {
+                setStatus("error");
+                setError(msg);
+            });
+
+            onError?.(msg, e);
             throw e;
         }
+    }, [onError, safeSet, sessionKey]);
+
+    const save = useCallback(
+        async (input: OutfitSaveInput): Promise<TodayOutfitDto> => {
+            const seq = ++reqSeqRef.current;
+
+            safeSet(() => {
+                setStatus("saving");
+                setError(null);
+            });
+
+            try {
+                // ✅ 2번째 인자로 sessionKey 전달
+                const saved = await outfitRepo.saveTodayOutfit(input, sessionKey);
+
+                if (reqSeqRef.current !== seq) return saved;
+
+                safeSet(() => {
+                    setTodayOutfit(saved);
+                    setStatus("idle");
+                });
+
+                return saved;
+            } catch (e) {
+                const msg = toErrorMessage(e);
+                if (reqSeqRef.current !== seq) throw e;
+
+                safeSet(() => {
+                    setStatus("error");
+                    setError(msg);
+                });
+
+                onError?.(msg, e);
+                throw e;
+            }
+        },
+        [onError, safeSet, sessionKey]
+    );
+
+    const setLocal = useCallback((dto: TodayOutfitDto | null) => {
+        safeSet(() => setTodayOutfit(dto));
+    }, [safeSet]);
+
+    const clearError = useCallback(() => {
+        safeSet(() => setError(null));
+    }, [safeSet]);
+
+    const reset = useCallback(() => {
+        safeSet(() => {
+            setStatus("idle");
+            setError(null);
+            setTodayOutfit(initialData ?? null);
+        });
+    }, [initialData, safeSet]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
     }, []);
 
     useEffect(() => {
-        refresh();
-    }, [refresh]);
+        safeSet(() => setTodayOutfit(initialData ?? null));
+    }, [initialData, safeSet]);
 
-    return {
-        todayOutfit,
-        isLoading: status === "loading",
-        isSaving: status === "saving",
-        error,
-        refresh,
-        save,
-    };
+    useEffect(() => {
+        if (!autoFetch) return;
+        void refresh();
+    }, [autoFetch, refresh]);
+
+    return useMemo(
+        () => ({
+            todayOutfit,
+            status,
+            error,
+            isLoading,
+            isSaving,
+            refresh,
+            save,
+            setLocal,
+            clearError,
+            reset,
+            sessionKey,
+        }),
+        [todayOutfit, status, error, isLoading, isSaving, refresh, save, setLocal, clearError, reset, sessionKey]
+    );
 }

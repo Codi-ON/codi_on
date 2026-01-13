@@ -1,6 +1,7 @@
 // src/main/java/com/team/backend/repository/outfit/OutfitHistoryRepository.java
 package com.team.backend.repository.outfit;
 
+import com.team.backend.domain.DailyWeather;
 import com.team.backend.domain.outfit.OutfitHistory;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
@@ -14,17 +15,47 @@ public interface OutfitHistoryRepository extends JpaRepository<OutfitHistory, Lo
     Optional<OutfitHistory> findBySessionKeyAndOutfitDate(String sessionKey, LocalDate outfitDate);
 
     @Query("""
-            select distinct h
-            from OutfitHistory h
-            left join fetch h.items i
-            where h.sessionKey = :sessionKey
-              and h.outfitDate >= :from
-              and h.outfitDate <  :toExclusive
-            order by h.outfitDate asc
-        """)
+                select h
+                from OutfitHistory h
+                left join fetch h.items i
+                where h.sessionKey = :sessionKey
+                  and h.outfitDate = :outfitDate
+            """)
+    Optional<OutfitHistory> findBySessionKeyAndOutfitDateWithItems(
+            @Param("sessionKey") String sessionKey,
+            @Param("outfitDate") LocalDate outfitDate
+    );
+
+    @Query("""
+                select distinct h
+                from OutfitHistory h
+                left join fetch h.items i
+                where h.sessionKey = :sessionKey
+                  and h.outfitDate >= :from
+                  and h.outfitDate <  :toExclusive
+                order by h.outfitDate asc
+            """)
     List<OutfitHistory> findMonthlyWithItems(
             @Param("sessionKey") String sessionKey,
             @Param("from") LocalDate from,
             @Param("toExclusive") LocalDate toExclusive
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from OutfitHistoryItem i where i.outfitHistory.id = :historyId")
+    int deleteByHistoryId(@Param("historyId") Long historyId);
+
+    @Query("""
+                select w
+                from DailyWeather w
+                where w.region = :region
+                  and w.date >= :from
+                  and w.date <  :toExclusive
+            """)
+    List<DailyWeather> findRange(
+            @Param("region") String region,
+            @Param("from") LocalDate from,
+            @Param("toExclusive") LocalDate toExclusive
+    );
+
 }

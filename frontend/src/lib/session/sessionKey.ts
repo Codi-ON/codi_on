@@ -1,4 +1,5 @@
 // src/lib/session/sessionKey.ts
+import.meta.env.VITE_SESSION_KEY
 const STORAGE_KEY = "codion.sessionKey";
 
 function getEnvSessionKey(): string | null {

@@ -3,6 +3,7 @@ package com.team.backend.service.clothing;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
+import com.team.backend.api.dto.clothingItem.ClothingItemSummaryDto;
 import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.repository.clothing.ClothingItemRepository;
@@ -43,6 +44,30 @@ public class ClothingItemService {
 
         return rows.stream()
                 .map(e -> ClothingItemResponseDto.from(e, false))
+                .toList();
+    }
+
+
+    public List<ClothingItemSummaryDto> getSummaryByClothingIds(List<Long> clothingIds) {
+        if (clothingIds == null || clothingIds.isEmpty()) return List.of();
+
+        // 중복 제거 + 입력 순서 보존
+        List<Long> uniqueIds = clothingIds.stream().distinct().toList();
+
+        List<ClothingItem> items = clothingItemRepository.findByClothingIdIn(uniqueIds);
+
+        Map<Long, ClothingItem> map = items.stream()
+                .collect(Collectors.toMap(
+                        ClothingItem::getClothingId,
+                        e -> e,
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
+
+
+        return uniqueIds.stream()
+                .filter(map::containsKey)
+                .map(id -> ClothingItemSummaryDto.from(map.get(id)))
                 .toList();
     }
 

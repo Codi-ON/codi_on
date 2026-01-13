@@ -1,3 +1,4 @@
+// src/lib/hooks/useCloset.ts
 import { useCallback, useEffect, useState } from "react";
 import { closetRepo } from "@/lib/repo/closetRepo";
 import { getUserMessage } from "@/lib/errors";
@@ -32,7 +33,6 @@ export function useClothes(limit = 30) {
             if (!current) return;
 
             const next = !current.favorited;
-
             setItems((prev) => prev.map((x) => (x.clothingId === clothingId ? { ...x, favorited: next } : x)));
 
             try {

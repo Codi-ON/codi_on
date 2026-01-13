@@ -1,18 +1,18 @@
 package com.team.backend.api.dto.outfit;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class OutfitFeedbackRequestDto {
 
+    /**
+     * -1/0/1 정책 그대로
+     */
     @NotNull
-    @Min(-1)
-    @Max(1)
     private Integer rating;
 }

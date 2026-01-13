@@ -4,6 +4,8 @@ package com.team.backend.api.controller.clothing;
 import com.team.backend.api.dto.ApiResponse;
 import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
+import com.team.backend.api.dto.clothingItem.ClothingItemSummaryDto;
+import com.team.backend.api.dto.clothingItem.ClothingItemSummaryRequestDto;
 import com.team.backend.domain.enums.ClothingCategory;
 import com.team.backend.service.clothing.ClothingItemService;
 import jakarta.validation.Valid;
@@ -23,12 +25,21 @@ public class ClothingItemController {
     public static final String PATH_SELECT = "/{id}/select";
     public static final String PATH_SEARCH = "/search";
     public static final String PATH_POPULAR = "/popular";
+    public static final String PATH_SUMMARY = "/summary";
     public static final String PATH_POPULAR_BY_CATEGORY = "/popular/by-category";
 
     public static final String PARAM_LIMIT = "limit";
     public static final String PARAM_CATEGORY = "category";
 
     private final ClothingItemService clothingItemService;
+
+
+    @PostMapping(PATH_SUMMARY)
+    public ApiResponse<List<ClothingItemSummaryDto>> summary(
+            @RequestBody @Valid ClothingItemSummaryRequestDto req
+    ) {
+        return ApiResponse.success(clothingItemService.getSummaryByClothingIds(req.getIds()));
+    }
 
     // 0) 전체 조회: GET /api/clothes?limit=20
     @GetMapping

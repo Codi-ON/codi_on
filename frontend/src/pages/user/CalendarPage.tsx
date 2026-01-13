@@ -1,461 +1,547 @@
 // src/pages/user/CalendarPage.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Card, Badge, Button, cn } from "@/app/DesignSystem";
-import { RefreshCw } from "lucide-react";
+import { Card, Button, Badge, cn } from "@/app/DesignSystem";
+import { RefreshCw, ChevronLeft, ChevronRight, Heart } from "lucide-react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
+import { sessionApi } from "@/lib/http";
 import { outfitRepo } from "@/lib/repo/outfitRepo";
-import { outfitAdapter, type HistoryEntryUI } from "@/lib/adapters/outfitAdapter";
-import type { MonthlyHistoryDto, TodayOutfitDto, TodayOutfitItemDto } from "@/lib/api/outfitApi";
+import {MonthlyHistoryDto, TodayOutfitItemDto, RecoStrategy, outfitApi} from "@/lib/api/outfitApi";
 
-// -----------------------------
-// helpers
-// -----------------------------
-const GUIDE_TOAST_KEY = "codion.calendar.guideToastShown.v2";
+import { useAppDispatch, useAppSelector } from "@/state/hooks/hooks";
+import { fetchFavorites, optimisticSet, toggleFavorite } from "@/state/favorites/favoritesSlice";
 
-function isoTodayKST(): string {
-    // 단순: 브라우저 로컬 기준 (KST 환경이면 OK)
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
+/** ---------- types (UI) ---------- */
+type ClothesSummaryItem = {
+    clothingId: number;
+    name: string;
+    imageUrl?: string | null;
+    category?: string | null;
+};
+
+type DayItemUI = {
+    clothingId: number;
+    sortOrder: number;
+    name?: string;
+    imageUrl?: string;
+    category?: string;
+    favorited?: boolean;
+};
+
+type DayUI = {
+    dateISO: string; // YYYY-MM-DD
+    items: DayItemUI[];
+    feedbackScore: -1 | 0 | 1 | null;
+    weatherTemp: number | null;
+    condition: string | null;
+    weatherFeelsLike: number | null;
+    weatherCloudAmount: number | null;
+    recoStrategy: RecoStrategy | null;
+};
+
+type LoadStatus = "idle" | "loading" | "error";
+
+/** ---------- date utils (no lib) ---------- */
+function pad2(n: number) {
+    return n < 10 ? `0${n}` : `${n}`;
+}
+function toISODate(d: Date) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function fromISODate(iso: string): Date {
+    const [y, m, day] = iso.split("-").map((v) => parseInt(v, 10));
+    return new Date(y, (m ?? 1) - 1, day ?? 1);
+}
+function sameMonth(a: Date, y: number, m1to12: number) {
+    return a.getFullYear() === y && a.getMonth() === m1to12 - 1;
+}
+function startOfMonth(year: number, month1to12: number) {
+    return new Date(year, month1to12 - 1, 1);
+}
+function daysInMonth(year: number, month1to12: number) {
+    return new Date(year, month1to12, 0).getDate();
+}
+function toKoreanDateLabel(iso: string): string {
+    const [y, m, d] = iso.split("-").map((v) => parseInt(v, 10));
+    if (!y || !m || !d) return iso;
+    return `${y}년 ${m}월 ${d}일`;
 }
 
-function parseISO(s: string): Date {
-    // YYYY-MM-DD
-    const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, (m ?? 1) - 1, d ?? 1);
+/** ---------- icons / labels ---------- */
+function weatherIcon(cond: string | null): string {
+    const c = (cond ?? "").toLowerCase();
+    if (c.includes("rain") || c.includes("비")) return "🌧️";
+    if (c.includes("snow") || c.includes("눈")) return "❄️";
+    if (c.includes("cloud") || c.includes("흐림") || c.includes("clouds") || c.includes("구름")) return "☁️";
+    if (c.includes("sun") || c.includes("맑") || c.includes("clear")) return "☀️";
+    return "🌤️";
 }
-
-function fmtTemp(v: number | null | undefined): string {
-    if (typeof v !== "number" || Number.isNaN(v)) return "-";
-    return `${v.toFixed(1)}°`;
+function recoMeta(strategy: RecoStrategy | null): { emoji: string; label: string; tooltip: string } {
+    if (strategy === "BLEND_RATIO") return { emoji: "🧩", label: "혼용률", tooltip: "" };
+    if (strategy === "MATERIAL_RATIO") return { emoji: "🧵", label: "소재", tooltip: "" };
+    return { emoji: "⚙️", label: "기본", tooltip: "" };
 }
-
-function feedbackEmoji(score?: number | null): string {
+function clampFeedback(v: unknown): -1 | 0 | 1 | null {
+    if (v === 1 || v === 0 || v === -1) return v;
+    return null;
+}
+function toRecoStrategy(v: unknown): RecoStrategy | null {
+    if (v === "BLEND_RATIO" || v === "MATERIAL_RATIO") return v;
+    return null;
+}
+function feedbackEmoji(score: -1 | 0 | 1 | null | undefined): string | null {
     if (score === 1) return "👍";
     if (score === 0) return "😐";
     if (score === -1) return "👎";
-    return "⏳";
+    return null;
 }
 
-function weatherEmoji(cond?: string | null): string {
-    const c = String(cond ?? "").toLowerCase();
-    if (c.includes("rain") || c.includes("비")) return "🌧️";
-    if (c.includes("snow") || c.includes("눈")) return "❄️";
-    if (c.includes("cloud") || c.includes("흐림") || c.includes("구름")) return "☁️";
-    if (c.includes("sun") || c.includes("맑")) return "☀️";
-    return "🌤️";
+/** ---------- API helper: clothes summary ---------- */
+async function fetchClothesSummary(ids: number[]): Promise<ClothesSummaryItem[]> {
+    if (!ids.length) return [];
+    return sessionApi.post<ClothesSummaryItem[]>("/api/clothes/summary", { ids });
 }
 
-// 캘린더 매트릭스(6주 고정)
-function buildMonthMatrix(year: number, month1to12: number) {
-    const first = new Date(year, month1to12 - 1, 1);
-    const startDay = first.getDay(); // 0 Sun
-    const daysInMonth = new Date(year, month1to12, 0).getDate();
+/** ---------- assemble monthly -> UI map (merge clothes summary) ---------- */
+function buildDayMap(monthly: MonthlyHistoryDto, summaryList: ClothesSummaryItem[], favoriteSet: Set<number>): Map<string, DayUI> {
+    const summaryMap = new Map<number, ClothesSummaryItem>();
+    for (const s of summaryList) summaryMap.set(s.clothingId, s);
 
-    const cells: Array<{ date: Date; inMonth: boolean }> = [];
-    // 앞쪽 채우기
-    for (let i = 0; i < startDay; i++) {
-        const d = new Date(year, month1to12 - 1, 1 - (startDay - i));
-        cells.push({ date: d, inMonth: false });
+    const map = new Map<string, DayUI>();
+    const days = Array.isArray((monthly as any)?.days) ? (monthly as any).days : [];
+
+    for (const d of days) {
+        const dateISO = typeof d?.date === "string" ? d.date.slice(0, 10) : "1970-01-01";
+        const rawItems: TodayOutfitItemDto[] = Array.isArray(d?.items) ? d.items : [];
+
+        const items: DayItemUI[] = rawItems
+            .map((it) => {
+                const base = summaryMap.get(it.clothingId);
+                const mergedName = it?.name ?? base?.name;
+                const mergedImg = it?.imageUrl ?? (base?.imageUrl ?? undefined);
+                const mergedCat = it?.category ?? (base?.category ?? undefined);
+
+                return {
+                    clothingId: it.clothingId,
+                    sortOrder: typeof it.sortOrder === "number" ? it.sortOrder : 999,
+                    name: mergedName,
+                    imageUrl: mergedImg || undefined,
+                    category: mergedCat || undefined,
+                    favorited: favoriteSet.has(it.clothingId),
+                };
+            })
+            .sort((a, b) => a.sortOrder - b.sortOrder);
+
+        map.set(dateISO, {
+            dateISO,
+            items,
+            feedbackScore: clampFeedback(d?.feedbackScore),
+            weatherTemp: typeof d?.weatherTemp === "number" ? d.weatherTemp : null,
+            condition: typeof d?.condition === "string" ? d.condition : null,
+            weatherFeelsLike: typeof d?.weatherFeelsLike === "number" ? d.weatherFeelsLike : null,
+            weatherCloudAmount: typeof d?.weatherCloudAmount === "number" ? d.weatherCloudAmount : null,
+            recoStrategy: toRecoStrategy(d?.recoStrategy),
+        });
     }
-    // 본월
-    for (let day = 1; day <= daysInMonth; day++) {
-        cells.push({ date: new Date(year, month1to12 - 1, day), inMonth: true });
+
+    return map;
+}
+
+/** ---------- Calendar grid builder ---------- */
+type Cell = { key: string; date: Date; inMonth: boolean };
+
+function buildCalendarCells(year: number, month1to12: number): Cell[] {
+    const first = startOfMonth(year, month1to12);
+    const firstDow = first.getDay(); // 0=Sun
+    const totalDays = daysInMonth(year, month1to12);
+
+    const cells: Cell[] = [];
+
+    for (let i = firstDow - 1; i >= 0; i--) {
+        const d = new Date(year, month1to12 - 1, 1 - (i + 1));
+        cells.push({ key: `p-${i}`, date: d, inMonth: false });
     }
-    // 뒤쪽 채우기
-    while (cells.length < 35) {
+    for (let day = 1; day <= totalDays; day++) {
+        const d = new Date(year, month1to12 - 1, day);
+        cells.push({ key: `c-${day}`, date: d, inMonth: true });
+    }
+    while (cells.length < 42) {
         const last = cells[cells.length - 1].date;
         const next = new Date(last);
         next.setDate(last.getDate() + 1);
-        cells.push({ date: next, inMonth: false });
+        cells.push({ key: `n-${cells.length}`, date: next, inMonth: false });
     }
+
     return cells;
 }
 
-function toISO(d: Date): string {
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-}
 
-// -----------------------------
-// UI parts
-// -----------------------------
-function StampCheck() {
-    // “스탬프 1개” (링 하나 + CHECK)
-    return (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="relative w-[56px] h-[56px] rotate-[-12deg]">
-                <div className="absolute inset-0 rounded-full border-[3px] border-orange-500" />
-                <div className="absolute inset-[8px] rounded-full border-[1px] border-orange-400" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-[11px] font-black tracking-widest text-orange-600">CHECK</span>
-                </div>
-            </div>
-        </div>
-    );
-}
+/** ---------- main page ---------- */
+export default function CalendarPage() {
+    const dispatch = useAppDispatch();
+    const favoriteIds = useAppSelector((s: any) => (Array.isArray(s?.favorites?.ids) ? s.favorites.ids : [])) as number[];
+    const favoriteSet = useMemo(() => new Set<number>(favoriteIds), [favoriteIds]);
 
-function OutfitRow({
-                       item,
-                       favorited,
-                       scorePercent,
-                   }: {
-    item: TodayOutfitItemDto;
-    favorited?: boolean;
-    scorePercent?: number | null; // 0~100
-}) {
-    const scoreText =
-        typeof scorePercent === "number" && !Number.isNaN(scorePercent) ? `${Math.round(scorePercent)}%` : "-";
+    const [sp, setSp] = useSearchParams();
 
-    return (
-        <div className="rounded-[18px] border border-slate-100 bg-white px-4 py-3 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center">
-                {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={`clothing-${item.clothingId}`} className="w-full h-full object-cover" />
-                ) : (
-                    <span className="text-[10px] font-black text-slate-300">NO IMG</span>
-                )}
-            </div>
+    const todayISO = useMemo(() => toISODate(new Date()), []);
+    const initialSelectedISO = useMemo(() => sp.get("date") ?? todayISO, [sp, todayISO]);
+    const initialSelected = useMemo(() => fromISODate(initialSelectedISO), [initialSelectedISO]);
 
-            <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-black text-slate-300 tracking-widest uppercase">
-                    ID {item.clothingId} · SORT {item.sortOrder}
-                </div>
-                <div className="mt-0.5 text-sm font-black text-navy-900 truncate">저장된 아이템</div>
-            </div>
+    const [viewYear, setViewYear] = useState<number>(initialSelected.getFullYear());
+    const [viewMonth, setViewMonth] = useState<number>(initialSelected.getMonth() + 1); // 1..12
+    const [selectedISO, setSelectedISO] = useState<string>(initialSelectedISO);
 
-            {/* 우측: 하트 + 점수(%) */}
-            <div className="flex items-center gap-2 shrink-0">
-                <div
-                    className={cn(
-                        "h-9 px-3 rounded-full border flex items-center gap-2",
-                        "border-slate-200 bg-white"
-                    )}
-                    aria-label="fit-score"
-                >
-                    <span className="text-[11px] font-black text-slate-500">적합도</span>
-                    <span className="text-[11px] font-black text-orange-600">{scoreText}</span>
-                </div>
+    const [status, setStatus] = useState<LoadStatus>("idle");
+    const [error, setError] = useState<string | null>(null);
+    const [dayMap, setDayMap] = useState<Map<string, DayUI>>(new Map());
 
-                <div
-                    className={cn(
-                        "w-9 h-9 rounded-full border flex items-center justify-center",
-                        favorited ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"
-                    )}
-                    aria-label={favorited ? "favorited" : "not-favorited"}
-                    title={favorited ? "찜" : "미찜"}
-                >
-                    <span className={cn("text-base", favorited ? "" : "opacity-40")}>♥</span>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// -----------------------------
-// Page
-// -----------------------------
-const CalendarPage: React.FC = () => {
-    const [params, setParams] = useSearchParams();
-
-    const initialDate = params.get("date") ?? isoTodayKST();
-    const [selectedISO, setSelectedISO] = useState<string>(initialDate);
-
-    const selectedDateObj = useMemo(() => parseISO(selectedISO), [selectedISO]);
-    const viewYear = selectedDateObj.getFullYear();
-    const viewMonth = selectedDateObj.getMonth() + 1;
-
-    const todayISO = useMemo(() => isoTodayKST(), []);
-
-    // data
-    const [monthly, setMonthly] = useState<MonthlyHistoryDto | null>(null);
-    const [today, setToday] = useState<TodayOutfitDto | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [err, setErr] = useState<string | null>(null);
-
-    // guide toast
-    const [showGuide, setShowGuide] = useState(false);
-
-    // - 실제 redux 구조에 맞게 여기만 연결하면 됨.
-    const favoriteSet = useMemo(() => new Set<number>(), []);
-    const scoreMap = useMemo(() => new Map<number, number>(), []);
-
-    const refresh = useCallback(async () => {
-        setLoading(true);
-        setErr(null);
-        try {
-            const [m, t] = await Promise.all([
-                outfitRepo.getMonthlyOutfits(viewYear, viewMonth),
-                outfitRepo.getTodayOutfit().catch(() => null),
-            ]);
-            setMonthly(m);
-            setToday(t);
-        } catch (e: any) {
-            setErr(e?.message ?? "데이터 로드 실패");
-        } finally {
-            setLoading(false);
+    useEffect(() => {
+        const sel = fromISODate(selectedISO);
+        if (!sameMonth(sel, viewYear, viewMonth)) {
+            const next = startOfMonth(viewYear, viewMonth);
+            const nextISO = toISODate(next);
+            setSelectedISO(nextISO);
+            setSp((prev) => {
+                prev.set("date", nextISO);
+                return prev;
+            });
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [viewYear, viewMonth]);
 
     useEffect(() => {
-        refresh();
-    }, [refresh]);
+        dispatch(fetchFavorites());
+    }, [dispatch]);
 
-    // guide once
-    useEffect(() => {
+    const loadMonthly = useCallback(async () => {
+        setStatus("loading");
+        setError(null);
         try {
-            const shown = localStorage.getItem(GUIDE_TOAST_KEY);
-            if (shown === "1") return;
-            setShowGuide(true);
-            localStorage.setItem(GUIDE_TOAST_KEY, "1");
-            const t = window.setTimeout(() => setShowGuide(false), 3500);
-            return () => window.clearTimeout(t);
-        } catch {
-            setShowGuide(true);
-            const t = window.setTimeout(() => setShowGuide(false), 3500);
-            return () => window.clearTimeout(t);
+            const monthly = await outfitRepo.getMonthlyOutfits(viewYear, viewMonth);
+
+            const ids: number[] = [];
+            for (const d of monthly.days ?? []) {
+                const items = Array.isArray(d?.items) ? d.items : [];
+                for (const it of items) if (typeof it?.clothingId === "number") ids.push(it.clothingId);
+            }
+            const uniq = Array.from(new Set(ids));
+
+            const summary = await fetchClothesSummary(uniq);
+            const map = buildDayMap(monthly, summary, favoriteSet);
+            setDayMap(map);
+
+            setStatus("idle");
+        } catch (e: any) {
+            setStatus("error");
+            setError(e?.message ?? "월 히스토리 로드 실패");
         }
-    }, []);
+    }, [viewYear, viewMonth, favoriteSet]);
 
-    // monthly -> map + today merge(오늘만 최신 보정)
-    const monthlyMap = useMemo(() => {
-        if (!monthly) return new Map<string, HistoryEntryUI>();
-        const base = outfitAdapter.monthlyToMap(monthly);
-        // today가 같은 월이면 덮어쓰기
-        const t = today?.date ? outfitAdapter.normalizeISO(today.date) : null;
-        if (t && t.slice(0, 7) === `${viewYear}-${String(viewMonth).padStart(2, "0")}`) {
-            return outfitAdapter.mergeRecentlySaved(base, today, null);
+    useEffect(() => {
+        loadMonthly();
+    }, [loadMonthly]);
+
+    const selectedDay = useMemo(() => dayMap.get(selectedISO) ?? null, [dayMap, selectedISO]);
+    const cells = useMemo(() => buildCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
+    const monthTitle = useMemo(() => `${viewYear}년 ${viewMonth}월`, [viewYear, viewMonth]);
+
+    const onClickDay = useCallback(
+        (iso: string) => {
+            setSelectedISO(iso);
+            setSp((prev) => {
+                prev.set("date", iso);
+                return prev;
+            });
+        },
+        [setSp]
+    );
+
+    const onPrevMonth = useCallback(() => {
+        const m = viewMonth - 1;
+        if (m < 1) {
+            setViewYear((y) => y - 1);
+            setViewMonth(12);
+        } else {
+            setViewMonth(m);
         }
-        return base;
-    }, [monthly, today, viewYear, viewMonth]);
+    }, [viewMonth]);
 
-    const selectedEntry = useMemo(() => monthlyMap.get(selectedISO) ?? null, [monthlyMap, selectedISO]);
-
-    // calendar cells
-    const cells = useMemo(() => buildMonthMatrix(viewYear, viewMonth), [viewYear, viewMonth]);
-
-    // nav
-    const goMonth = (delta: number) => {
-        const d = new Date(viewYear, viewMonth - 1 + delta, 1);
-        const iso = toISO(d);
-        setSelectedISO(iso);
-        setParams({ date: iso });
-    };
-
-    const onPickDay = (iso: string) => {
-        // “두 번 클릭 = 선택 해제” (삭제 API 없으니 안전 UX)
-        if (iso === selectedISO) {
-            const fallback = `${viewYear}-${String(viewMonth).padStart(2, "0")}-01`;
-            setSelectedISO(fallback);
-            setParams({ date: fallback });
-            return;
+    const onNextMonth = useCallback(() => {
+        const m = viewMonth + 1;
+        if (m > 12) {
+            setViewYear((y) => y + 1);
+            setViewMonth(1);
+        } else {
+            setViewMonth(m);
         }
-        setSelectedISO(iso);
-        setParams({ date: iso });
-    };
+    }, [viewMonth]);
 
-    // -----------------------------
-    // render
-    // -----------------------------
+    const toggleFav = useCallback(
+        (clothingId: number, next: boolean) => {
+            dispatch(optimisticSet({ clothingId, next }));
+            dispatch(toggleFavorite({ clothingId, next }));
+        },
+        [dispatch]
+    );
+
+    const navigate = useNavigate();
+    const ROUTE_CHECKLIST = "/checklist";
+
     return (
-        <div className="max-w-[1280px] mx-auto">
-            {/* guide toast */}
-            {showGuide && (
-                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[min(760px,calc(100%-24px))]">
-                    <div className="rounded-[18px] border border-slate-100 bg-white shadow-2xl px-4 py-3">
-                        <div className="text-sm font-black text-navy-900">사용법</div>
-                        <div className="mt-1 text-xs font-bold text-slate-500">
-                            1) 날짜 클릭 → 우측에서 상세 확인 · 2) CHECK 스탬프 = 기록 있음 · 3) 같은 날짜 다시 클릭 → 선택 해제
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div className="grid lg:grid-cols-12 gap-6 items-start">
-                {/* LEFT: calendar (더 크게) */}
-                <Card className="lg:col-span-8 p-8 border-2 border-slate-100 shadow-2xl shadow-navy-900/[0.03]">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <div className="text-xs font-black text-slate-300 tracking-widest uppercase">OOTD CALENDAR</div>
-                            <div className="mt-2 text-2xl font-black text-navy-900 tracking-tight">
-                                {viewYear}년 {viewMonth}월
+        <div className="w-full">
+            <div className="mx-auto max-w-[1200px] px-6 py-6">
+                <div className={cn("grid gap-6", "grid-cols-[7fr_3fr]")}>
+                    {/* LEFT: Calendar */}
+                    <Card className="p-6">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <div className="text-xs tracking-widest text-muted-foreground">HISTORY CALENDAR</div>
+                                <div className="mt-2 text-2xl font-bold">{monthTitle}</div>
                             </div>
-                            <div className="mt-1 text-xs font-bold text-slate-400">
-                                기록된 날짜는 스탬프로 표시됩니다.
-                            </div>
-                        </div>
 
-                        <div className="flex items-center gap-2">
-                            <Button variant="outline" className="h-10 px-4" onClick={() => goMonth(-1)}>
-                                ‹
-                            </Button>
-                            <Button variant="outline" className="h-10 px-4" onClick={() => goMonth(1)}>
-                                ›
-                            </Button>
-                            <Button variant="outline" className="h-10 px-4" onClick={refresh} isLoading={loading}>
-                                <RefreshCw size={16} />
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* weekday */}
-                    <div className="mt-6 grid grid-cols-7 gap-3 px-1">
-                        {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((w) => (
-                            <div
-                                key={w}
-                                className={cn(
-                                    "text-[11px] font-black tracking-widest text-center",
-                                    w === "SUN" ? "text-red-400" : w === "SAT" ? "text-blue-500" : "text-slate-300"
-                                )}
-                            >
-                                {w}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* grid */}
-                    <div className="mt-3 grid grid-cols-7 gap-3">
-                        {cells.map((c, idx) => {
-                            const iso = toISO(c.date);
-                            const inMonth = c.inMonth;
-
-                            const entry = monthlyMap.get(iso);
-                            const hasHistory = !!entry;
-
-                            const isSelected = iso === selectedISO;
-                            const isToday = iso === todayISO;
-
-                            const dow = c.date.getDay();
-                            const numColor =
-                                !inMonth
-                                    ? "text-slate-200"
-                                    : dow === 0
-                                        ? "text-red-500"
-                                        : dow === 6
-                                            ? "text-blue-500"
-                                            : "text-navy-900";
-
-                            // ✅ 링 중복 방지:
-                            // - 기록 있으면: 스탬프 1개만
-                            // - 오늘 강조: 기록 있는 날엔 배경만 살짝
-                            const cellBorder = isSelected
-                                ? "border-navy-900"
-                                : isToday && !hasHistory
-                                    ? "border-orange-500"
-                                    : "border-slate-100";
-
-                            const cellBg =
-                                isToday && hasHistory ? "bg-orange-50/40" : "bg-white";
-
-                            return (
-                                <button
-                                    key={`${iso}-${idx}`}
-                                    onClick={() => onPickDay(iso)}
-                                    className={cn(
-                                        "relative w-full aspect-square rounded-[16px] border-2 transition-all",
-                                        cellBorder,
-                                        cellBg,
-                                        inMonth ? "opacity-100" : "opacity-45",
-                                        "hover:border-orange-200"
-                                    )}
+                            {/* month controls + refresh */}
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-12 w-12 p-0"
+                                    onClick={onPrevMonth}
+                                    aria-label="prev month"
                                 >
-                                    {/* date number: 좌상단 */}
-                                    <div className="absolute top-2 left-2">
-                                        <span className={cn("text-sm font-black", numColor)}>{c.date.getDate()}</span>
-                                    </div>
+                                    <ChevronLeft className="h-5 w-5" />
+                                </Button>
 
-                                    {/* weather icon: 우상단 (기록된날만) */}
-                                    {hasHistory && (
-                                        <div className="absolute top-2 right-2">
-                                            <span className="text-sm">{entry?.weatherIcon ?? "🌤️"}</span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-12 w-12 p-0"
+                                    onClick={onNextMonth}
+                                    aria-label="next month"
+                                >
+                                    <ChevronRight className="h-5 w-5" />
+                                </Button>
+
+                            </div>
+                        </div>
+
+                        {/* weekday header */}
+                        <div className="mt-6 grid grid-cols-7 text-center text-xs font-semibold text-muted-foreground">
+                            <div className="text-red-500">SUN</div>
+                            <div>MON</div>
+                            <div>TUE</div>
+                            <div>WED</div>
+                            <div>THU</div>
+                            <div>FRI</div>
+                            <div className="text-blue-500">SAT</div>
+                        </div>
+
+                        {/* calendar cells */}
+                        <div className="mt-3 grid grid-cols-7 gap-3">
+                            {cells.map((cell) => {
+                                const iso = toISODate(cell.date);
+                                const inMonth = cell.inMonth;
+                                const dow = cell.date.getDay(); // 0=Sun, 6=Sat
+                                const isToday = iso === todayISO;
+                                const isSelected = iso === selectedISO;
+
+                                const d = dayMap.get(iso);
+                                const hasSaved = (d?.items?.length ?? 0) > 0;
+
+                                // 마커는 "기록 있음"만 체크
+                                const marker = hasSaved ? "✓" : null;
+
+                                const dayColorClass =
+                                    dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-slate-900";
+
+                                return (
+                                    <button
+                                        key={cell.key}
+                                        onClick={() => onClickDay(iso)}
+                                        className={cn(
+                                            "relative h-[74px] rounded-2xl border text-left transition",
+                                            "bg-white hover:shadow-sm",
+                                            !inMonth && "opacity-40",
+                                            isSelected && "border-foreground",
+                                            isToday && "bg-orange-50",
+                                            "p-2"
+                                        )}
+                                    >
+                                        {/* day number: 좌측 상단, 주말 색 반영 */}
+                                        <div
+                                            className={cn(
+                                                "absolute left-2 top-2 text-base font-extrabold tracking-tight",
+                                                dayColorClass,
+                                                !inMonth && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {cell.date.getDate()}
                                         </div>
-                                    )}
 
-                                    {/* stamp: 기록 있는 날만 */}
-                                    {hasHistory ? <StampCheck /> : null}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* footer */}
-                    <div className="mt-6 rounded-[14px] border border-slate-100 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">
-                        {err ? <span className="text-red-600">{err}</span> : "기록이 없으면 스탬프가 표시되지 않습니다."}
-                    </div>
-                </Card>
-
-                {/* RIGHT: detail */}
-                <Card className="lg:col-span-4 p-8 border-2 border-slate-100 shadow-2xl shadow-navy-900/[0.03] lg:sticky lg:top-6">
-                    <div className="flex items-start justify-between gap-3">
-                        <div>
-                            <div className="text-xs font-black text-slate-300 tracking-widest uppercase">SELECTED DATE</div>
-                            <div className="mt-2 text-xl font-black text-navy-900">{selectedISO}</div>
-                        </div>
-                        <Button variant="outline" className="h-10 px-4" onClick={refresh} isLoading={loading}>
-                            새로고침
-                        </Button>
-                    </div>
-
-                    {/* weather on top (요구 반영) */}
-                    <div className="mt-6 rounded-[18px] border border-slate-100 bg-white p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="text-sm font-black text-navy-900">날씨</div>
-                            <div className="text-lg">{selectedEntry?.weatherIcon ?? "—"}</div>
-                        </div>
-                        <div className="mt-2 text-sm font-bold text-slate-500">
-                            온도: <span className="text-navy-900 font-black">{fmtTemp(selectedEntry?.weatherTemp ?? null)}</span>
-                        </div>
-                        <div className="mt-1 text-xs font-bold text-slate-400">
-                            컨디션: <span className="text-slate-600 font-black">{selectedEntry ? (selectedEntry.weatherIcon ? "" : "") : "-"}</span>
-                            <span className="ml-1 text-slate-600 font-black">
-                {selectedEntry ? (selectedEntry.weatherIcon ? "" : "") : ""}
-              </span>
-                        </div>
-                        <div className="mt-2 text-xs font-bold text-slate-400">
-                            피드백: <span className="text-base">{feedbackEmoji((selectedEntry as any)?.feedbackScore ?? null)}</span>
-                        </div>
-                    </div>
-
-                    {/* outfit list */}
-                    <div className="mt-6">
-                        <div className="flex items-center justify-between">
-                            <div className="text-sm font-black text-navy-900">선택한 옷 조합</div>
-                            {selectedEntry ? <Badge variant="orange">기록</Badge> : <Badge variant="slate">없음</Badge>}
+                                        {/* marker: 우측 상단, 주황색으로 강조 */}
+                                        {marker && (
+                                            <div
+                                                className={cn(
+                                                    "absolute right-2 top-2",
+                                                    "h-6 min-w-6 rounded-full",
+                                                    "flex items-center justify-center",
+                                                    "bg-orange-500 border border-orange-500 text-white",
+                                                    "text-sm font-bold shadow-sm"
+                                                )}
+                                                title="저장됨"
+                                            >
+                                                {marker}
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
-                        {!selectedEntry ? (
-                            <div className="mt-3 rounded-[18px] border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-500">
-                                이 날짜에는 기록이 없습니다.
+                        {status === "error" && <div className="mt-4 text-sm text-red-600">{error ?? "로드 실패"}</div>}
+                    </Card>
+
+                    {/* RIGHT: Detail Panel */}
+                    <Card className="!p-4">
+                        {/* Selected date title */}
+                        <div className="text-center">
+                            <div className="text-2xl font-extrabold tracking-tight text-slate-900 leading-tight">
+                                {toKoreanDateLabel(selectedISO)}
                             </div>
-                        ) : (
-                            <div className="mt-3 space-y-3">
-                                {(monthly?.days ?? [])
-                                    .find((d) => outfitAdapter.normalizeISO(d.date) === selectedISO)
-                                    ?.items?.map((it) => (
-                                        <OutfitRow
-                                            key={`${it.clothingId}-${it.sortOrder}`}
-                                            item={it}
-                                            favorited={favoriteSet.has(it.clothingId)}
-                                            scorePercent={scoreMap.get(it.clothingId) ?? null}
-                                        />
-                                    ))}
-                            </div>
-                        )}
-                    </div>
+                        </div>
 
-                    {/*/!* note *!/*/}
-                    {/*<div className="mt-6 text-[11px] font-bold text-slate-400 leading-relaxed">*/}
-                    {/*    삭제 동작은 현재 API가 없으면 동기화되지 않습니다. (삭제 엔드포인트 붙이면 “두 번 클릭 삭제”로 변경 권장)*/}
-                    {/*</div>*/}
-                </Card>
+                        {/* KPI 3-up */}
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                            {/* MACHINE */}
+                            <div className="rounded-2xl border bg-white p-3">
+                                <div className="text-[11px] font-medium text-slate-500">머신</div>
+                                <div className="mt-1">
+                                    {(() => {
+                                        const s = selectedDay?.recoStrategy ?? null;
+                                        const label = s === "MATERIAL_RATIO" ? "소재" : s === "BLEND_RATIO" ? "혼용률" : "기본";
+                                        return <Badge className="rounded-full px-2 py-0.5 text-xs font-semibold">{label}</Badge>;
+                                    })()}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">{recoMeta(selectedDay?.recoStrategy ?? null).tooltip}</div>
+                            </div>
+
+                            {/* WEATHER */}
+                            <div className="rounded-2xl border bg-white p-3">
+                                <div className="text-[11px] font-medium text-slate-500">날씨</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <div className="text-xl leading-none">{weatherIcon(selectedDay?.condition ?? null)}</div>
+                                    <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+                                        {typeof selectedDay?.weatherTemp === "number" ? `${Math.round(selectedDay.weatherTemp)}°` : "—"}
+                                    </div>
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">{selectedDay?.condition ?? "—"}</div>
+                            </div>
+
+                            {/* FEEDBACK */}
+                            <div className="rounded-2xl border bg-white p-3">
+                                <div className="text-[11px] font-medium text-slate-500">피드백</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <div className="text-xl leading-none">{feedbackEmoji(selectedDay?.feedbackScore ?? null) ?? "—"}</div>
+                                    <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+                                        {selectedDay?.feedbackScore === 1
+                                            ? "좋음"
+                                            : selectedDay?.feedbackScore === 0
+                                                ? "보통"
+                                                : selectedDay?.feedbackScore === -1
+                                                    ? "나쁨"
+                                                    : ""}
+                                    </div>
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                    {feedbackEmoji(selectedDay?.feedbackScore ?? null) ? "작성됨" : "아직 없음"}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Items */}
+                        <div className="mt-4">
+                            <div className="text-sm font-semibold text-slate-900">선택한 옷 조합</div>
+
+                            {selectedDay?.items?.length ? (
+                                <div className="mt-2 space-y-3">
+                                    {(() => {
+                                        const items = [...selectedDay.items].sort((a, b) => a.sortOrder - b.sortOrder);
+
+                                        const pick = (slot: "TOP" | "BOTTOM" | "OUTER") => {
+                                            const found = items.find((it) => (it.category ?? "").toUpperCase().includes(slot));
+                                            return found ?? null;
+                                        };
+
+                                        const slots: Array<{ slot: "TOP" | "BOTTOM" | "OUTER"; emptyText: string }> = [
+                                            { slot: "TOP", emptyText: "상의 없음" },
+                                            { slot: "BOTTOM", emptyText: "하의 없음" },
+                                            { slot: "OUTER", emptyText: "아우터 없음" },
+                                        ];
+
+                                        return slots.map(({ slot, emptyText }) => {
+                                            const it = pick(slot);
+                                            const isEmpty = !it;
+                                            const clothingId = it?.clothingId ?? -1;
+                                            const isFav = !isEmpty && favoriteSet.has(clothingId);
+
+                                            return (
+                                                <div
+                                                    key={`${selectedISO}-${slot}-${clothingId}`}
+                                                    className={cn("rounded-2xl border bg-white p-3", isEmpty && "border-dashed")}
+                                                >
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        {/* LEFT: image */}
+                                                        <div className="relative h-[76px] w-[76px] overflow-hidden rounded-2xl bg-slate-100 flex-none">
+                                                            {!isEmpty && it?.imageUrl ? (
+                                                                <img src={it.imageUrl} alt={it.name ?? "item"} className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="h-full w-full flex items-center justify-center text-[11px] text-slate-400">
+                                                                    {isEmpty ? "EMPTY" : "NO IMG"}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* CENTER: category */}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[11px] font-medium text-slate-500">카테고리</div>
+                                                            <div className={cn("mt-1 text-base font-semibold", isEmpty ? "text-slate-300" : "text-slate-900")}>
+                                                                {isEmpty ? emptyText : it?.category ?? slot}
+                                                            </div>
+                                                        </div>
+
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-12 w-12"
+                                                            disabled={isEmpty}
+                                                            onClick={() => !isEmpty && toggleFav(clothingId, !isFav)}
+                                                            title={isEmpty ? "빈 슬롯" : isFav ? "좋아요 해제" : "좋아요"}
+                                                        >
+                                                            <Heart className={cn("h-6 w-6", isFav ? "text-red-500 fill-current" : "text-slate-400")} />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            ) : (
+                                <div className="mt-2 rounded-2xl border bg-white p-4">
+                                    <div className="text-sm font-semibold text-slate-900">기록 없음</div>
+                                    <div className="mt-2 rounded-xl border bg-orange-50 p-3 text-sm text-slate-700">
+                                        옷이 부족하면 추천 정확도가 떨어질 수 있어요. 먼저 체크리스트를 작성해 주세요.
+                                    </div>
+                                    <div className="mt-3">
+                                        <Button className="w-full" onClick={() => navigate(ROUTE_CHECKLIST)}>
+                                            체크리스트로
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
             </div>
         </div>
     );
-};
-
-export default CalendarPage;
+}

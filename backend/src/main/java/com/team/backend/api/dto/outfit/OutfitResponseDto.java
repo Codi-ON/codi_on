@@ -1,104 +1,147 @@
+// src/main/java/com/team/backend/api/dto/outfit/OutfitResponseDto.java
 package com.team.backend.api.dto.outfit;
 
 import com.team.backend.domain.enums.feadback.FeedbackRating;
+import com.team.backend.domain.enums.recommendation.RecommendationModelType;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
 import lombok.*;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 public class OutfitResponseDto {
 
-    // =========================
-    // Today (저장/조회 공통)
-    // =========================
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
     public static class Today {
-        private String date;
-        private List<Item> items;
+        private LocalDate date;
+
+        @Builder.Default
+        private List<Item> items = new ArrayList<>();
+
         private Integer feedbackScore;
 
-        // ✅ weather snapshot (outfit_history 기준)
         private Double weatherTemp;
         private String condition;
         private Double weatherFeelsLike;
         private Integer weatherCloudAmount;
 
-        public static Today from(OutfitHistory history) {
-            List<OutfitHistoryItem> src = new ArrayList<>(history.getItems());
-            src.sort(Comparator.comparing(OutfitHistoryItem::getSortOrder));
+        private RecommendationModelType recoStrategy;
 
-            List<Item> items = new ArrayList<>(src.size());
-            for (OutfitHistoryItem it : src) {
-                items.add(Item.builder()
-                        .clothingId(it.getClothingId())
-                        .sortOrder(it.getSortOrder())
-                        .build());
+        public static Today from(OutfitHistory h) {
+            if (h == null) return null;
+
+            List<Item> items = new ArrayList<>();
+            if (h.getItems() != null && !h.getItems().isEmpty()) {
+                List<OutfitHistoryItem> sorted = new ArrayList<>(h.getItems());
+                sorted.sort(Comparator.comparingInt(OutfitHistoryItem::getSortOrder));
+                for (OutfitHistoryItem it : sorted) {
+                    if (it == null) continue;
+                    items.add(Item.builder()
+                            .clothingId(it.getClothingId())
+                            .sortOrder(it.getSortOrder())
+                            .build());
+                }
             }
 
-            FeedbackRating fr = history.getFeedbackRating();
-            Integer score = (fr == null) ? null : fr.toScore();
+            Integer score = null;
+            FeedbackRating r = h.getFeedbackRating();
+            if (r != null) score = r.toScore();
 
             return Today.builder()
-                    .date(history.getOutfitDate().toString())
+                    .date(h.getOutfitDate())
                     .items(items)
                     .feedbackScore(score)
-                    .weatherTemp(history.getWeatherTemp())
-                    .condition(history.getWeatherCondition())
-                    .weatherFeelsLike(history.getWeatherFeelsLike())
-                    .weatherCloudAmount(history.getWeatherCloudAmount())
+                    .weatherTemp(h.getWeatherTemp())
+                    .condition(h.getWeatherCondition())
+                    .weatherFeelsLike(h.getWeatherFeelsLike())
+                    .weatherCloudAmount(h.getWeatherCloudAmount())
+                    .recoStrategy(h.getRecoStrategy())
                     .build();
-        }
-
-        @Getter
-        @NoArgsConstructor
-        @AllArgsConstructor
-        @Builder
-        public static class Item {
-            private Long clothingId;
-            private Integer sortOrder;
         }
     }
 
-    // =========================
-    // Monthly History (캘린더용)
-    // =========================
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
     public static class MonthlyHistory {
         private int year;
         private int month;
-        private List<MonthlyDay> days;
+
+        @Builder.Default
+        private List<MonthlyDay> days = new ArrayList<>();
+
+        public static MonthlyHistory of(YearMonth ym, List<OutfitHistory> rows) {
+            if (ym == null) throw new IllegalArgumentException("ym is required");
+
+            List<MonthlyDay> days = new ArrayList<>();
+            if (rows != null && !rows.isEmpty()) {
+                for (OutfitHistory h : rows) {
+                    MonthlyDay d = MonthlyDay.of(h);
+                    if (d != null) days.add(d);
+                }
+                days.sort(Comparator.comparing(MonthlyDay::getDate));
+            }
+
+            return MonthlyHistory.builder()
+                    .year(ym.getYear())
+                    .month(ym.getMonthValue())
+                    .days(days)
+                    .build();
+        }
     }
 
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
     public static class MonthlyDay {
         private String date;
-        private List<MonthlyItem> items;
+
+        @Builder.Default
+        private List<Item> items = new ArrayList<>();
+
         private Integer feedbackScore;
 
-        // ✅ weather snapshot
         private Double weatherTemp;
         private String condition;
+        private Double weatherFeelsLike;
+        private Integer weatherCloudAmount;
+
+        private RecommendationModelType recoStrategy;
+
+        public static MonthlyDay of(OutfitHistory h) {
+            if (h == null) return null;
+
+            Today t = Today.from(h);
+            if (t == null || t.getDate() == null) return null;
+
+            return MonthlyDay.builder()
+                    .date(t.getDate().toString())
+                    .items(t.getItems())
+                    .feedbackScore(t.getFeedbackScore())
+                    .weatherTemp(t.getWeatherTemp())
+                    .condition(t.getCondition())
+                    .weatherFeelsLike(t.getWeatherFeelsLike())
+                    .weatherCloudAmount(t.getWeatherCloudAmount())
+                    .recoStrategy(t.getRecoStrategy())
+                    .build();
+        }
     }
 
     @Getter
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
-    public static class MonthlyItem {
+    public static class Item {
         private Long clothingId;
-        private Integer sortOrder;
-        private String imageUrl;
+        private int sortOrder;
     }
 }

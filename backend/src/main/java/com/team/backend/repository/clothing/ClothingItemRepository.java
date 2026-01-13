@@ -14,6 +14,8 @@ public interface ClothingItemRepository extends JpaRepository<ClothingItem, Long
 
     boolean existsByClothingId(Long clothingId);
 
+    List<ClothingItem> findByClothingIdIn(List<Long> clothingIds);
+
     Optional<ClothingItem> findByClothingId(Long clothingId);
 
     @EntityGraph(attributePaths = "seasons")

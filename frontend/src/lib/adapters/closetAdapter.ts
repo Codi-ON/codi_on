@@ -1,3 +1,4 @@
+// src/lib/adapters/closetAdapter.ts
 import type { ClothesSearchItemDto } from "@/lib/api/closetApi";
 import type { ClothingItem } from "@/shared/domain/clothing";
 
@@ -23,4 +24,8 @@ export const closetAdapter = {
       favorited: !!dto.favorited,
     };
   },
-};
+
+  toDomainList(list: ClothesSearchItemDto[] | null | undefined): ClothingItem[] {
+    return (Array.isArray(list) ? list : []).map(closetAdapter.toDomain);
+  },
+} as const;

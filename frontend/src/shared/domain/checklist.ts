@@ -5,7 +5,6 @@ export type UsageType = "INDOOR" | "OUTDOOR" | "BOTH";
 export type ThicknessLevel = "THICK" | "NORMAL" | "THIN";
 export type YesterdayFeedback = "HOT" | "OK" | "COLD" | "UNKNOWN";
 
-// (백에 실제로 존재하면 enum으로 맞추고, 아직 애매하면 string으로 둬도 됨)
 export type ActivityLevel = "STATIC" | "NORMAL" | "HIGH";
 
 /**
@@ -39,6 +38,7 @@ export type ChecklistSubmitDto = ChecklistAnswer & {
     activityLevel: ActivityLevel;
     clientDateISO?: string;
     yesterdayTempFeedback: YesterdayFeedback;
+
 };
 
 export type ChecklistTodayDto = {
@@ -53,21 +53,4 @@ export type ChecklistSubmitResponseDto = {
     created: boolean;
 };
 
-/**
- * UI Answer -> 백 Request 변환 (핵심)
- * - UI에서는 3개만 받고
- * - 백이 요구하는 activityLevel/yesterdayTempFeedback으로 변환해서 보낸다
- */
-export function toChecklistSubmitRequestDto(answer: ChecklistAnswer): ChecklistSubmitRequestDto {
-    const activityLevel: ActivityLevel =
-        answer.thicknessLevel === "THICK" ? "STATIC"
-            : answer.thicknessLevel === "THIN" ? "HIGH"
-                : "NORMAL";
 
-    return {
-        usageType: answer.usageType,
-        thicknessLevel: answer.thicknessLevel,
-        activityLevel,
-        yesterdayTempFeedback: answer.yesterdayFeedback,
-    };
-}

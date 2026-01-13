@@ -1,78 +1,75 @@
 // src/lib/repo/outfitRepo.ts
-import { outfitApi, type TodayOutfitDto, type MonthlyHistoryDto, type SaveTodayOutfitRequest } from "@/lib/api/outfitApi";
+import {outfitApi} from "@/lib/api/outfitApi";
+import type {MonthlyHistoryDto, TodayOutfitDto} from "@/lib/api/outfitApi";
+import {outfitSaveAdapter} from "@/lib/adapters/outfitAdapter";
+import {getSessionKey} from "@/lib/session/sessionKey.ts";
 
-type SaveInput =
-    | number[] // [topId, bottomId, outerId?]
+/**
+ * 저장 입력 허용 범위(프론트 편의용):
+ * - number[]
+ * - { clothingIds: number[] }
+ * - { items: [{ clothingId, sortOrder? }] }
+ * - ✅ 확장: { items: [...], recoStrategy?: string|null, recommendationKey?: string|null }
+ */
+export type OutfitSaveInput =
+    | number[]
     | { clothingIds: number[] }
-    | SaveTodayOutfitRequest
-    | unknown;
-
-function isSaveTodayRequest(v: any): v is SaveTodayOutfitRequest {
-    return v && typeof v === "object" && Array.isArray(v.items);
-}
-
-function normalizeClothingIds(input: SaveInput): number[] {
-    // 1) number[]
-    if (Array.isArray(input)) return input.filter((n): n is number => Number.isInteger(n));
-
-    // 2) { clothingIds: number[] }
-    if (input && typeof input === "object" && Array.isArray((input as any).clothingIds)) {
-        return (input as any).clothingIds.filter((n: any): n is number => Number.isInteger(n));
-    }
-
-    // 3) { items: [{ clothingId, sortOrder }] }
-    if (isSaveTodayRequest(input)) {
-        return input.items
-            .map((it) => it?.clothingId)
-            .filter((n): n is number => Number.isInteger(n));
-    }
-
-    return [];
-}
-
-function toSaveTodayPayload(input: SaveInput): SaveTodayOutfitRequest {
-    // 이미 계약 형태면 sortOrder 정렬만 보장
-    if (isSaveTodayRequest(input)) {
-        const items = input.items
-            .filter((it) => Number.isInteger(it?.clothingId))
-            .map((it, idx) => ({
-                clothingId: it.clothingId,
-                sortOrder: Number.isInteger(it.sortOrder) ? it.sortOrder : idx + 1,
-            }));
-
-        return { items };
-    }
-
-    // number[] / clothingIds -> items 로 변환
-    const clothingIds = normalizeClothingIds(input);
-    const uniq = Array.from(new Set(clothingIds)).slice(0, 3); // 3슬롯 가정(상의/하의/아우터 옵션)
-
-    return {
-        items: uniq.map((clothingId, i) => ({
-            clothingId,
-            sortOrder: i + 1,
-        })),
-    };
-}
-
-export const outfitRepo = {
-    getTodayOutfit: async (): Promise<TodayOutfitDto> => {
-        return outfitApi.getToday();
-    },
-
-    getMonthlyOutfits: async (year: number, month: number): Promise<MonthlyHistoryDto> => {
-        if (!Number.isInteger(year) || year < 2000) throw new Error("year 파라미터가 올바르지 않습니다.");
-        if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error("month 파라미터가 올바르지 않습니다. (1~12)");
-        return outfitApi.getMonthly(year, month);
-    },
-
-    saveTodayOutfit: async (input: SaveInput): Promise<TodayOutfitDto> => {
-        const payload = toSaveTodayPayload(input);
-
-        if (!payload.items.length) {
-            throw new Error("저장할 clothingId가 없습니다. (items는 1개 이상 필요)");
-        }
-
-        return outfitApi.saveToday(payload);
-    },
+    | { items: Array<{ clothingId: number; sortOrder?: number }> }
+    | {
+    items: Array<{ clothingId: number; sortOrder?: number }>;
+    recoStrategy?: string | null;
+    recommendationKey?: string | null;
 };
+
+/**
+ * ✅ sessionKey를 모든 호출에 명시적으로 주입하는 Repo
+ * - 이유: “저장”과 “히스토리 조회”가 같은 세션키를 써야 최근 저장이 바로 보임
+ * - 원칙: outfitRepo 레벨에서는 항상 sessionKey를 받는다
+ *
+ * 사용 예)
+ *   const sessionKey = effectiveSessionKey;
+ *   await outfitRepo.saveTodayOutfit(clothingIds, sessionKey);
+ *   const today = await outfitRepo.getTodayOutfit(sessionKey);
+ */
+export const outfitRepo = {
+    /**
+     * 오늘 아웃핏 조회
+     */
+    getTodayOutfit(sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.getToday({sessionKey});
+    },
+
+    /**
+     * 오늘 아웃핏 저장
+     * - input은 number[]든 items든 다 받아서 adapter에서 payload로 통일
+     */
+    saveTodayOutfit(input: OutfitSaveInput, sessionKey: string): Promise<TodayOutfitDto> {
+        const body = outfitSaveAdapter.toSaveTodayPayload(input);
+        return outfitApi.saveToday(body, {sessionKey});
+    },
+
+    /**
+     * 오늘 피드백 등록
+     */
+    postTodayFeedback(rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.postTodayFeedback({rating}, {sessionKey});
+    },
+
+    /**
+     * 특정 날짜 피드백 등록
+     */
+    postOutfitFeedbackByDate(dateISO: string, rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
+        return outfitApi.postFeedbackByDate(dateISO, {rating}, {sessionKey});
+    },
+
+    /**
+     * 월별 히스토리 조회
+     */
+    async getMonthlyOutfits(year: number, month: number): Promise<MonthlyHistoryDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
+        return outfitApi.getMonthly({year, month}, {sessionKey});
+    },
+
+} as const;
