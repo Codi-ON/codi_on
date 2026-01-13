@@ -5,7 +5,6 @@ from pydantic import ValidationError
 from ..schemas.blend_ratio_schema import BlendRatioFeedbackRequest
 from ..schemas.recommendation_schemas import RecommendationRequest
 from ..services.compute_bias import apply_bias_and_rerank, run_blend_ratio
-from ..services.feedback_service import run_feedback_recommend
 from ..services.predictor import recommender_service
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
