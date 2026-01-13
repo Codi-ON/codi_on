@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Query
 from typing import Any, Dict, List
 from pydantic import ValidationError
+import logging
 
 from ..schemas.blend_ratio_schema import BlendRatioFeedbackRequest
 from ..schemas.recommendation_schemas import RecommendationRequest
 from ..services.compute_bias import apply_bias_and_rerank, run_blend_ratio
 from ..services.predictor import recommender_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
@@ -38,19 +41,20 @@ def feedback_adaptive(
     year: int = Query(...),
     month: int = Query(...),
 ):
-    print("\n[DEBUG] ===== feedback_adaptive start =====")
-    print("[DEBUG] payload keys:", list(payload.keys()))
-    print("[DEBUG] year, month:", year, month)
+    logger.info("===== [feedback_adaptive] START =====")
+    logger.info("payload_keys=%s", list(payload.keys()))
+    logger.info("year=%d month=%d", year, month)
 
     feedback_id = payload.get("feedbackId")
     samples: List[Dict] = payload.get("samples", [])
 
-    print("[DEBUG] feedbackId:", feedback_id)
-    print("[DEBUG] samples count:", len(samples))
+    logger.info("feedbackId=%s", feedback_id)
+    logger.info("samples_count=%d", len(samples))
+
     if samples:
-        print("[DEBUG] first sample:", samples[0])
+        logger.info("first_sample=%s", samples[0])
     else:
-        print("[DEBUG] samples is empty")
+        logger.warning("samples is empty")
 
     models = []
 
@@ -58,31 +62,28 @@ def feedback_adaptive(
     used_samples = len(samples)
     raw_user_bias = 0.0
 
-        # ---------- BLEND_ADAPTIVE ----------
+    # ---------- BLEND_ADAPTIVE ----------
     try:
-        print("\n[DEBUG] --- BLEND_ADAPTIVE start ---")
+        logger.info("--- [BLEND_ADAPTIVE] START ---")
 
-        # 1. 요청 파싱
         blend_req = _parse(BlendRatioFeedbackRequest, payload)
-        print("[DEBUG][BLEND] parse success")
-        print("[DEBUG][BLEND] items:", getattr(blend_req, "items", None))
-        print("[DEBUG][BLEND] weather:", getattr(blend_req, "weather", None))
+        logger.info("[BLEND] parse success")
+        logger.info("[BLEND] items=%s", getattr(blend_req, "items", None))
+        logger.info("[BLEND] weather=%s", getattr(blend_req, "weather", None))
 
-        # 2. 1차 BLEND score 계산
         blend_scored = run_blend_ratio(blend_req)
-        print("[DEBUG][BLEND] blend_scored count:", len(blend_scored))
+        logger.info("[BLEND] blend_scored_count=%d", len(blend_scored))
 
         if blend_scored:
-            # 3. bias + rerank
             blend_bias_result = apply_bias_and_rerank(
                 scored_items=blend_scored,
                 samples=samples,
             )
 
-            print("[DEBUG][BLEND] bias trained:", blend_bias_result["trained"])
-            print("[DEBUG][BLEND] usedSamples:", blend_bias_result["usedSamples"])
-            print("[DEBUG][BLEND] userBias:", blend_bias_result["userBias"])
-            print("[DEBUG][BLEND] results count:", len(blend_bias_result["results"]))
+            logger.info("[BLEND] trained=%s", blend_bias_result["trained"])
+            logger.info("[BLEND] usedSamples=%d", blend_bias_result["usedSamples"])
+            logger.info("[BLEND] userBias=%.4f", blend_bias_result["userBias"])
+            logger.info("[BLEND] results_count=%d", len(blend_bias_result["results"]))
 
             trained = blend_bias_result["trained"]
             used_samples = blend_bias_result["usedSamples"]
@@ -100,7 +101,7 @@ def feedback_adaptive(
                 ],
             })
         else:
-            print("[DEBUG][BLEND] blend_scored is empty")
+            logger.warning("[BLEND] blend_scored is empty")
             models.append({
                 "modelType": "BLEND_ADAPTIVE",
                 "modelVersion": "v.26.1.0b",
@@ -108,7 +109,7 @@ def feedback_adaptive(
             })
 
     except ValidationError as e:
-        print("[DEBUG][BLEND] ValidationError:", repr(e))
+        logger.error("[BLEND] ValidationError", exc_info=e)
         models.append({
             "modelType": "BLEND_ADAPTIVE",
             "modelVersion": "v.26.1.0b",
@@ -116,31 +117,32 @@ def feedback_adaptive(
         })
 
 
-
-        # ---------- MATERIAL_ADAPTIVE ----------
+    # ---------- MATERIAL_ADAPTIVE ----------
     try:
-        print("\n[DEBUG] --- MATERIAL_ADAPTIVE start ---")
+        logger.info("--- [MATERIAL_ADAPTIVE] START ---")
 
         material_req = _parse(RecommendationRequest, payload)
-        print("[DEBUG][MATERIAL] items count:", len(material_req.items))
-        print("[DEBUG][MATERIAL] weather:", getattr(material_req, "weather", None))
+        logger.info("[MATERIAL] items_count=%d", len(material_req.items))
+        logger.info("[MATERIAL] weather=%s", getattr(material_req, "weather", None))
 
         scored_items = []
         for idx, item in enumerate(material_req.items):
-            print(f"[DEBUG][MATERIAL] item {idx} name:", item.name)
+            logger.info("[MATERIAL] item[%d] name=%s", idx, item.name)
+
             if not item.name or item.name.strip() == "":
-                print(f"[DEBUG][MATERIAL] item {idx} skipped due to empty name")
+                logger.warning("[MATERIAL] item[%d] skipped (empty name)", idx)
                 continue
 
             score = recommender_service.calculate_score(
                 item, material_req.weather
             )
+
             scored_items.append({
                 "clothingId": item.clothingId,
                 "score": score,
             })
 
-        print("[DEBUG][MATERIAL] scored_items count:", len(scored_items))
+        logger.info("[MATERIAL] scored_items_count=%d", len(scored_items))
 
         if scored_items:
             bias_result = apply_bias_and_rerank(
@@ -148,10 +150,10 @@ def feedback_adaptive(
                 samples=samples,
             )
 
-            print("[DEBUG][MATERIAL] bias trained:", bias_result["trained"])
-            print("[DEBUG][MATERIAL] usedSamples:", bias_result["usedSamples"])
-            print("[DEBUG][MATERIAL] userBias:", bias_result["userBias"])
-            print("[DEBUG][MATERIAL] results count:", len(bias_result["results"]))
+            logger.info("[MATERIAL] trained=%s", bias_result["trained"])
+            logger.info("[MATERIAL] usedSamples=%d", bias_result["usedSamples"])
+            logger.info("[MATERIAL] userBias=%.4f", bias_result["userBias"])
+            logger.info("[MATERIAL] results_count=%d", len(bias_result["results"]))
 
             trained = bias_result["trained"]
             used_samples = bias_result["usedSamples"]
@@ -169,7 +171,7 @@ def feedback_adaptive(
                 ],
             })
         else:
-            print("[DEBUG][MATERIAL] scored_items is empty")
+            logger.warning("[MATERIAL] scored_items is empty")
             models.append({
                 "modelType": "MATERIAL_ADAPTIVE",
                 "modelVersion": "v.26.1.0m",
@@ -177,25 +179,27 @@ def feedback_adaptive(
             })
 
     except ValidationError as e:
-        print("[DEBUG][MATERIAL] ValidationError:", repr(e))
+        logger.error("[MATERIAL] ValidationError", exc_info=e)
         models.append({
             "modelType": "MATERIAL_ADAPTIVE",
             "modelVersion": "v.26.1.0m",
             "results": [],
         })
 
+
     # ---------- bias scale (router responsibility) ----------
     user_bias_scaled = int((raw_user_bias + 1.0) * 50)
     user_bias_scaled = max(0, min(100, user_bias_scaled))
 
-    print("\n[DEBUG] ===== feedback_adaptive end =====")
-    print("[DEBUG] trained:", trained)
-    print("[DEBUG] usedSamples:", used_samples)
-    print("[DEBUG] raw_user_bias:", raw_user_bias)
-    print("[DEBUG] user_bias_scaled:", user_bias_scaled)
-    print("[DEBUG] models summary:", [
-        (m["modelType"], len(m["results"])) for m in models
-    ])
+    logger.info("===== [feedback_adaptive] END =====")
+    logger.info("trained=%s", trained)
+    logger.info("usedSamples=%d", used_samples)
+    logger.info("raw_user_bias=%.4f", raw_user_bias)
+    logger.info("user_bias_scaled=%d", user_bias_scaled)
+    logger.info(
+        "models_summary=%s",
+        [(m["modelType"], len(m["results"])) for m in models]
+    )
 
     return {
         "feedbackId": feedback_id,
@@ -204,4 +208,3 @@ def feedback_adaptive(
         "userBias": user_bias_scaled,
         "models": models,
     }
-
