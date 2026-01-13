@@ -119,19 +119,19 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose }) =
 
             // [필수] 숨겨진 값들 (Default Values) 🤫
             usageType: "BOTH",       // 실내외 겸용 기본값
-            suitableMinTemp: -10,    // 기본 온도 범위
+            suitableMinTemp: -20,    // 기본 온도 범위
             suitableMaxTemp: 35,
 
             seasons: seasonList,
 
             // [선택] 혼방률 처리 (간단히 Cotton에 할당하거나 로직 추가 가능)
             cottonPercentage: form.mixRatio,
-            polyesterPercentage: 0,
+            polyesterPercentage: 100 - form.mixRatio,
             etcFiberPercentage: 0,
 
             color: form.color,
-            styleTag: "CASUAL", // 임시 태그
-            imageUrl: ""        // 이미지 URL은 실제 업로드 로직 구현 시 추가
+            styleTag: form.material, // 임시 태그
+            imageUrl: preview || ""        // 이미지 URL은 실제 업로드 로직 구현 시 추가
         };
 
         try {
