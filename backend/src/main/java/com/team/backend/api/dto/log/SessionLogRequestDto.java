@@ -11,22 +11,25 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class SessionLogRequestDto {
 
-    // nullable: null이면 DB now()
+    // nullable: null이면 Service에서 now(KST) 채움
     private OffsetDateTime createdAt;
 
-    private Long userId; // nullable
+    // nullable
+    private Long userId;
 
     @NotBlank
     private String sessionKey;
 
     @NotBlank
-    private String eventType;   // START/END/ERROR/HEARTBEAT/OUTFIT_SAVED...
+    private String eventType;   // START/END/ERROR/HEARTBEAT/ACTIVE...
 
+    // nullable 허용 (Service에서 null이면 {}로 채움)
     private Map<String, Object> payload;
 
     private static final ObjectMapper OM = new ObjectMapper();

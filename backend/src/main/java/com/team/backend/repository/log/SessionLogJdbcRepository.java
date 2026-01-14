@@ -13,6 +13,10 @@ public class SessionLogJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /**
+     * 전제: public.session_log (부모 테이블)로 INSERT하면
+     * 파티션(session_log_YYYYMM)이 있으면 자동 라우팅됨.
+     */
     public void insert(SessionLogRequestDto dto) {
         String sql = """
             INSERT INTO public.session_log (
@@ -23,23 +27,23 @@ public class SessionLogJdbcRepository {
               payload
             )
             VALUES (
-              COALESCE(:createdAt, now()),
+              :createdAt,
               :userId,
               :sessionKey,
               :eventType,
-              CASE
-                WHEN :payloadJson IS NULL THEN NULL
-                ELSE CAST(:payloadJson AS jsonb)
-              END
+              CAST(:payloadJson AS jsonb)
             )
             """;
+
+        String payloadJson = dto.getPayloadJson();
+        if (payloadJson == null || payloadJson.isBlank()) payloadJson = "{}";
 
         MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("createdAt", dto.getCreatedAt())
                 .addValue("userId", dto.getUserId())
                 .addValue("sessionKey", dto.getSessionKey())
                 .addValue("eventType", dto.getEventType())
-                .addValue("payloadJson", dto.getPayloadJson());
+                .addValue("payloadJson", payloadJson);
 
         jdbc.update(sql, p);
     }

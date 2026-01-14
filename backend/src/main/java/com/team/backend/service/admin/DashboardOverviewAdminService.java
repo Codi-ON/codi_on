@@ -30,10 +30,15 @@ public class DashboardOverviewAdminService {
      * - retention: d+1 체크 때문에 [from, (to+1day)+1day) 까지 필요
      */
     public DashboardOverviewResponseDto getOverview(LocalDate fromInclusive, LocalDate toInclusive, int topN) {
-        if (fromInclusive == null || toInclusive == null) throw new IllegalArgumentException("from/to는 필수입니다.");
-        if (fromInclusive.isAfter(toInclusive)) throw new IllegalArgumentException("from은 to보다 클 수 없습니다.");
+        if (fromInclusive == null || toInclusive == null) {
+            throw new IllegalArgumentException("from/to는 필수입니다.");
+        }
+        if (fromInclusive.isAfter(toInclusive)) {
+            throw new IllegalArgumentException("from은 to보다 클 수 없습니다.");
+        }
 
-        int resolvedTopN = Math.min(Math.max(topN, 1), 50);
+        // ✅ 옵션비 정책: topN은 0~50 허용 (0이면 topClicked 비움)
+        int resolvedTopN = Math.min(Math.max(topN, 0), 50);
 
         LocalDate toExclusiveDate = toInclusive.plusDays(1);
 
@@ -44,7 +49,9 @@ public class DashboardOverviewAdminService {
         var summaryRow = overviewRepo.findSummary(fromKst, toExclusiveKst);
         var dailySessionsRow = overviewRepo.findDailySessions(fromKst, toExclusiveKst);
         var dailyClicksRow = overviewRepo.findDailyClicks(fromKst, toExclusiveKst);
-        var topClickedRow = overviewRepo.findTopClickedItems(fromKst, toExclusiveKst, resolvedTopN);
+        var topClickedRow = (resolvedTopN == 0)
+                ? List.<DashboardOverviewJdbcRepository.TopClickedItemRow>of()
+                : overviewRepo.findTopClickedItems(fromKst, toExclusiveKst, resolvedTopN);
 
         // 2) D1 Retention (요약 + 트렌드)
         OffsetDateTime toExclusivePlus1 = toExclusiveKst.plusDays(1);
@@ -66,7 +73,6 @@ public class DashboardOverviewAdminService {
                         ))
                         .toList();
 
-        // 3) DTO 조립 (네 from() 시그니처 그대로)
         return DashboardOverviewResponseDto.from(
                 fromInclusive,
                 toInclusive,

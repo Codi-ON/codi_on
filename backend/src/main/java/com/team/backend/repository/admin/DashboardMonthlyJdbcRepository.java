@@ -18,159 +18,154 @@ public class DashboardMonthlyJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    // =========================
-    // 1) 월별 KPI upsert
-    // =========================
     public void upsertMonthlyKpi(LocalDate monthStart, String region, OffsetDateTime from, OffsetDateTime to) {
         String sql = """
-            INSERT INTO public.admin_monthly_kpi (
-              month_start, region, generated_at,
-              total_session_events, total_sessions, unique_users, avg_sessions_per_user,
-              total_clicks, total_reco_events,
-              error_events,
-              started_sessions, ended_sessions, session_end_rate,
-              reco_empty, reco_generated, reco_empty_rate
-            )
-            SELECT
-              :monthStart::date AS month_start,
-              :region::text     AS region,
-              now()             AS generated_at,
-
-              (SELECT COUNT(*)
-                 FROM public.session_log
-                WHERE created_at >= :from AND created_at < :to) AS total_session_events,
-
-              (SELECT COUNT(DISTINCT session_id)
-                 FROM public.session_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND session_id IS NOT NULL) AS total_sessions,
-
-              (SELECT COUNT(DISTINCT user_id)
-                 FROM public.session_log
-                WHERE user_id IS NOT NULL
-                  AND created_at >= :from AND created_at < :to) AS unique_users,
-
-              CASE
-                WHEN (SELECT COUNT(DISTINCT user_id)
-                        FROM public.session_log
-                       WHERE user_id IS NOT NULL
-                         AND created_at >= :from AND created_at < :to) = 0
-                THEN 0
-                ELSE ROUND(
-                  (
-                    (SELECT COUNT(DISTINCT session_id)
-                       FROM public.session_log
-                      WHERE created_at >= :from AND created_at < :to
-                        AND session_id IS NOT NULL)::numeric
-                    /
-                    (SELECT COUNT(DISTINCT user_id)
-                       FROM public.session_log
-                      WHERE user_id IS NOT NULL
-                        AND created_at >= :from AND created_at < :to)::numeric
-                  ),
-                  2
+                INSERT INTO public.admin_monthly_kpi (
+                  month_start, region, generated_at,
+                  total_session_events, total_sessions, unique_users, avg_sessions_per_user,
+                  total_clicks, total_reco_events,
+                  error_events,
+                  started_sessions, ended_sessions, session_end_rate,
+                  reco_empty, reco_generated, reco_empty_rate
                 )
-              END AS avg_sessions_per_user,
-
-              (SELECT COUNT(*)
-                 FROM public.item_click_log
-                WHERE created_at >= :from AND created_at < :to) AS total_clicks,
-
-              (SELECT COUNT(*)
-                 FROM public.recommendation_event_log
-                WHERE created_at >= :from AND created_at < :to) AS total_reco_events,
-
-              (SELECT COUNT(*)
-                 FROM public.session_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND event_type = 'ERROR') AS error_events,
-
-              (SELECT COUNT(DISTINCT session_id)
-                 FROM public.session_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND event_type = 'START') AS started_sessions,
-
-              (SELECT COUNT(DISTINCT session_id)
-                 FROM public.session_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND event_type = 'END') AS ended_sessions,
-
-              CASE
-                WHEN (SELECT COUNT(DISTINCT session_id)
-                        FROM public.session_log
-                       WHERE created_at >= :from AND created_at < :to
-                         AND event_type = 'START') = 0
-                THEN 0
-                ELSE ROUND(
-                  (
-                    (SELECT COUNT(DISTINCT session_id)
-                       FROM public.session_log
-                      WHERE created_at >= :from AND created_at < :to
-                        AND event_type = 'END')::numeric
-                    * 100
-                    /
-                    (SELECT COUNT(DISTINCT session_id)
-                       FROM public.session_log
-                      WHERE created_at >= :from AND created_at < :to
-                        AND event_type = 'START')::numeric
-                  ),
-                  2
-                )
-              END AS session_end_rate,
-
-              (SELECT COUNT(*)
-                 FROM public.recommendation_event_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND event_type = 'RECO_TODAY_EMPTY') AS reco_empty,
-
-              (SELECT COUNT(*)
-                 FROM public.recommendation_event_log
-                WHERE created_at >= :from AND created_at < :to
-                  AND event_type = 'RECO_TODAY_GENERATED') AS reco_generated,
-
-              CASE
-                WHEN (
-                  (SELECT COUNT(*) FROM public.recommendation_event_log
-                    WHERE created_at >= :from AND created_at < :to AND event_type = 'RECO_TODAY_EMPTY')
-                  +
-                  (SELECT COUNT(*) FROM public.recommendation_event_log
-                    WHERE created_at >= :from AND created_at < :to AND event_type = 'RECO_TODAY_GENERATED')
-                ) = 0
-                THEN 0
-                ELSE ROUND(
-                  (
-                    (SELECT COUNT(*) FROM public.recommendation_event_log
-                      WHERE created_at >= :from AND created_at < :to AND event_type = 'RECO_TODAY_EMPTY')::numeric
-                    * 100
-                    /
-                    (
-                      (SELECT COUNT(*) FROM public.recommendation_event_log
-                        WHERE created_at >= :from AND created_at < :to AND event_type = 'RECO_TODAY_EMPTY')
+                SELECT
+                  :monthStart::date AS month_start,
+                  :region::text     AS region,
+                  now()             AS generated_at,
+                
+                  (SELECT COUNT(*)
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to) AS total_session_events,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'START')
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to) AS total_sessions,
+                
+                  (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_key))
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to
+                      AND COALESCE(user_id::text, session_key) IS NOT NULL
+                      AND COALESCE(user_id::text, session_key) <> '') AS unique_users,
+                
+                  CASE
+                    WHEN (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_key))
+                            FROM public.session_log
+                           WHERE created_at >= :from AND created_at < :to
+                             AND COALESCE(user_id::text, session_key) IS NOT NULL
+                             AND COALESCE(user_id::text, session_key) <> '') = 0
+                    THEN 0
+                    ELSE ROUND(
+                      (
+                        (SELECT COUNT(*) FILTER (WHERE event_type = 'START')
+                           FROM public.session_log
+                          WHERE created_at >= :from AND created_at < :to)::numeric
+                        /
+                        (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_key))
+                           FROM public.session_log
+                          WHERE created_at >= :from AND created_at < :to
+                            AND COALESCE(user_id::text, session_key) IS NOT NULL
+                            AND COALESCE(user_id::text, session_key) <> '')::numeric
+                      ),
+                      2
+                    )
+                  END AS avg_sessions_per_user,
+                
+                  (SELECT COUNT(*)
+                     FROM public.item_click_log
+                    WHERE created_at >= :from AND created_at < :to) AS total_clicks,
+                
+                  (SELECT COUNT(*)
+                     FROM public.recommendation_event_log
+                    WHERE created_at >= :from AND created_at < :to) AS total_reco_events,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'ERROR')
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to) AS error_events,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'START')
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to) AS started_sessions,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'END')
+                     FROM public.session_log
+                    WHERE created_at >= :from AND created_at < :to) AS ended_sessions,
+                
+                  CASE
+                    WHEN (SELECT COUNT(*) FILTER (WHERE event_type = 'START')
+                            FROM public.session_log
+                           WHERE created_at >= :from AND created_at < :to) = 0
+                    THEN 0
+                    ELSE ROUND(
+                      (
+                        (SELECT COUNT(*) FILTER (WHERE event_type = 'END')
+                           FROM public.session_log
+                          WHERE created_at >= :from AND created_at < :to)::numeric
+                        * 100
+                        /
+                        (SELECT COUNT(*) FILTER (WHERE event_type = 'START')
+                           FROM public.session_log
+                          WHERE created_at >= :from AND created_at < :to)::numeric
+                      ),
+                      2
+                    )
+                  END AS session_end_rate,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_EMPTY')
+                     FROM public.recommendation_event_log
+                    WHERE created_at >= :from AND created_at < :to) AS reco_empty,
+                
+                  (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_GENERATED')
+                     FROM public.recommendation_event_log
+                    WHERE created_at >= :from AND created_at < :to) AS reco_generated,
+                
+                  CASE
+                    WHEN (
+                      (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_EMPTY')
+                         FROM public.recommendation_event_log
+                        WHERE created_at >= :from AND created_at < :to)
                       +
-                      (SELECT COUNT(*) FROM public.recommendation_event_log
-                        WHERE created_at >= :from AND created_at < :to AND event_type = 'RECO_TODAY_GENERATED')
-                    )::numeric
-                  ),
-                  2
-                )
-              END AS reco_empty_rate
-            ON CONFLICT (month_start, region)
-            DO UPDATE SET
-              generated_at = EXCLUDED.generated_at,
-              total_session_events = EXCLUDED.total_session_events,
-              total_sessions       = EXCLUDED.total_sessions,
-              unique_users         = EXCLUDED.unique_users,
-              avg_sessions_per_user= EXCLUDED.avg_sessions_per_user,
-              total_clicks         = EXCLUDED.total_clicks,
-              total_reco_events    = EXCLUDED.total_reco_events,
-              error_events         = EXCLUDED.error_events,
-              started_sessions     = EXCLUDED.started_sessions,
-              ended_sessions       = EXCLUDED.ended_sessions,
-              session_end_rate     = EXCLUDED.session_end_rate,
-              reco_empty           = EXCLUDED.reco_empty,
-              reco_generated       = EXCLUDED.reco_generated,
-              reco_empty_rate      = EXCLUDED.reco_empty_rate
-            """;
+                      (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_GENERATED')
+                         FROM public.recommendation_event_log
+                        WHERE created_at >= :from AND created_at < :to)
+                    ) = 0
+                    THEN 0
+                    ELSE ROUND(
+                      (
+                        (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_EMPTY')
+                           FROM public.recommendation_event_log
+                          WHERE created_at >= :from AND created_at < :to)::numeric
+                        * 100
+                        /
+                        (
+                          (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_EMPTY')
+                             FROM public.recommendation_event_log
+                            WHERE created_at >= :from AND created_at < :to)
+                          +
+                          (SELECT COUNT(*) FILTER (WHERE event_type = 'RECO_TODAY_GENERATED')
+                             FROM public.recommendation_event_log
+                            WHERE created_at >= :from AND created_at < :to)
+                        )::numeric
+                      ),
+                      2
+                    )
+                  END AS reco_empty_rate
+                ON CONFLICT (month_start, region)
+                DO UPDATE SET
+                  generated_at = EXCLUDED.generated_at,
+                  total_session_events = EXCLUDED.total_session_events,
+                  total_sessions       = EXCLUDED.total_sessions,
+                  unique_users         = EXCLUDED.unique_users,
+                  avg_sessions_per_user= EXCLUDED.avg_sessions_per_user,
+                  total_clicks         = EXCLUDED.total_clicks,
+                  total_reco_events    = EXCLUDED.total_reco_events,
+                  error_events         = EXCLUDED.error_events,
+                  started_sessions     = EXCLUDED.started_sessions,
+                  ended_sessions       = EXCLUDED.ended_sessions,
+                  session_end_rate     = EXCLUDED.session_end_rate,
+                  reco_empty           = EXCLUDED.reco_empty,
+                  reco_generated       = EXCLUDED.reco_generated,
+                  reco_empty_rate      = EXCLUDED.reco_empty_rate
+                """;
 
         jdbc.update(sql, Map.of(
                 "monthStart", monthStart,
@@ -180,12 +175,13 @@ public class DashboardMonthlyJdbcRepository {
         ));
     }
 
-    // =========================
-    // 2) 월별 TopClicked 스냅샷 갱신 (delete + insert)
-    // - 스냅샷 테이블에는 최소 컬럼만 저장한다.
-    // - name, click_ratio는 조회 시 JOIN/계산
-    // =========================
-    public void refreshMonthlyTopClicked(LocalDate monthStart, String region, OffsetDateTime from, OffsetDateTime to, int topN) {
+    /**
+     * 핵심 수정:
+     * - item_click_log: clothing_id 사용
+     * - 스냅샷 테이블 컬럼명은 clothing_item_id로 유지하되, 값은 click_log.clothing_id를 넣는다.
+     */
+    public void refreshMonthlyTopClicked(LocalDate monthStart, String region,
+                                         OffsetDateTime from, OffsetDateTime to, int topN) {
         jdbc.update(
                 "DELETE FROM public.admin_monthly_top_clicked_item WHERE month_start = :m AND region = :r",
                 Map.of("m", monthStart, "r", region)
@@ -194,28 +190,32 @@ public class DashboardMonthlyJdbcRepository {
         if (topN <= 0) return;
 
         String sql = """
-            WITH ranked AS (
-              SELECT
-                l.clothing_item_id,
-                COUNT(*) AS click_count
-              FROM public.item_click_log l
-              WHERE l.created_at >= :from AND l.created_at < :to
-              GROUP BY l.clothing_item_id
-              ORDER BY click_count DESC
-              LIMIT :topN
-            )
-            INSERT INTO public.admin_monthly_top_clicked_item (
-              month_start, region, clothing_item_id, click_count, rank_no, created_at
-            )
-            SELECT
-              :monthStart::date,
-              :region::text,
-              r.clothing_item_id,
-              r.click_count,
-              ROW_NUMBER() OVER (ORDER BY r.click_count DESC)::int AS rank_no,
-              now()
-            FROM ranked r
-            """;
+                WITH ranked AS (
+                  SELECT
+                    i.id AS clothing_item_id,
+                    COUNT(*) AS click_count
+                  FROM public.item_click_log l
+                  JOIN public.clothing_item i
+                    ON i.clothing_id = l.clothing_id
+                  WHERE l.created_at >= :from
+                    AND l.created_at <  :to
+                    AND l.clothing_id IS NOT NULL
+                  GROUP BY i.id
+                  ORDER BY click_count DESC
+                  LIMIT :topN
+                )
+                INSERT INTO public.admin_monthly_top_clicked_item (
+                  month_start, region, clothing_item_id, click_count, rank_no, created_at
+                )
+                SELECT
+                  :monthStart::date,
+                  :region::text,
+                  r.clothing_item_id,
+                  r.click_count,
+                  ROW_NUMBER() OVER (ORDER BY r.click_count DESC)::int AS rank_no,
+                  now()
+                FROM ranked r
+                """;
 
         jdbc.update(sql, Map.of(
                 "monthStart", monthStart,
@@ -226,24 +226,21 @@ public class DashboardMonthlyJdbcRepository {
         ));
     }
 
-    // =========================
-    // 3) rows 조회 (KPI)
-    // =========================
     public List<DashboardMonthlyRowResponseDto> fetchMonthlyRows(LocalDate fromMonthStart, LocalDate toMonthStart, String region) {
         String sql = """
-            SELECT
-              to_char(month_start, 'YYYY-MM') AS month,
-              total_session_events, total_sessions, unique_users, avg_sessions_per_user,
-              total_clicks, total_reco_events,
-              error_events,
-              started_sessions, ended_sessions, session_end_rate,
-              reco_empty, reco_generated, reco_empty_rate
-            FROM public.admin_monthly_kpi
-            WHERE region = :r
-              AND month_start >= :fromM
-              AND month_start <= :toM
-            ORDER BY month_start
-            """;
+                SELECT
+                  to_char(month_start, 'YYYY-MM') AS month,
+                  total_session_events, total_sessions, unique_users, avg_sessions_per_user,
+                  total_clicks, total_reco_events,
+                  error_events,
+                  started_sessions, ended_sessions, session_end_rate,
+                  reco_empty, reco_generated, reco_empty_rate
+                FROM public.admin_monthly_kpi
+                WHERE region = :r
+                  AND month_start >= :fromM
+                  AND month_start <= :toM
+                ORDER BY month_start
+                """;
 
         return jdbc.query(sql, Map.of("r", region, "fromM", fromMonthStart, "toM", toMonthStart), (rs, rowNum) -> {
             double avg = rs.getBigDecimal("avg_sessions_per_user") == null ? 0.0 : rs.getBigDecimal("avg_sessions_per_user").doubleValue();
@@ -271,53 +268,47 @@ public class DashboardMonthlyJdbcRepository {
                     rs.getLong("reco_generated"),
                     emptyRate,
 
-                    List.of() // service에서 month별 topClicked 붙인다
+                    List.of()
             );
         });
     }
 
-    // =========================
-    // 4) TopClicked 조회 (range)
-    // - 스냅샷 테이블에는 name/click_ratio 없음
-    // - 조회 시 clothing_item JOIN + click_ratio(0~1) 계산
-    // - topN은 rank_no로 필터링
-    // =========================
     public List<TopClickedSnapshotRow> fetchMonthlyTopClicked(LocalDate fromMonthStart, LocalDate toMonthStart, String region, int topN) {
         if (topN <= 0) return List.of();
 
         String sql = """
-            WITH totals AS (
-              SELECT
-                month_start,
-                region,
-                COALESCE(SUM(click_count), 0)::numeric AS total_clicks
-              FROM public.admin_monthly_top_clicked_item
-              WHERE region = :r
-                AND month_start >= :fromM
-                AND month_start <= :toM
-              GROUP BY month_start, region
-            )
-            SELECT
-              to_char(t.month_start, 'YYYY-MM') AS month,
-              t.rank_no AS rank,
-              t.clothing_item_id AS item_id,
-              COALESCE(i.name, '(unknown)') AS name,
-              t.click_count,
-              CASE WHEN tot.total_clicks = 0 THEN 0
-                   ELSE (t.click_count::numeric / tot.total_clicks)
-              END AS click_ratio
-            FROM public.admin_monthly_top_clicked_item t
-            JOIN totals tot
-              ON tot.month_start = t.month_start
-             AND tot.region = t.region
-            LEFT JOIN public.clothing_item i
-              ON i.id = t.clothing_item_id
-            WHERE t.region = :r
-              AND t.month_start >= :fromM
-              AND t.month_start <= :toM
-              AND t.rank_no <= :topN
-            ORDER BY t.month_start, t.rank_no
-            """;
+                WITH totals AS (
+                  SELECT
+                    month_start,
+                    region,
+                    COALESCE(SUM(click_count), 0)::numeric AS total_clicks
+                  FROM public.admin_monthly_top_clicked_item
+                  WHERE region = :r
+                    AND month_start >= :fromM
+                    AND month_start <= :toM
+                  GROUP BY month_start, region
+                )
+                SELECT
+                  to_char(t.month_start, 'YYYY-MM') AS month,
+                  t.rank_no AS rank,
+                  t.clothing_item_id AS item_id,
+                  COALESCE(i.name, '(unknown)') AS name,
+                  t.click_count,
+                  CASE WHEN tot.total_clicks = 0 THEN 0
+                       ELSE (t.click_count::numeric / tot.total_clicks)
+                  END AS click_ratio
+                FROM public.admin_monthly_top_clicked_item t
+                JOIN totals tot
+                  ON tot.month_start = t.month_start
+                 AND tot.region = t.region
+                LEFT JOIN public.clothing_item i
+                  ON i.id = t.clothing_item_id
+                WHERE t.region = :r
+                  AND t.month_start >= :fromM
+                  AND t.month_start <= :toM
+                  AND t.rank_no <= :topN
+                ORDER BY t.month_start, t.rank_no
+                """;
 
         return jdbc.query(sql, Map.of(
                 "r", region,
@@ -339,12 +330,12 @@ public class DashboardMonthlyJdbcRepository {
 
     public OffsetDateTime getLatestGeneratedAt(LocalDate fromMonthStart, LocalDate toMonthStart, String region) {
         String sql = """
-            SELECT MAX(generated_at) AS generated_at
-            FROM public.admin_monthly_kpi
-            WHERE region = :r
-              AND month_start >= :fromM
-              AND month_start <= :toM
-            """;
+                SELECT MAX(generated_at) AS generated_at
+                FROM public.admin_monthly_kpi
+                WHERE region = :r
+                  AND month_start >= :fromM
+                  AND month_start <= :toM
+                """;
         return jdbc.query(sql, Map.of("r", region, "fromM", fromMonthStart, "toM", toMonthStart), rs -> {
             if (!rs.next()) return null;
             return rs.getObject("generated_at", OffsetDateTime.class);
@@ -352,11 +343,12 @@ public class DashboardMonthlyJdbcRepository {
     }
 
     public record TopClickedSnapshotRow(
-            String month,   // "YYYY-MM"
-            int rank,       // rank_no
-            long itemId,    // clothing_item_id
+            String month,
+            int rank,
+            long itemId,
             String name,
             long clickCount,
-            double clickRatio // 0~1
-    ) {}
+            double clickRatio
+    ) {
+    }
 }

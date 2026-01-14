@@ -1,56 +1,29 @@
+// src/main/java/com/team/backend/api/dto/recommendation/RecommendationCandidatesRequestDto.java
 package com.team.backend.api.dto.recommendation;
 
-import com.team.backend.domain.enums.UsageType;
-import com.team.backend.domain.enums.ThicknessLevel;
-import com.team.backend.domain.enums.feadback.OutfitTempFeedback;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
-
-import java.time.LocalDate;
 
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
 public class RecommendationCandidatesRequestDto {
 
-    @Builder.Default
-    private String region = "Seoul";
+    private String recommendationId; // ✅ 클라이언트가 보내는 id (없으면 서버에서 생성)
 
-    @Builder.Default
-    private Double lat = 37.5665;
+    private String region;
+    private Double lat;
+    private Double lon;
 
-    @Builder.Default
-    private Double lon = 126.9780;
+    private Integer topNPerCategory;
 
-
-    @Min(1) @Max(30)
-    @Builder.Default
-    private Integer topNPerCategory = 10;
-
-
-    private String recommendationKey;
-
-    @Valid
-    @NotNull
-    private ChecklistSubmitDto checklist;
+    private ChecklistDto checklist;
 
     @Getter @Setter
     @NoArgsConstructor @AllArgsConstructor
     @Builder
-    public static class ChecklistSubmitDto {
-        @NotNull
-        private UsageType usageType;
-
-        @NotNull
-        private ThicknessLevel thicknessLevel;
-
-        @NotNull
-        private OutfitTempFeedback yesterdayFeedback;
-
-        @NotNull
-        private LocalDate clientDateISO;
+    public static class ChecklistDto {
+        private java.time.LocalDate clientDateISO;
+        private com.team.backend.domain.enums.UsageType usageType;
+        private com.team.backend.domain.enums.ThicknessLevel thicknessLevel; // 너 프로젝트 enum에 맞춰
     }
 }

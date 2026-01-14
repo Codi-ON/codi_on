@@ -27,15 +27,26 @@ public class DashboardMonthlyAdminService {
 
     private final DashboardMonthlyJdbcRepository repo;
 
+    /**
+     * 월별 KPI + TopClicked 스냅샷을 "조회 시점"에 갱신(upsert/refresh)한 뒤 반환
+     * - 집계 소스(session_log vs session)는 repo SQL이 결정한다.
+     */
     @Transactional
     public DashboardMonthlyResponseDto getMonthly(YearMonth fromMonth, YearMonth toMonth, int topN) {
-        if (fromMonth == null || toMonth == null) throw new IllegalArgumentException("fromMonth/toMonth는 필수입니다.");
-        if (fromMonth.isAfter(toMonth)) throw new IllegalArgumentException("fromMonth는 toMonth보다 클 수 없습니다.");
+        if (fromMonth == null || toMonth == null) {
+            throw new IllegalArgumentException("fromMonth/toMonth는 필수입니다.");
+        }
+        if (fromMonth.isAfter(toMonth)) {
+            throw new IllegalArgumentException("fromMonth는 toMonth보다 클 수 없습니다.");
+        }
+        if (topN < 0) {
+            throw new IllegalArgumentException("topN은 0 이상이어야 합니다.");
+        }
 
         // 1) 월별 스냅샷 upsert + topN 스냅샷 refresh
         var cursor = fromMonth;
         while (!cursor.isAfter(toMonth)) {
-            var range = TimeRanges.month(cursor);
+            var range = TimeRanges.month(cursor); // KST fromInclusive/toExclusive
             LocalDate monthStart = cursor.atDay(1);
 
             repo.upsertMonthlyKpi(monthStart, REGION, range.fromInclusive(), range.toExclusive());
@@ -46,7 +57,7 @@ public class DashboardMonthlyAdminService {
 
         // 2) rows 조회
         LocalDate fromStart = fromMonth.atDay(1);
-        LocalDate toStart   = toMonth.atDay(1);
+        LocalDate toStart = toMonth.atDay(1);
 
         List<DashboardMonthlyRowResponseDto> baseRows = repo.fetchMonthlyRows(fromStart, toStart, REGION);
 

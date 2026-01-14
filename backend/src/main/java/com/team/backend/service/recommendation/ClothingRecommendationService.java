@@ -48,8 +48,6 @@ public class ClothingRecommendationService {
 
     // =========================
     // GET /api/recommend/today
-    // ✅ AI 재정렬 제거
-    // ✅ TOP/BOTTOM/OUTER 각 10개 뽑고, 각 3개씩 합쳐서 9개
     // =========================
     public List<ClothingItemResponseDto> recommendToday(
             String region,
@@ -88,7 +86,6 @@ public class ClothingRecommendationService {
 
     // =========================
     // GET /api/recommend/today/by-category
-    // ✅ AI 재정렬 제거 (요청 limit 만큼 그대로 내려줌)
     // =========================
     public List<ClothingItemResponseDto> recommendTodayByCategory(
             ClothingCategory category,
@@ -119,9 +116,12 @@ public class ClothingRecommendationService {
     // ✅ 여기서만 AI score 채움 + score 내림차순 정렬 보장
     // =========================
     public RecommendationCandidatesResponseDto getCandidates(RecommendationCandidatesRequestDto req, String sessionKey) {
+        if (req == null) throw new IllegalArgumentException("request is required");
 
         LocalDate clientDate = resolveClientDate(req);
-        String recommendationKey = resolveRecommendationKey(req, clientDate);
+
+        // (DTO rename 안 했으면 아래 메서드/필드명만 원복하면 됨)
+        String recommendationId = resolveRecommendationId(req, clientDate);
 
         Long closetId = null;
         if (sessionKey != null && !sessionKey.isBlank()) {
@@ -132,6 +132,7 @@ public class ClothingRecommendationService {
         Integer temp = toTemp(weather.getFeelsLikeTemperature(), weather.getTemperature());
 
         int topN = (req.getTopNPerCategory() == null ? 10 : req.getTopNPerCategory());
+
         var checklist = req.getChecklist();
         if (checklist == null) throw new IllegalArgumentException("checklist is required");
 
@@ -151,7 +152,7 @@ public class ClothingRecommendationService {
             List<ClothingItem> candidates = loadCandidatesScoped(cond, topN, closetId);
             candidatesByCategory.put(category, candidates);
 
-            log.info("[CANDIDATES_POOL] recoKey={} category={} size={}", recommendationKey, category, candidates.size());
+            log.info("[CANDIDATES_POOL] recoId={} category={} size={}", recommendationId, category, candidates.size());
         }
 
         Set<Long> favSet = (sessionKey == null || sessionKey.isBlank())
@@ -182,13 +183,13 @@ public class ClothingRecommendationService {
                 try {
                     if (modelType == RecommendationModelType.BLEND_RATIO) {
                         RecommendationAiDto.BlendRatioRequest aiReq = buildBlendRequest(weather, candidates);
-                        log.info("[AI_REQ][BLEND_RATIO] recoKey={} category={} items={}", recommendationKey, category, candidates.size());
+                        log.info("[AI_REQ][BLEND_RATIO] recoId={} category={} items={}", recommendationId, category, candidates.size());
 
                         RecommendationAiDto.BlendRatioResponse aiRes = recommendationAiClient.recommendBlendRatio(aiReq);
                         CandidateMapping mapped = mapBlendToCandidateDtosSorted(aiRes, candidates, favSet, topN);
 
-                        log.info("[AI_MAP][BLEND_RATIO] recoKey={} category={} results={} matched={} aiUsed={} top3={}",
-                                recommendationKey, category,
+                        log.info("[AI_MAP][BLEND_RATIO] recoId={} category={} results={} matched={} aiUsed={} top3={}",
+                                recommendationId, category,
                                 (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
                                 mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
 
@@ -200,13 +201,13 @@ public class ClothingRecommendationService {
 
                     } else {
                         RecommendationAiDto.MaterialRatioRequest aiReq = buildMaterialRequest(weather, candidates);
-                        log.info("[AI_REQ][MATERIAL_RATIO] recoKey={} category={} items={}", recommendationKey, category, candidates.size());
+                        log.info("[AI_REQ][MATERIAL_RATIO] recoId={} category={} items={}", recommendationId, category, candidates.size());
 
                         RecommendationAiDto.MaterialRatioResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
                         CandidateMapping mapped = mapMaterialToCandidateDtosSorted(aiRes, candidates, favSet, topN);
 
-                        log.info("[AI_MAP][MATERIAL_RATIO] recoKey={} category={} results={} matched={} aiUsed={} top3={}",
-                                recommendationKey, category,
+                        log.info("[AI_MAP][MATERIAL_RATIO] recoId={} category={} results={} matched={} aiUsed={} top3={}",
+                                recommendationId, category,
                                 (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
                                 mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
 
@@ -218,7 +219,7 @@ public class ClothingRecommendationService {
                     }
 
                 } catch (Exception e) {
-                    log.warn("[AI_FAIL] fallback. recoKey={} modelType={} category={}", recommendationKey, modelType, category, e);
+                    log.warn("[AI_FAIL] fallback. recoId={} modelType={} category={}", recommendationId, modelType, category, e);
 
                     categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
                             .category(category)
@@ -235,7 +236,7 @@ public class ClothingRecommendationService {
         }
 
         return RecommendationCandidatesResponseDto.builder()
-                .recommendationKey(recommendationKey)
+                .recommendationId(recommendationId)
                 .models(models)
                 .build();
     }
@@ -267,7 +268,6 @@ public class ClothingRecommendationService {
     // =========================
     // candidates 응답용 매핑 + 정렬 (score desc)
     // =========================
-
     private CandidateMapping mapBlendToCandidateDtosSorted(
             RecommendationAiDto.BlendRatioResponse aiRes,
             List<ClothingItem> candidates,
@@ -299,7 +299,6 @@ public class ClothingRecommendationService {
 
         int matched = (int) out.stream().filter(d -> d.getScore() != null).count();
         if (matched == 0) {
-            // results는 있는데 join=0 -> clothingId 불일치 가능성이 가장 큼
             return new CandidateMapping(fallbackCandidates(candidates, favSet, limit), false, 0);
         }
 
@@ -373,11 +372,10 @@ public class ClothingRecommendationService {
     }
 
     // =========================
-    // AI Request builders (DTO 기준으로 교체)
+    // AI Request builders
     // =========================
-
     private RecommendationAiDto.BlendRatioRequest buildBlendRequest(DailyWeatherResponseDto w, List<ClothingItem> items) {
-        Number cloud = w.getCloudAmount(); // Integer일 수도 있고 Double일 수도 있으니 Number로 받기
+        Number cloud = w.getCloudAmount();
 
         RecommendationAiDto.BlendContext ctx = new RecommendationAiDto.BlendContext(
                 w.getTemperature(),
@@ -432,16 +430,16 @@ public class ClothingRecommendationService {
     // =========================
     // 내부 유틸
     // =========================
-
     private LocalDate resolveClientDate(RecommendationCandidatesRequestDto req) {
-        if (req == null || req.getChecklist() == null) return TimeRanges.todayKst();
+        if (req.getChecklist() == null) return TimeRanges.todayKst();
         if (req.getChecklist().getClientDateISO() == null) return TimeRanges.todayKst();
         return req.getChecklist().getClientDateISO();
     }
 
-    private String resolveRecommendationKey(RecommendationCandidatesRequestDto req, LocalDate clientDate) {
-        if (req != null && req.getRecommendationKey() != null && !req.getRecommendationKey().isBlank()) {
-            return req.getRecommendationKey();
+    private String resolveRecommendationId(RecommendationCandidatesRequestDto req, LocalDate clientDate) {
+        // DTO rename 전제: getRecommendationId()
+        if (req.getRecommendationId() != null && !req.getRecommendationId().isBlank()) {
+            return req.getRecommendationId();
         }
         return "RECO-" + TimeRanges.ymCompact(clientDate);
     }

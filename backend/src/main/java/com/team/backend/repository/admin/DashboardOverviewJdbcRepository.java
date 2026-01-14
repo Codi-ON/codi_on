@@ -24,91 +24,24 @@ public class DashboardOverviewJdbcRepository {
     private static final String S_END   = "END";
     private static final String S_ERROR = "ERROR";
 
-    // recommendation_event_log event_type (string 고정: enum import로 인한 컴파일 깨짐 방지)
-    private static final String R_EMPTY      = "RECO_TODAY_EMPTY";
-    private static final String R_GENERATED  = "RECO_TODAY_GENERATED";
+    // recommendation_event_log event_type
+    private static final String R_EMPTY     = "RECO_TODAY_EMPTY";
+    private static final String R_GENERATED = "RECO_TODAY_GENERATED";
 
-    // funnel
-    private static final String F_CHECKLIST  = "CHECKLIST_SUBMITTED";
-    private static final String F_SHOWN      = "RECO_SHOWN";
-    private static final String F_SELECTED   = "RECO_ITEM_SELECTED";
+    // funnel (recommendation_event_log 기준)
+    private static final String F_CHECKLIST = "CHECKLIST_SUBMITTED";
+    private static final String F_SHOWN     = "RECO_SHOWN";
+    private static final String F_SELECTED  = "RECO_ITEM_SELECTED";
 
     private final NamedParameterJdbcTemplate jdbc;
-
-    // =========================
-    // Rows (Service/Mapper에서 DTO로 변환)
-    // =========================
-
-    @Getter
-    @AllArgsConstructor
-    public static class SummaryRow {
-        private final long totalSessionEvents;     // session_log row 수
-        private final long totalSessions;          // START count
-        private final long uniqueUsers;            // distinct session_key (nonblank)
-        private final double avgSessionsPerUser;   // totalSessions / uniqueUsers
-
-        private final long totalClicks;            // item_click_log count
-        private final long totalRecoEvents;        // recommendation_event_log count
-
-        private final long errorEvents;            // session_log ERROR count
-
-        private final long startedSessions;        // START count
-        private final long endedSessions;          // END count
-        private final double sessionEndRate;       // END/START * 100
-
-        private final long recoEmpty;              // RECO_TODAY_EMPTY
-        private final long recoGenerated;          // RECO_TODAY_GENERATED
-        private final double recoEmptyRate;        // EMPTY/(EMPTY+GENERATED) * 100
-
-        private final double returningRate;        // (START>=2)/(START>=1) * 100 (session_key 기준)
-
-        private final FunnelRow funnel;            // 퍼널 카운트/전환율
-    }
-
-    @Getter
-    @AllArgsConstructor
-    public static class FunnelRow {
-        private final long checklistSubmitted;
-        private final long recoShown;
-        private final long itemSelected;
-        private final double checklistToShownRate; // 0~100
-        private final double shownToSelectRate;    // 0~100
-    }
-
-    @Getter
-    @AllArgsConstructor
-    public static class DailySessionRow {
-        private final LocalDate date;              // KST date
-        private final long sessionEventCount;      // session_log row count
-        private final long uniqueUserCount;        // distinct session_key (nonblank)
-        private final long errorEventCount;        // ERROR count
-        private final double errorRate;            // ERROR/session_events * 100
-    }
-
-    @Getter
-    @AllArgsConstructor
-    public static class DailyClickRow {
-        private final LocalDate date;              // KST date
-        private final long clickCount;
-    }
-
-    @Getter
-    @AllArgsConstructor
-    public static class TopClickedItemRow {
-        private final long itemId;
-        private final String name;
-        private final long clickCount;
-    }
 
     // =========================
     // Public APIs
     // =========================
 
     public SummaryRow findSummary(OffsetDateTime from, OffsetDateTime to) {
-        // 1) 기본 summary + empty rate + end rate
         String sql = """
             SELECT
-              /* session_log */
               (SELECT COUNT(*)
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to) AS total_session_events,
@@ -117,10 +50,11 @@ public class DashboardOverviewJdbcRepository {
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to) AS total_sessions,
 
-              (SELECT COUNT(DISTINCT session_key)
+              (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_key))
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to
-                  AND session_key IS NOT NULL AND session_key <> '') AS unique_users,
+                  AND COALESCE(user_id::text, session_key) IS NOT NULL
+                  AND COALESCE(user_id::text, session_key) <> '') AS unique_users,
 
               (SELECT COUNT(*) FILTER (WHERE event_type = :S_ERROR)
                  FROM public.session_log
@@ -134,12 +68,10 @@ public class DashboardOverviewJdbcRepository {
                  FROM public.session_log
                 WHERE created_at >= :from AND created_at < :to) AS ended_sessions,
 
-              /* click */
               (SELECT COUNT(*)
                  FROM public.item_click_log
                 WHERE created_at >= :from AND created_at < :to) AS total_clicks,
 
-              /* reco */
               (SELECT COUNT(*)
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to) AS total_reco_events,
@@ -160,10 +92,7 @@ public class DashboardOverviewJdbcRepository {
                 .addValue("R_EMPTY", R_EMPTY)
                 .addValue("R_GENERATED", R_GENERATED);
 
-        // 2) 퍼널
         FunnelRow funnel = findFunnel(from, to);
-
-        // 3) 리텐션(기간 내 재방문율)
         double returningRate = findReturningRate(from, to);
 
         try {
@@ -222,81 +151,36 @@ public class DashboardOverviewJdbcRepository {
         }
     }
 
-    public List<DailySessionRow> findDailySessions(OffsetDateTime from, OffsetDateTime to) {
+    public double findReturningRate(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
+            WITH per_user AS (
+              SELECT
+                COALESCE(user_id::text, session_key) AS user_key,
+                COUNT(*) FILTER (WHERE event_type = :S_START) AS starts
+              FROM public.session_log
+              WHERE created_at >= :from
+                AND created_at <  :to
+                AND COALESCE(user_id::text, session_key) IS NOT NULL
+                AND COALESCE(user_id::text, session_key) <> ''
+              GROUP BY COALESCE(user_id::text, session_key)
+            )
             SELECT
-              (created_at AT TIME ZONE 'Asia/Seoul')::date AS d,
-              COUNT(*) AS session_event_count,
-              COUNT(DISTINCT session_key) FILTER (WHERE session_key IS NOT NULL AND session_key <> '') AS unique_user_count,
-              COUNT(*) FILTER (WHERE event_type = :S_ERROR) AS error_event_count
-            FROM public.session_log
-            WHERE created_at >= :from
-              AND created_at <  :to
-            GROUP BY d
-            ORDER BY d
+              COUNT(*) AS active_users,
+              COUNT(*) FILTER (WHERE starts >= 2) AS returning_users
+            FROM per_user
             """;
 
-        MapSqlParameterSource p = baseParams(from, to).addValue("S_ERROR", S_ERROR);
+        MapSqlParameterSource p = baseParams(from, to).addValue("S_START", S_START);
 
-        return jdbc.query(sql, p, (rs, rowNum) -> {
-            long events = rs.getLong("session_event_count");
-            long errors = rs.getLong("error_event_count");
-            double errorRate = (events == 0) ? 0.0 : round2((double) errors * 100.0 / (double) events);
-
-            return new DailySessionRow(
-                    rs.getObject("d", LocalDate.class),
-                    events,
-                    rs.getLong("unique_user_count"),
-                    errors,
-                    errorRate
-            );
-        });
-    }
-
-    public List<DailyClickRow> findDailyClicks(OffsetDateTime from, OffsetDateTime to) {
-        String sql = """
-            SELECT
-              (created_at AT TIME ZONE 'Asia/Seoul')::date AS d,
-              COUNT(*) AS click_count
-            FROM public.item_click_log
-            WHERE created_at >= :from
-              AND created_at <  :to
-            GROUP BY d
-            ORDER BY d
-            """;
-
-        return jdbc.query(sql, baseParams(from, to), (rs, rowNum) ->
-                new DailyClickRow(
-                        rs.getObject("d", LocalDate.class),
-                        rs.getLong("click_count")
-                )
-        );
-    }
-
-    public List<TopClickedItemRow> findTopClickedItems(OffsetDateTime from, OffsetDateTime to, int topN) {
-        String sql = """
-            SELECT
-              l.clothing_item_id AS item_id,
-              COALESCE(i.name, '(unknown)') AS name,
-              COUNT(*) AS click_count
-            FROM public.item_click_log l
-            LEFT JOIN public.clothing_item i ON i.id = l.clothing_item_id
-            WHERE l.created_at >= :from
-              AND l.created_at <  :to
-            GROUP BY l.clothing_item_id, i.name
-            ORDER BY click_count DESC
-            LIMIT :topN
-            """;
-
-        MapSqlParameterSource p = baseParams(from, to).addValue("topN", topN);
-
-        return jdbc.query(sql, p, (rs, rowNum) ->
-                new TopClickedItemRow(
-                        rs.getLong("item_id"),
-                        rs.getString("name"),
-                        rs.getLong("click_count")
-                )
-        );
+        try {
+            return jdbc.queryForObject(sql, p, (rs, rowNum) -> {
+                long active = rs.getLong("active_users");
+                long returning = rs.getLong("returning_users");
+                return (active == 0) ? 0.0 : round2((double) returning * 100.0 / (double) active);
+            });
+        } catch (EmptyResultDataAccessException e) {
+            return 0.0;
+        }
     }
 
     public FunnelRow findFunnel(OffsetDateTime from, OffsetDateTime to) {
@@ -331,38 +215,160 @@ public class DashboardOverviewJdbcRepository {
         }
     }
 
-    public double findReturningRate(OffsetDateTime from, OffsetDateTime to) {
-        // START 기준: session_key가 기간 내 START 2번 이상이면 returning
+    public List<DailySessionRow> findDailySessions(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
-            WITH per_user AS (
-              SELECT session_key, COUNT(*) AS starts
-              FROM public.session_log
-              WHERE created_at >= :from AND created_at < :to
-                AND event_type = :S_START
-                AND session_key IS NOT NULL AND session_key <> ''
-              GROUP BY session_key
-            )
             SELECT
-              COUNT(*) AS active_users,
-              COUNT(*) FILTER (WHERE starts >= 2) AS returning_users
-            FROM per_user
+              (created_at AT TIME ZONE '%s')::date AS d,
+              COUNT(*) AS session_event_count,
+              COUNT(DISTINCT COALESCE(user_id::text, session_key))
+                FILTER (WHERE COALESCE(user_id::text, session_key) IS NOT NULL
+                         AND COALESCE(user_id::text, session_key) <> '') AS unique_user_count,
+              COUNT(*) FILTER (WHERE event_type = :S_ERROR) AS error_event_count
+            FROM public.session_log
+            WHERE created_at >= :from
+              AND created_at <  :to
+            GROUP BY d
+            ORDER BY d
+            """.formatted(KST);
+
+        MapSqlParameterSource p = baseParams(from, to).addValue("S_ERROR", S_ERROR);
+
+        return jdbc.query(sql, p, (rs, rowNum) -> {
+            long events = rs.getLong("session_event_count");
+            long errors = rs.getLong("error_event_count");
+            double errorRate = (events == 0) ? 0.0 : round2((double) errors * 100.0 / (double) events);
+
+            return new DailySessionRow(
+                    rs.getObject("d", LocalDate.class),
+                    events,
+                    rs.getLong("unique_user_count"),
+                    errors,
+                    errorRate
+            );
+        });
+    }
+
+    public List<DailyClickRow> findDailyClicks(OffsetDateTime from, OffsetDateTime to) {
+        String sql = """
+            SELECT
+              (created_at AT TIME ZONE '%s')::date AS d,
+              COUNT(*) AS click_count
+            FROM public.item_click_log
+            WHERE created_at >= :from
+              AND created_at <  :to
+            GROUP BY d
+            ORDER BY d
+            """.formatted(KST);
+
+        return jdbc.query(sql, baseParams(from, to), (rs, rowNum) ->
+                new DailyClickRow(
+                        rs.getObject("d", LocalDate.class),
+                        rs.getLong("click_count")
+                )
+        );
+    }
+
+    /**
+     * ✅ TopClicked 최종:
+     * - item_click_log: clothing_id 사용
+     * - clothing_item: clothing_id로 매핑해서 PK(id)를 가져옴
+     * - 결과 itemId는 clothing_item.id (PK)로 통일
+     */
+    public List<TopClickedItemRow> findTopClickedItems(OffsetDateTime from, OffsetDateTime to, int topN) {
+        String sql = """
+            SELECT
+              i.id AS item_id,
+              COALESCE(i.name, '(unknown)') AS name,
+              COUNT(*) AS click_count
+            FROM public.item_click_log l
+            JOIN public.clothing_item i
+              ON i.clothing_id = l.clothing_id
+            WHERE l.created_at >= :from
+              AND l.created_at <  :to
+              AND l.clothing_id IS NOT NULL
+            GROUP BY i.id, i.name
+            ORDER BY click_count DESC
+            LIMIT :topN
             """;
 
-        MapSqlParameterSource p = baseParams(from, to).addValue("S_START", S_START);
+        MapSqlParameterSource p = baseParams(from, to).addValue("topN", topN);
 
-        try {
-            return jdbc.queryForObject(sql, p, (rs, rowNum) -> {
-                long active = rs.getLong("active_users");
-                long returning = rs.getLong("returning_users");
-                return (active == 0) ? 0.0 : round2((double) returning * 100.0 / (double) active);
-            });
-        } catch (EmptyResultDataAccessException e) {
-            return 0.0;
-        }
+        return jdbc.query(sql, p, (rs, rowNum) ->
+                new TopClickedItemRow(
+                        rs.getLong("item_id"),
+                        rs.getString("name"),
+                        rs.getLong("click_count")
+                )
+        );
     }
 
     // =========================
-    // helpers
+    // Rows
+    // =========================
+
+    @Getter
+    @AllArgsConstructor
+    public static class SummaryRow {
+        private final long totalSessionEvents;
+        private final long totalSessions;
+        private final long uniqueUsers;
+        private final double avgSessionsPerUser;
+
+        private final long totalClicks;
+        private final long totalRecoEvents;
+
+        private final long errorEvents;
+
+        private final long startedSessions;
+        private final long endedSessions;
+        private final double sessionEndRate;
+
+        private final long recoEmpty;
+        private final long recoGenerated;
+        private final double recoEmptyRate;
+
+        private final double returningRate;
+
+        private final FunnelRow funnel;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class FunnelRow {
+        private final long checklistSubmitted;
+        private final long recoShown;
+        private final long itemSelected;
+        private final double checklistToShownRate;
+        private final double shownToSelectRate;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class DailySessionRow {
+        private final LocalDate date;
+        private final long sessionEventCount;
+        private final long uniqueUserCount;
+        private final long errorEventCount;
+        private final double errorRate;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class DailyClickRow {
+        private final LocalDate date;
+        private final long clickCount;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class TopClickedItemRow {
+        private final long itemId;     // clothing_item.id (PK)
+        private final String name;
+        private final long clickCount;
+    }
+
+    // =========================
+    // Utils
     // =========================
 
     private static MapSqlParameterSource baseParams(OffsetDateTime from, OffsetDateTime to) {
