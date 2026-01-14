@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Repository
@@ -22,35 +23,34 @@ public class RecommendationEventLogJdbcRepository {
 
     public void insert(RecommendationEventLogRequestDto dto) {
         String sql = """
-            INSERT INTO public.recommendation_event_log (
-                created_at,
-                user_id,
-                session_key,
-                recommendation_id,
-                funnel_step,
-                event_type,
-                payload
-            )
-            VALUES (
-                COALESCE(:createdAt, now()),
-                :userId,
-                :sessionKey,
-                :recommendationId,
-                :funnelStep,
-                :eventType,
-                CASE
-                  WHEN :payloadJson IS NULL THEN NULL
-                  ELSE CAST(:payloadJson AS jsonb)
-                END
-            )
-            """;
+                INSERT INTO public.recommendation_event_log (
+                    created_at,
+                    user_id,
+                    session_key,
+                    recommendation_id,
+                    funnel_step,
+                    event_type,
+                    payload
+                )
+                VALUES (
+                    COALESCE(:createdAt, now()),
+                    :userId,
+                    :sessionKey,
+                    :recommendationId,
+                    :funnelStep,
+                    :eventType,
+                    CASE
+                      WHEN :payloadJson IS NULL THEN NULL
+                      ELSE CAST(:payloadJson AS jsonb)
+                    END
+                )
+                """;
 
         MapSqlParameterSource p = new MapSqlParameterSource()
                 .addValue("createdAt", dto.getCreatedAt())
                 .addValue("userId", dto.getUserId())
                 .addValue("sessionKey", dto.getSessionKey())
-                // ✅ UUID 그대로 바인딩
-                .addValue("recommendationId", dto.getRecommendationId())
+                .addValue("recommendationId", dto.getRecommendationId()) // UUID 그대로
                 .addValue("funnelStep", dto.getFunnelStep())
                 .addValue("eventType", dto.getEventType())
                 .addValue("payloadJson", dto.payloadJsonOrNull());
@@ -62,25 +62,25 @@ public class RecommendationEventLogJdbcRepository {
         int resolved = (limit == null ? 200 : Math.min(Math.max(limit, 1), 200));
 
         String sql = """
-            SELECT
-              id,
-              created_at,
-              user_id,
-              session_key,
-              recommendation_id,
-              funnel_step,
-              event_type,
-              CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
-            FROM public.recommendation_event_log
-            ORDER BY created_at DESC, id DESC
-            LIMIT :limit
-            """;
+                SELECT
+                  id,
+                  created_at,
+                  user_id,
+                  session_key,
+                  recommendation_id,
+                  funnel_step,
+                  event_type,
+                  CASE WHEN payload IS NULL THEN NULL ELSE payload::text END AS payload_json
+                FROM public.recommendation_event_log
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit
+                """;
 
         return jdbc.query(sql, new MapSqlParameterSource("limit", resolved), this::mapRow);
     }
 
     private RecommendationEventLogResponseDto mapRow(ResultSet rs, int rowNum) throws SQLException {
-        UUID recoId = (UUID) rs.getObject("recommendation_id");
+        UUID recoId = rs.getObject("recommendation_id", UUID.class);
 
         return RecommendationEventLogResponseDto.builder()
                 .id(rs.getLong("id"))
@@ -92,5 +92,21 @@ public class RecommendationEventLogJdbcRepository {
                 .eventType(rs.getString("event_type"))
                 .payloadJson(rs.getString("payload_json"))
                 .build();
+    }
+
+    public void insertEvent(
+            String sessionKey,
+            UUID recommendationId,
+            String eventType,
+            Map<String, Object> payload
+    ) {
+        RecommendationEventLogRequestDto dto = RecommendationEventLogRequestDto.builder()
+                .sessionKey(sessionKey)
+                .recommendationId(recommendationId)
+                .eventType(eventType)
+                .payload(payload)
+                .build();
+
+        insert(dto);
     }
 }
