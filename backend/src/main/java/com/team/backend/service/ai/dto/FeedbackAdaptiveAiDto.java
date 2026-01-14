@@ -1,12 +1,12 @@
 // src/main/java/com/team/backend/service/ai/dto/FeedbackAdaptiveAiDto.java
 package com.team.backend.service.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -58,9 +58,11 @@ public final class FeedbackAdaptiveAiDto {
     public static class Range {
 
         @JsonProperty("from")
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
         public LocalDate from;
 
         @JsonProperty("to")
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
         public LocalDate to;
     }
 
