@@ -1,6 +1,7 @@
 // src/pages/user/RecommendationPage.tsx
 import React, {useEffect, useMemo, useCallback, useState} from "react";
 import {useNavigate} from "react-router-dom";
+import { logRepo } from "@/lib/repo/logRepo";
 import {Card, Button, Badge, Stepper, cn} from "@/app/DesignSystem";
 import {
     ChevronLeft,
