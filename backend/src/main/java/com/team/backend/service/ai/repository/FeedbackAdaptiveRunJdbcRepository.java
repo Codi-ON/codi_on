@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/service/ai/FeedbackAdaptiveRunJdbcRepository.java
-package com.team.backend.service.ai;
+package com.team.backend.service.ai.repository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
