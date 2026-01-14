@@ -13,7 +13,7 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Builder(toBuilder = true)
 public class RecommendationEventLogRequestDto {
 
     private OffsetDateTime createdAt; // null이면 DB now()
@@ -33,16 +33,27 @@ public class RecommendationEventLogRequestDto {
 
     private static final ObjectMapper OM = new ObjectMapper();
 
+    /**
+     * Header sessionKey로 보정이 필요하면 "새 DTO"를 반환한다.
+     * - 기존 객체를 mutate 하지 않는다.
+     */
     public RecommendationEventLogRequestDto fillSessionKeyIfMissing(String headerSessionKey) {
-        if ((sessionKey == null || sessionKey.isBlank()) && headerSessionKey != null && !headerSessionKey.isBlank()) {
-            this.sessionKey = headerSessionKey;
-        }
-        return this;
+        boolean missingBody = (sessionKey == null || sessionKey.isBlank());
+        boolean hasHeader = (headerSessionKey != null && !headerSessionKey.isBlank());
+
+        if (!missingBody || !hasHeader) return this;
+
+        return this.toBuilder()
+                .sessionKey(headerSessionKey)
+                .build();
     }
 
     public String payloadJsonOrNull() {
         if (payload == null) return null;
-        try { return OM.writeValueAsString(payload); }
-        catch (JsonProcessingException e) { return "{\"payloadSerializeError\":true}"; }
+        try {
+            return OM.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            return "{\"payloadSerializeError\":true}";
+        }
     }
 }

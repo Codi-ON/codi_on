@@ -18,7 +18,6 @@ public class RecommendationEventLogService {
 
     public void write(RecommendationEventLogRequestDto dto) {
         if (dto == null) throw new IllegalArgumentException("dto is null");
-
         if (dto.getEventType() == null || dto.getEventType().isBlank()) {
             throw new IllegalArgumentException("eventType is required");
         }
@@ -29,8 +28,20 @@ public class RecommendationEventLogService {
         // 1) 세션키 검증/정규화
         String normalizedKey = sessionService.validateOnly(dto.getSessionKey());
 
-        // 2) 세션 upsert/ensure (세션 테이블이든 session_log든, 네 정책대로 보장)
+        // 2) 세션 ensure
         sessionService.ensureSession(normalizedKey);
 
+        // 3) 정규화된 세션키로 저장 DTO 구성 + insert
+        RecommendationEventLogRequestDto toSave = RecommendationEventLogRequestDto.builder()
+                .createdAt(dto.getCreatedAt())
+                .userId(dto.getUserId())
+                .sessionKey(normalizedKey)
+                .recommendationId(dto.getRecommendationId())
+                .funnelStep(dto.getFunnelStep())
+                .eventType(dto.getEventType())
+                .payload(dto.getPayload())
+                .build();
+
+        repo.insert(toSave);
     }
 }

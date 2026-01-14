@@ -1,3 +1,4 @@
+// src/main/java/com/team/backend/config/HttpClientConfig.java
 package com.team.backend.config;
 
 import lombok.extern.slf4j.Slf4j;
@@ -6,6 +7,8 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
@@ -21,7 +24,7 @@ public class HttpClientConfig {
             @Value("${ai.connect-timeout-ms:2000}") int connectTimeoutMs,
             @Value("${ai.read-timeout-ms:7000}") int readTimeoutMs
     ) {
-        log.info("[AI][CONFIG] baseUrl={}, connectTimeoutMs={}, readTimeoutMs={}",
+        log.info("[AI][CONFIG][RestTemplate] baseUrl={}, connectTimeoutMs={}, readTimeoutMs={}",
                 baseUrl, connectTimeoutMs, readTimeoutMs);
 
         return builder
@@ -48,6 +51,30 @@ public class HttpClientConfig {
                         throw e;
                     }
                 })
+                .build();
+    }
+
+    /**
+     *
+     *       여기서는 타임아웃/베이스URL만 책임지고,
+     *       요청/응답 로깅은 클라이언트 레이어에서 log.info로 찍는 방식으로 간다.
+     */
+    @Bean(name = "aiRestClient")
+    public RestClient aiRestClient(
+            @Value("${ai.base-url:http://localhost:8000}") String baseUrl,
+            @Value("${ai.connect-timeout-ms:2000}") int connectTimeoutMs,
+            @Value("${ai.read-timeout-ms:7000}") int readTimeoutMs
+    ) {
+        log.info("[AI][CONFIG][RestClient] baseUrl={}, connectTimeoutMs={}, readTimeoutMs={}",
+                baseUrl, connectTimeoutMs, readTimeoutMs);
+
+        SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
+        rf.setConnectTimeout(connectTimeoutMs);
+        rf.setReadTimeout(readTimeoutMs);
+
+        return RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(rf)
                 .build();
     }
 }
