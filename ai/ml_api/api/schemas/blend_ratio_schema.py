@@ -1,6 +1,8 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from .feedback_schema import MonthlyFeedbackRequest
+
 # ▼▼▼ 입력 ▼▼▼
 class Context(BaseModel):
     temperature: float = Field(..., description="Air temperature")
@@ -34,6 +36,10 @@ class Weather(BaseModel):
     precipitationProbability: Optional[int]
 
 class BlendRatioFeedbackRequest(BaseModel):
+    weather: Weather
+    items: List[Item]
+
+class AdaptiveFeedbackRequest(MonthlyFeedbackRequest):
     weather: Weather
     items: List[Item]
 
