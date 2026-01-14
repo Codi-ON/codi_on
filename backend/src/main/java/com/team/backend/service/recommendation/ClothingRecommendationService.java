@@ -3,6 +3,7 @@ package com.team.backend.service.recommendation;
 
 import com.team.backend.api.dto.clothingItem.ClothingItemRequestDto;
 import com.team.backend.api.dto.clothingItem.ClothingItemResponseDto;
+import com.team.backend.api.dto.log.RecommendationEventLogRequestDto;
 import com.team.backend.api.dto.recommendation.RecommendationCandidatesRequestDto;
 import com.team.backend.api.dto.recommendation.RecommendationCandidatesResponseDto;
 import com.team.backend.api.dto.weather.DailyWeatherResponseDto;
@@ -13,6 +14,7 @@ import com.team.backend.domain.enums.UsageType;
 import com.team.backend.domain.enums.recommendation.RecommendationModelType;
 import com.team.backend.repository.closet.ClosetRepository;
 import com.team.backend.repository.clothing.ClothingItemRepository;
+import com.team.backend.repository.log.RecommendationEventLogJdbcRepository;
 import com.team.backend.service.ai.dto.RecommendationAiClient;
 import com.team.backend.service.ai.dto.RecommendationAiDto;
 import com.team.backend.service.favorite.FavoriteService;
@@ -45,11 +47,10 @@ public class ClothingRecommendationService {
     private final WeatherService weatherService;
     private final RecommendationAiClient recommendationAiClient;
     private final FavoriteService favoriteService;
+    private  final RecommendationEventLogJdbcRepository recoLogRepo;
 
     // =========================
     // GET /api/recommend/today
-    // ✅ AI 재정렬 제거
-    // ✅ TOP/BOTTOM/OUTER 각 10개 뽑고, 각 3개씩 합쳐서 9개
     // =========================
     public List<ClothingItemResponseDto> recommendToday(
             String region,
@@ -88,7 +89,6 @@ public class ClothingRecommendationService {
 
     // =========================
     // GET /api/recommend/today/by-category
-    // ✅ AI 재정렬 제거 (요청 limit 만큼 그대로 내려줌)
     // =========================
     public List<ClothingItemResponseDto> recommendTodayByCategory(
             ClothingCategory category,
@@ -118,142 +118,175 @@ public class ClothingRecommendationService {
     // POST /api/recommend/candidates
     // ✅ 여기서만 AI score 채움 + score 내림차순 정렬 보장
     // =========================
-    public RecommendationCandidatesResponseDto getCandidates(RecommendationCandidatesRequestDto req, String sessionKey) {
+  public RecommendationCandidatesResponseDto getCandidates(RecommendationCandidatesRequestDto req, String sessionKey) {
+    if (req == null) throw new IllegalArgumentException("request is required");
 
-        LocalDate clientDate = resolveClientDate(req);
-        String recommendationKey = resolveRecommendationKey(req, clientDate);
+    // ✅ A단계(체크리스트)에서 발급된 recommendationId를 "그대로" 사용
+    String recommendationId = req.getRecommendationId();
+    if (recommendationId == null || recommendationId.isBlank()) {
+        throw new IllegalArgumentException("recommendationId is required");
+    }
 
-        Long closetId = null;
-        if (sessionKey != null && !sessionKey.isBlank()) {
-            closetId = resolveClosetId(sessionKey);
-        }
+    Long closetId = null;
+    if (sessionKey != null && !sessionKey.isBlank()) {
+        closetId = resolveClosetId(sessionKey);
+    }
 
-        var weather = weatherService.getTodaySmart(req.getLat(), req.getLon(), req.getRegion());
-        Integer temp = toTemp(weather.getFeelsLikeTemperature(), weather.getTemperature());
+    long t0 = System.currentTimeMillis();
 
-        int topN = (req.getTopNPerCategory() == null ? 10 : req.getTopNPerCategory());
-        var checklist = req.getChecklist();
-        if (checklist == null) throw new IllegalArgumentException("checklist is required");
+    var weather = weatherService.getTodaySmart(req.getLat(), req.getLon(), req.getRegion());
+    Integer temp = toTemp(weather.getFeelsLikeTemperature(), weather.getTemperature());
 
-        Set<UsageType> usageTypes = expandUsageTypes(checklist.getUsageType());
+    int topN = (req.getTopNPerCategory() == null ? 10 : req.getTopNPerCategory());
 
-        Map<ClothingCategory, List<ClothingItem>> candidatesByCategory = new LinkedHashMap<>();
-        for (ClothingCategory category : ClothingCategory.values()) {
-            ClothingItemRequestDto.SearchCondition cond = ClothingItemRequestDto.SearchCondition.builder()
-                    .category(category)
-                    .temp(temp)
-                    .thicknessLevel(checklist.getThicknessLevel())
-                    .usageTypes(usageTypes)
-                    .sort(SORT_DEFAULT)
-                    .limit(topN)
-                    .build();
+    var checklist = req.getChecklist();
+    if (checklist == null) throw new IllegalArgumentException("checklist is required");
 
-            List<ClothingItem> candidates = loadCandidatesScoped(cond, topN, closetId);
-            candidatesByCategory.put(category, candidates);
+    Set<UsageType> usageTypes = expandUsageTypes(checklist.getUsageType());
 
-            log.info("[CANDIDATES_POOL] recoKey={} category={} size={}", recommendationKey, category, candidates.size());
-        }
+    Map<ClothingCategory, List<ClothingItem>> candidatesByCategory = new LinkedHashMap<>();
+    for (ClothingCategory category : ClothingCategory.values()) {
+        ClothingItemRequestDto.SearchCondition cond = ClothingItemRequestDto.SearchCondition.builder()
+                .category(category)
+                .temp(temp)
+                .thicknessLevel(checklist.getThicknessLevel())
+                .usageTypes(usageTypes)
+                .sort(SORT_DEFAULT)
+                .limit(topN)
+                .build();
 
-        Set<Long> favSet = (sessionKey == null || sessionKey.isBlank())
-                ? Set.of()
-                : new HashSet<>(favoriteService.listFavoriteClothingIds(sessionKey));
+        List<ClothingItem> candidates = loadCandidatesScoped(cond, topN, closetId);
+        candidatesByCategory.put(category, candidates);
 
-        List<RecommendationCandidatesResponseDto.ModelCandidatesDto> models = new ArrayList<>();
+        log.info("[CANDIDATES_POOL] recoId={} category={} size={}", recommendationId, category, candidates.size());
+    }
 
-        for (RecommendationModelType modelType : List.of(
-                RecommendationModelType.BLEND_RATIO,
-                RecommendationModelType.MATERIAL_RATIO
-        )) {
-            List<RecommendationCandidatesResponseDto.CategoryCandidatesDto> categoryDtos = new ArrayList<>();
+    Set<Long> favSet = (sessionKey == null || sessionKey.isBlank())
+            ? Set.of()
+            : new HashSet<>(favoriteService.listFavoriteClothingIds(sessionKey));
 
-            for (var entry : candidatesByCategory.entrySet()) {
-                ClothingCategory category = entry.getKey();
-                List<ClothingItem> candidates = entry.getValue();
+    List<RecommendationCandidatesResponseDto.ModelCandidatesDto> models = new ArrayList<>();
 
-                if (candidates == null || candidates.isEmpty()) {
-                    categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
-                            .category(category)
-                            .aiUsed(false)
-                            .candidates(List.of())
-                            .build());
-                    continue;
-                }
+    for (RecommendationModelType modelType : List.of(
+            RecommendationModelType.BLEND_RATIO,
+            RecommendationModelType.MATERIAL_RATIO
+    )) {
+        List<RecommendationCandidatesResponseDto.CategoryCandidatesDto> categoryDtos = new ArrayList<>();
 
-                try {
-                    if (modelType == RecommendationModelType.BLEND_RATIO) {
-                        RecommendationAiDto.BlendRatioRequest aiReq = buildBlendRequest(weather, candidates);
-                        log.info("[AI_REQ][BLEND_RATIO] recoKey={} category={} items={}", recommendationKey, category, candidates.size());
+        for (var entry : candidatesByCategory.entrySet()) {
+            ClothingCategory category = entry.getKey();
+            List<ClothingItem> candidates = entry.getValue();
 
-                        RecommendationAiDto.BlendRatioResponse aiRes = recommendationAiClient.recommendBlendRatio(aiReq);
-                        CandidateMapping mapped = mapBlendToCandidateDtosSorted(aiRes, candidates, favSet, topN);
-
-                        log.info("[AI_MAP][BLEND_RATIO] recoKey={} category={} results={} matched={} aiUsed={} top3={}",
-                                recommendationKey, category,
-                                (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
-                                mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
-
-                        categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
-                                .category(category)
-                                .aiUsed(mapped.aiUsed)
-                                .candidates(mapped.candidates)
-                                .build());
-
-                    } else {
-                        RecommendationAiDto.MaterialRatioRequest aiReq = buildMaterialRequest(weather, candidates);
-                        log.info("[AI_REQ][MATERIAL_RATIO] recoKey={} category={} items={}", recommendationKey, category, candidates.size());
-
-                        RecommendationAiDto.MaterialRatioResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
-                        CandidateMapping mapped = mapMaterialToCandidateDtosSorted(aiRes, candidates, favSet, topN);
-
-                        log.info("[AI_MAP][MATERIAL_RATIO] recoKey={} category={} results={} matched={} aiUsed={} top3={}",
-                                recommendationKey, category,
-                                (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
-                                mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
-
-                        categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
-                                .category(category)
-                                .aiUsed(mapped.aiUsed)
-                                .candidates(mapped.candidates)
-                                .build());
-                    }
-
-                } catch (Exception e) {
-                    log.warn("[AI_FAIL] fallback. recoKey={} modelType={} category={}", recommendationKey, modelType, category, e);
-
-                    categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
-                            .category(category)
-                            .aiUsed(false)
-                            .candidates(fallbackCandidates(candidates, favSet, topN))
-                            .build());
-                }
+            if (candidates == null || candidates.isEmpty()) {
+                categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
+                        .category(category)
+                        .aiUsed(false)
+                        .candidates(List.of())
+                        .build());
+                continue;
             }
 
-            models.add(RecommendationCandidatesResponseDto.ModelCandidatesDto.builder()
-                    .modelType(modelType)
-                    .categories(categoryDtos)
-                    .build());
+            try {
+                if (modelType == RecommendationModelType.BLEND_RATIO) {
+                    RecommendationAiDto.BlendRatioRequest aiReq = buildBlendRequest(weather, candidates);
+                    log.info("[AI_REQ][BLEND_RATIO] recoId={} category={} items={}", recommendationId, category, candidates.size());
+
+                    RecommendationAiDto.BlendRatioResponse aiRes = recommendationAiClient.recommendBlendRatio(aiReq);
+                    CandidateMapping mapped = mapBlendToCandidateDtosSorted(aiRes, candidates, favSet, topN);
+
+                    log.info("[AI_MAP][BLEND_RATIO] recoId={} category={} results={} matched={} aiUsed={} top3={}",
+                            recommendationId, category,
+                            (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
+                            mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
+
+                    categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
+                            .category(category)
+                            .aiUsed(mapped.aiUsed)
+                            .candidates(mapped.candidates)
+                            .build());
+
+                } else {
+                    RecommendationAiDto.MaterialRatioRequest aiReq = buildMaterialRequest(weather, candidates);
+                    log.info("[AI_REQ][MATERIAL_RATIO] recoId={} category={} items={}", recommendationId, category, candidates.size());
+
+                    RecommendationAiDto.MaterialRatioResponse aiRes = recommendationAiClient.recommendMaterialRatio(aiReq);
+                    CandidateMapping mapped = mapMaterialToCandidateDtosSorted(aiRes, candidates, favSet, topN);
+
+                    log.info("[AI_MAP][MATERIAL_RATIO] recoId={} category={} results={} matched={} aiUsed={} top3={}",
+                            recommendationId, category,
+                            (aiRes == null || aiRes.results == null) ? 0 : aiRes.results.size(),
+                            mapped.matchedCount, mapped.aiUsed, mappedTop3(mapped.candidates));
+
+                    categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
+                            .category(category)
+                            .aiUsed(mapped.aiUsed)
+                            .candidates(mapped.candidates)
+                            .build());
+                }
+
+            } catch (Exception e) {
+                log.warn("[AI_FAIL] fallback. recoId={} modelType={} category={}", recommendationId, modelType, category, e);
+
+                categoryDtos.add(RecommendationCandidatesResponseDto.CategoryCandidatesDto.builder()
+                        .category(category)
+                        .aiUsed(false)
+                        .candidates(fallbackCandidates(candidates, favSet, topN))
+                        .build());
+            }
         }
 
-        return RecommendationCandidatesResponseDto.builder()
-                .recommendationKey(recommendationKey)
-                .models(models)
-                .build();
+        models.add(RecommendationCandidatesResponseDto.ModelCandidatesDto.builder()
+                .modelType(modelType)
+                .categories(categoryDtos)
+                .build());
     }
 
     // =========================
-    // Mapping wrapper
+    // ✅ RECO_GENERATED 로그 (Service 종료 직전에 1회)
+    // - 여기서 실패해도 추천 응답은 내려가게(로그는 운영 데이터이므로 fail-open 권장)
     // =========================
-    private static class CandidateMapping {
-        final List<RecommendationCandidatesResponseDto.CandidateDto> candidates;
-        final boolean aiUsed;
-        final int matchedCount;
+    try {
+        long latencyMs = System.currentTimeMillis() - t0;
 
-        private CandidateMapping(List<RecommendationCandidatesResponseDto.CandidateDto> candidates, boolean aiUsed, int matchedCount) {
-            this.candidates = candidates;
-            this.aiUsed = aiUsed;
-            this.matchedCount = matchedCount;
+        // 카테고리별 후보 수
+        Map<String, Object> candidateCounts = new LinkedHashMap<>();
+        for (var e : candidatesByCategory.entrySet()) {
+            candidateCounts.put(e.getKey().name(), (e.getValue() == null ? 0 : e.getValue().size()));
         }
+
+        // 모델 타입 목록
+        List<String> modelTypes = List.of(
+                RecommendationModelType.BLEND_RATIO.name(),
+                RecommendationModelType.MATERIAL_RATIO.name()
+        );
+
+        // payload
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("source", "RECOMMEND_CANDIDATES");
+        payload.put("latencyMs", latencyMs);
+        payload.put("topNPerCategory", topN);
+        payload.put("modelTypes", modelTypes);
+        payload.put("candidateCounts", candidateCounts);
+
+        recoLogRepo.insert(RecommendationEventLogRequestDto.builder()
+                .createdAt(null) // DB now()
+                .userId(null)
+                .sessionKey(sessionKey)
+                .recommendationId(UUID.fromString(recommendationId))
+                .funnelStep("RECO_CANDIDATES")
+                .eventType("RECO_GENERATED")
+                .payload(payload)
+                .build());
+
+    } catch (Exception logEx) {
+        log.warn("[RECO_GENERATED_LOG_FAIL] recoId={}", recommendationId, logEx);
     }
+
+    return RecommendationCandidatesResponseDto.builder()
+            .recommendationId(recommendationId)
+            .models(models)
+            .build();
+}
 
     private String mappedTop3(List<RecommendationCandidatesResponseDto.CandidateDto> list) {
         if (list == null || list.isEmpty()) return "[]";
@@ -267,7 +300,6 @@ public class ClothingRecommendationService {
     // =========================
     // candidates 응답용 매핑 + 정렬 (score desc)
     // =========================
-
     private CandidateMapping mapBlendToCandidateDtosSorted(
             RecommendationAiDto.BlendRatioResponse aiRes,
             List<ClothingItem> candidates,
@@ -299,7 +331,6 @@ public class ClothingRecommendationService {
 
         int matched = (int) out.stream().filter(d -> d.getScore() != null).count();
         if (matched == 0) {
-            // results는 있는데 join=0 -> clothingId 불일치 가능성이 가장 큼
             return new CandidateMapping(fallbackCandidates(candidates, favSet, limit), false, 0);
         }
 
@@ -373,11 +404,10 @@ public class ClothingRecommendationService {
     }
 
     // =========================
-    // AI Request builders (DTO 기준으로 교체)
+    // AI Request builders
     // =========================
-
     private RecommendationAiDto.BlendRatioRequest buildBlendRequest(DailyWeatherResponseDto w, List<ClothingItem> items) {
-        Number cloud = w.getCloudAmount(); // Integer일 수도 있고 Double일 수도 있으니 Number로 받기
+        Number cloud = w.getCloudAmount();
 
         RecommendationAiDto.BlendContext ctx = new RecommendationAiDto.BlendContext(
                 w.getTemperature(),
@@ -432,16 +462,16 @@ public class ClothingRecommendationService {
     // =========================
     // 내부 유틸
     // =========================
-
     private LocalDate resolveClientDate(RecommendationCandidatesRequestDto req) {
-        if (req == null || req.getChecklist() == null) return TimeRanges.todayKst();
+        if (req.getChecklist() == null) return TimeRanges.todayKst();
         if (req.getChecklist().getClientDateISO() == null) return TimeRanges.todayKst();
         return req.getChecklist().getClientDateISO();
     }
 
-    private String resolveRecommendationKey(RecommendationCandidatesRequestDto req, LocalDate clientDate) {
-        if (req != null && req.getRecommendationKey() != null && !req.getRecommendationKey().isBlank()) {
-            return req.getRecommendationKey();
+    private String resolveRecommendationId(RecommendationCandidatesRequestDto req, LocalDate clientDate) {
+        // DTO rename 전제: getRecommendationId()
+        if (req.getRecommendationId() != null && !req.getRecommendationId().isBlank()) {
+            return req.getRecommendationId();
         }
         return "RECO-" + TimeRanges.ymCompact(clientDate);
     }
@@ -535,5 +565,20 @@ public class ClothingRecommendationService {
         return items.stream()
                 .map(it -> ClothingItemResponseDto.from(it, favSet.contains(it.getClothingId())))
                 .toList();
+    }
+
+    // =========================
+    // Mapping wrapper
+    // =========================
+    private static class CandidateMapping {
+        final List<RecommendationCandidatesResponseDto.CandidateDto> candidates;
+        final boolean aiUsed;
+        final int matchedCount;
+
+        private CandidateMapping(List<RecommendationCandidatesResponseDto.CandidateDto> candidates, boolean aiUsed, int matchedCount) {
+            this.candidates = candidates;
+            this.aiUsed = aiUsed;
+            this.matchedCount = matchedCount;
+        }
     }
 }

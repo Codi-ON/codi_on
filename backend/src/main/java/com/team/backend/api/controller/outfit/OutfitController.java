@@ -73,19 +73,7 @@ public class OutfitController {
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Valid @RequestBody OutfitFeedbackRequestDto req
     ) {
-        return ApiResponse.success(outfitService.submitFeedbackOnce(sessionKey, date, req.getRating()));
+        return ApiResponse.success(outfitService.submitFeedbackOnce(sessionKey, date, req.getRating(), req.getRecommendationId()));
     }
 
-    /**
-     * 오늘 피드백 제출(날짜 alias)
-     * POST /api/outfits/today/feedback
-     * Header: X-Session-Key
-     */
-    @PostMapping("/today/feedback")
-    public ApiResponse<OutfitResponseDto.Today> submitTodayFeedback(
-            @RequestHeader(SESSION_HEADER) String sessionKey,
-            @Valid @RequestBody OutfitFeedbackRequestDto req
-    ) {
-        return ApiResponse.success(outfitService.submitTodayFeedback(sessionKey, req.getRating()));
-    }
 }

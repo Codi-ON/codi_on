@@ -1,4 +1,3 @@
-// src/main/java/com/team/backend/repository/log/ItemClickLogJdbcRepository.java
 package com.team.backend.repository.log;
 
 import com.team.backend.api.dto.log.ItemClickLogCreateRequestDto;
@@ -13,14 +12,15 @@ public class ItemClickLogJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    public void insert(ItemClickLogCreateRequestDto dto) {
+    public void insert(ItemClickLogCreateRequestDto dto, String funnelStep) {
         String sql = """
             INSERT INTO public.item_click_log (
                 created_at,
                 session_key,
                 user_id,
                 recommendation_id,
-                clothing_item_id,
+                clothing_id,
+                funnel_step,
                 event_type,
                 payload
             )
@@ -29,7 +29,8 @@ public class ItemClickLogJdbcRepository {
                 :sessionKey,
                 :userId,
                 :recommendationId,
-                :clothingItemId,
+                :clothingId,
+                :funnelStep,
                 :eventType,
                 CASE
                   WHEN :payloadJson IS NULL THEN NULL
@@ -42,9 +43,9 @@ public class ItemClickLogJdbcRepository {
                 .addValue("createdAt", dto.getCreatedAt())
                 .addValue("sessionKey", dto.getSessionKey())
                 .addValue("userId", dto.getUserId())
-                // ✅ BIGINT 그대로
-                .addValue("recommendationId", dto.getRecommendationId())
-                .addValue("clothingItemId", dto.getClothingItemId())
+                .addValue("recommendationId", dto.getRecommendationUuid())
+                .addValue("clothingId", dto.getClothingItemId())
+                .addValue("funnelStep", funnelStep)
                 .addValue("eventType", dto.getEventType())
                 .addValue("payloadJson", dto.payloadJsonOrNull());
 

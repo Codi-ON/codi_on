@@ -1,5 +1,7 @@
 package com.team.backend.domain.enums.log;
 
 public enum ItemClickEventType {
-    ITEM_CLICK
+     RECO_SHOWN,
+    ITEM_CLICKED,
+    FINAL_SELECTED
 }

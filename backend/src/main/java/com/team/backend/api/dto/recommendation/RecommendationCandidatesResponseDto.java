@@ -11,7 +11,7 @@ import java.util.List;
 @Builder
 public class RecommendationCandidatesResponseDto {
 
-    private String recommendationKey; // 요청값 echo
+    private String recommendationId; // 요청값 echo
     private List<ModelCandidatesDto> models;
 
     @Getter @Setter
