@@ -86,7 +86,11 @@ def feedback_adaptive(
         # 1차 score 계산
         blend_scored = run_blend_ratio(blend_req)
         logger.info("[BLEND] scored_items_count=%d", len(blend_scored))
-
+        logger.error(
+            "[CHECK] blend_scored_len=%d samples_len=%d",
+            len(blend_scored),
+            len(samples),
+        )
         if blend_scored:
             blend_bias_result = apply_bias_and_rerank(
                 scored_items=blend_scored,
@@ -107,7 +111,7 @@ def feedback_adaptive(
 
             models.append({
                 "modelType": "BLEND_ADAPTIVE",
-                "modelVersion": "blend-adaptive-v0",
+                "modelVersion": "v.26.1.0b",
                 "results": [
                     {
                         "clothingId": it["clothingId"],
@@ -120,7 +124,7 @@ def feedback_adaptive(
             logger.warning("[BLEND] scored_items is empty")
             models.append({
                 "modelType": "BLEND_ADAPTIVE",
-                "modelVersion": "blend-adaptive-v0",
+                "modelVersion": "v.26.1.0b",
                 "results": [],
             })
 
@@ -128,7 +132,7 @@ def feedback_adaptive(
         logger.error("[BLEND] ValidationError", exc_info=e)
         models.append({
             "modelType": "BLEND_ADAPTIVE",
-            "modelVersion": "blend-adaptive-v0",
+            "modelVersion": "v.26.1.0b",
             "results": [],
         })
 
@@ -194,11 +198,11 @@ def feedback_adaptive(
 
             models.append({
                 "modelType": "MATERIAL_ADAPTIVE",
-                "modelVersion": "material-adaptive-v0",
+                "modelVersion": "v.26.1.0m",
                 "results": [
                     {
                         "clothingId": it["clothingId"],
-                        "score": it["score"],
+                        "score": clamp_score(it["score"]),
                     }
                     for it in bias_result["results"]
                 ],
@@ -207,7 +211,7 @@ def feedback_adaptive(
             logger.warning("[MATERIAL] scored_items is empty")
             models.append({
                 "modelType": "MATERIAL_ADAPTIVE",
-                "modelVersion": "material-adaptive-v0",
+                "modelVersion": "v.26.1.0m",
                 "results": [],
             })
 
@@ -215,7 +219,7 @@ def feedback_adaptive(
         logger.error("[MATERIAL] ValidationError", exc_info=e)
         models.append({
             "modelType": "MATERIAL_ADAPTIVE",
-            "modelVersion": "material-adaptive-v0",
+            "modelVersion": "v.26.1.0m",
             "results": [],
         })
 
