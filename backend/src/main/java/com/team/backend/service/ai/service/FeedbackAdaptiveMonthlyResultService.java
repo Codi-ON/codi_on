@@ -28,7 +28,6 @@ public class FeedbackAdaptiveMonthlyResultService {
         }
 
         String normalizedKey = sessionService.validateOnly(sessionKey);
-        sessionService.ensureSession(normalizedKey);
 
         Optional<FeedbackAdaptiveRunReadJdbcRepository.Row> rowOpt =
                 runReadRepo.findLatestBySessionAndYm(normalizedKey, year, month);
