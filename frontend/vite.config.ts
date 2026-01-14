@@ -13,14 +13,16 @@ export default defineConfig({
     },
     server: {
         proxy: {
+            "/api/n8n": {
+                target: "http://localhost:5678",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/n8n/, '')
+            },
             "/api": {
                 target: "http://localhost:8080",
                 changeOrigin: true,
             },
-            "/webhook": {
-                target: "http://localhost:5678",
-                changeOrigin: true,
-            },
+
         },
     },
 });

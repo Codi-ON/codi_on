@@ -299,5 +299,13 @@ print(f"   -> 시각화 저장됨: {save_img_path}")
 
 # 모델 저장
 save_model_path = os.path.join(artifacts_dir, "weather_material_pmv.pkl")
-joblib.dump(model, save_model_path)
-print(f"💾 모델 저장 완료: {save_model_path}")
+save_txt_path = os.path.join(artifacts_dir, "weather_material_pmv.txt")
+
+# ✅ 1. pkl 저장 시 프로토콜을 4로 고정 (하위 호환성 및 안정성 확보)
+joblib.dump(model, save_model_path, protocol=4)
+print(f"💾 PKL 모델 저장 완료: {save_model_path}")
+
+# ✅ 2. 텍스트 모델 추가 저장 (pkl이 터질 때를 대비한 필살기)
+# LightGBM 객체 내부의 booster_를 사용하여 저장합니다.
+model.booster_.save_model(save_txt_path)
+print(f"💾 TXT 모델 저장 완료 (백업용): {save_txt_path}")

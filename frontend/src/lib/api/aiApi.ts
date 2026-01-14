@@ -68,6 +68,7 @@ function parseN8NResponse<T>(data: any): T {
 // ------------------------------------------------------------------
 // n8n 전용 Axios 인스턴스
 const n8nClient = axios.create({
+    baseURL: '/api/n8n',
     headers: { 'Content-Type': 'application/json' }
 });
 
@@ -75,7 +76,9 @@ export const aiApi = {
     // [API 1] 날씨 코멘트 (Daily Briefing)
     getDailyWeatherComment: async (lat: number, lon: number, activityType: 'indoor' | 'outdoor' = 'outdoor') => {
         const url = import.meta.env.VITE_N8N_DAILY_COMMENT_WEBHOOK_URL;
-
+        console.log(url);
+        const fullUrl = `${n8nClient.defaults.baseURL}${url}`;
+        console.log("Full Request URL:", fullUrl); // 실제 요청이 전송될 URL을 출력
         // URL이 없을 경우 안전하게 기본값 반환
         if (!url) {
             console.warn("날씨 알림 Webhook URL이 설정되지 않았습니다.");

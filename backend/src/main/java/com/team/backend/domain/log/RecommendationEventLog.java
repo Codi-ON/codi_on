@@ -53,6 +53,9 @@ public class RecommendationEventLog {
     @Column(name = "payload", columnDefinition = "jsonb")
     private String payload;
 
+    @Column(name = "recommendation_id")
+    private Long recommendationId;
+
     @PrePersist
     void onCreate() {
         if (this.createdAt == null) {

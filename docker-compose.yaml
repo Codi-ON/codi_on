@@ -81,7 +81,7 @@ services:
       - codion_app_network
 
   codi_n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.123.6
     container_name: codi_n8n
     restart: unless-stopped
     ports:
@@ -101,6 +101,10 @@ services:
       - EXECUTIONS_DATA_PRUNE=true
       - EXECUTIONS_DATA_MAX_AGE=24
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - N8N_PAYLOAD_SIZE_MAX=100
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - N8N_CORS_ALLOW_ORIGIN=http://localhost:5173
+      - N8N_CORS_CREDENTIALS=true
     volumes:
       - ./n8n_data:/home/node/.n8n
     depends_on:
