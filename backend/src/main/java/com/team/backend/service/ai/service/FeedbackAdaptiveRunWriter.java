@@ -1,6 +1,7 @@
 // src/main/java/com/team/backend/service/ai/FeedbackAdaptiveRunWriter.java
-package com.team.backend.service.ai;
+package com.team.backend.service.ai.service;
 
+import com.team.backend.service.ai.repository.FeedbackAdaptiveRunJdbcRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;

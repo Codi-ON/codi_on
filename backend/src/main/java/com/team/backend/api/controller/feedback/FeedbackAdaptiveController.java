@@ -3,7 +3,7 @@ package com.team.backend.api.controller.feedback;
 
 import com.team.backend.api.dto.log.RecommendationEventLogRequestDto;
 import com.team.backend.domain.enums.recommendation.RecommendationEventType;
-import com.team.backend.service.ai.FeedbackAdaptiveService;
+import com.team.backend.service.ai.service.FeedbackAdaptiveService;
 import com.team.backend.service.ai.dto.FeedbackAdaptiveAiDto;
 import com.team.backend.service.log.RecommendationEventLogService;
 import lombok.RequiredArgsConstructor;

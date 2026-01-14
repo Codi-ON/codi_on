@@ -1,5 +1,5 @@
 // src/main/java/com/team/backend/service/ai/FeedbackAdaptiveService.java
-package com.team.backend.service.ai;
+package com.team.backend.service.ai.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
