@@ -9,7 +9,7 @@ import lombok.AllArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class OutfitFeedbackRequestDto {
-
+	private String recommendationId;
     /**
      * -1/0/1 정책 그대로
      */

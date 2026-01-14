@@ -1,23 +1,26 @@
 // src/main/java/com/team/backend/service/outfit/OutfitService.java
 package com.team.backend.service.outfit;
 
+import com.team.backend.api.dto.clothingItem.ClothingItemSummaryDto;
+import com.team.backend.api.dto.log.RecommendationEventLogRequestDto;
 import com.team.backend.api.dto.outfit.OutfitRequestDto;
 import com.team.backend.api.dto.outfit.OutfitResponseDto;
 import com.team.backend.domain.ClothingItem;
 import com.team.backend.domain.DailyWeather;
 import com.team.backend.domain.enums.feadback.FeedbackRating;
+import com.team.backend.domain.enums.recommendation.RecommendationEventType;
 import com.team.backend.domain.outfit.OutfitHistory;
 import com.team.backend.domain.outfit.OutfitHistoryItem;
+import com.team.backend.repository.checklist.ChecklistJdbcRepository;
 import com.team.backend.repository.clothing.ClothingItemRepository;
 import com.team.backend.repository.outfit.OutfitHistoryRepository;
 import com.team.backend.repository.weather.DailyWeatherRepository;
+import com.team.backend.service.log.RecommendationEventLogService;
 import com.team.backend.service.session.SessionService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.team.backend.api.dto.clothingItem.ClothingItemSummaryDto;
-
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -37,19 +40,21 @@ public class OutfitService {
     private final DailyWeatherRepository dailyWeatherRepository;
     private final ClothingItemRepository clothingItemRepository;
 
+    // recoId 역조회 + 이벤트 로그 insert
+    private final ChecklistJdbcRepository checklistJdbcRepository;
+    private final RecommendationEventLogService recommendationEventLogService;
+
     @Transactional(readOnly = true)
     public List<ClothingItemSummaryDto> getSummaryByClothingIds(List<Long> clothingIds) {
         if (clothingIds == null || clothingIds.isEmpty()) {
             throw new IllegalArgumentException("ids is required");
         }
 
-        // clothing_id 기준 조회 (PK id 기준 아님)
         List<ClothingItem> rows = clothingItemRepository.findByClothingIdIn(clothingIds);
 
         Map<Long, ClothingItem> map = rows.stream()
                 .collect(Collectors.toMap(ClothingItem::getClothingId, Function.identity(), (a, b) -> a));
 
-        // 요청 ids 순서 유지
         return clothingIds.stream()
                 .map(map::get)
                 .filter(Objects::nonNull)
@@ -69,7 +74,6 @@ public class OutfitService {
 
         if (req == null) throw new IllegalArgumentException("request body is required");
 
-        // items 정규화(중복 제거/정렬/유효성 체크는 normalizeItems에서)
         List<OutfitRequestDto.Item> cleaned = normalizeItems(req.getItems());
 
         OutfitHistory history = outfitHistoryRepository
@@ -80,19 +84,15 @@ public class OutfitService {
                         .build()
                 );
 
-        // 전략 저장(null 허용)
         history.setRecoStrategy(req.getRecoStrategy());
-
-        // 정책: 저장(덮어쓰기) 시 기존 피드백 초기화
         history.resetFeedback();
 
-        // ===== 핵심: 기존 items 먼저 삭제 후 flush (uk_outfit_history_item_history_sort 충돌 방지) =====
+        // uk_outfit_history_item_history_sort 충돌 방지: 기존 items 먼저 삭제 후 flush
         if (history.getId() != null) {
-            history.getItems().clear();                       // orphanRemoval 대상
-            outfitHistoryRepository.saveAndFlush(history);    // DELETE 먼저 DB에 반영
+            history.getItems().clear();
+            outfitHistoryRepository.saveAndFlush(history);
         }
 
-        // 새 아이템으로 교체
         List<OutfitHistoryItem> newItems = new ArrayList<>(cleaned.size());
         for (OutfitRequestDto.Item it : cleaned) {
             newItems.add(OutfitHistoryItem.of(history, it.getClothingId(), it.getSortOrder()));
@@ -100,7 +100,7 @@ public class OutfitService {
         history.replaceItems(newItems);
 
         OutfitHistory saved = outfitHistoryRepository.save(history);
-        saved.getItems().size(); // 응답 생성 시 LAZY 방지
+        saved.getItems().size(); // LAZY 방지
 
         return OutfitResponseDto.Today.from(saved);
     }
@@ -117,17 +117,13 @@ public class OutfitService {
                 .findBySessionKeyAndOutfitDateWithItems(key, today)
                 .orElseThrow(() -> new EntityNotFoundException("오늘 저장한 착장이 없습니다. date=" + today));
 
-        // LAZY 방지
-        history.getItems().size();
-
+        history.getItems().size(); // LAZY 방지
         return OutfitResponseDto.Today.from(history);
     }
 
     // =========================
     // READ : 월간 히스토리 조회
     // =========================
-    // OutfitService.java 내부
-
     @Transactional(readOnly = true)
     public OutfitResponseDto.MonthlyHistory getMonthlyHistory(String sessionKey, int year, int month) {
         String key = sessionService.validateOnly(sessionKey);
@@ -140,21 +136,18 @@ public class OutfitService {
         LocalDate toExclusive = ym.plusMonths(1).atDay(1);
         LocalDate toInclusive = toExclusive.minusDays(1);
 
-        // 1) outfits (source of truth)
         List<OutfitHistory> rows = outfitHistoryRepository.findMonthlyWithItems(key, from, toExclusive);
 
-        // 2) weather fallback (region 고정)
+        // weather fallback (region 고정)
         List<DailyWeather> weathers =
                 dailyWeatherRepository.findAllByRegionAndDateBetweenOrderByDateAsc("Seoul", from, toInclusive);
 
         Map<LocalDate, DailyWeather> weatherByDate = new HashMap<>();
         for (DailyWeather w : weathers) weatherByDate.put(w.getDate(), w);
 
-        // 3) dto 조립
         List<OutfitResponseDto.MonthlyDay> days = new ArrayList<>(rows.size());
 
         for (OutfitHistory h : rows) {
-            // items 정렬
             List<OutfitHistoryItem> items = new ArrayList<>(h.getItems());
             items.sort(Comparator.comparingInt(OutfitHistoryItem::getSortOrder));
 
@@ -168,7 +161,6 @@ public class OutfitService {
 
             Integer feedbackScore = (h.getFeedbackRating() == null) ? null : h.getFeedbackRating().toScore();
 
-            // ✅ weather: outfit_history 스냅샷 우선, 없으면 daily_weather로 fallback
             DailyWeather fw = weatherByDate.get(h.getOutfitDate());
 
             Double weatherTemp = (h.getWeatherTemp() != null) ? h.getWeatherTemp() : (fw == null ? null : fw.getTemperature());
@@ -183,8 +175,8 @@ public class OutfitService {
                     .feedbackScore(feedbackScore)
                     .weatherTemp(weatherTemp)
                     .condition(condition)
-                    .weatherFeelsLike(feelsLike)          // MonthlyDay에 필드 없으면 제거
-                    .weatherCloudAmount(cloudAmount)      // MonthlyDay에 필드 없으면 제거
+                    .weatherFeelsLike(feelsLike)
+                    .weatherCloudAmount(cloudAmount)
                     .recoStrategy(h.getRecoStrategy())
                     .build());
         }
@@ -199,10 +191,15 @@ public class OutfitService {
     }
 
     // =========================
-    // FEEDBACK : 날짜 지정 1회 제출
+    // FEEDBACK : 날짜 지정 1회 제출 (+ reco log)
     // =========================
     @Transactional
-    public OutfitResponseDto.Today submitFeedbackOnce(String sessionKey, LocalDate date, Integer ratingInt) {
+    public OutfitResponseDto.Today submitFeedbackOnce(
+            String sessionKey,
+            LocalDate date,
+            Integer ratingInt,
+            String recommendationId
+    ) {
         String key = sessionService.validateOnly(sessionKey);
         if (date == null) throw new IllegalArgumentException("date is required");
 
@@ -214,15 +211,52 @@ public class OutfitService {
         history.submitFeedbackOnce(rating);
 
         OutfitHistory saved = outfitHistoryRepository.save(history);
-        saved.getItems().size();
+        saved.getItems().size(); // LAZY 방지
+
+        // ✅ recoId 결정 우선순위:
+        // 1) 클라에서 recommendationId가 넘어오면 그걸 사용
+        // 2) 없으면(레거시) 이벤트로그에서 해당 날짜 recoId 역조회
+        UUID recoId = null;
+
+        if (recommendationId != null && !recommendationId.isBlank()) {
+            try {
+                recoId = UUID.fromString(recommendationId);
+            } catch (IllegalArgumentException ignore) {
+                // 형식 불량이면 아래 fallback으로 시도
+            }
+        }
+
+        if (recoId == null) {
+            recoId = checklistJdbcRepository.findTodayChecklistRecommendationId(key, date);
+        }
+
+        if (recoId != null) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("date", date.toString());
+            payload.put("rating", ratingInt);
+            payload.put("ratingEnum", rating.name());
+            payload.put("outfitHistoryId", saved.getId());
+
+            recommendationEventLogService.write(
+                    RecommendationEventLogRequestDto.builder()
+                            .createdAt(null) // DB now()
+                            .userId(null)
+                            .sessionKey(key)
+                            .recommendationId(recoId)
+                            .funnelStep("FEEDBACK")
+                            .eventType(RecommendationEventType.RECO_FEEDBACK_SUBMITTED.name())
+                            .payload(payload)
+                            .build()
+            );
+        }
 
         return OutfitResponseDto.Today.from(saved);
     }
 
     @Transactional
-    public OutfitResponseDto.Today submitTodayFeedback(String sessionKey, Integer ratingInt) {
+    public OutfitResponseDto.Today submitTodayFeedback(String sessionKey, Integer ratingInt, String recommendationId) {
         LocalDate today = LocalDate.now(KST);
-        return submitFeedbackOnce(sessionKey, today, ratingInt);
+        return submitFeedbackOnce(sessionKey, today, ratingInt, recommendationId);
     }
 
     // =========================
@@ -239,11 +273,11 @@ public class OutfitService {
     }
 
     /**
-     * 정책(너가 지금 쓰는 UI/학습 목적 기준):
+     * 정책:
      * - items는 2~3개
      * - sortOrder는 1/2/3만 허용, 중복 금지
-     * - 1(top), 2(bottom)은 필수 (학습/분석 기준점)
-     * - clothingId 중복 금지(학습 데이터 오염)
+     * - 1(top), 2(bottom)은 필수
+     * - clothingId 중복 금지
      */
     private List<OutfitRequestDto.Item> normalizeItems(List<OutfitRequestDto.Item> items) {
         if (items == null) throw new IllegalArgumentException("items is required");
