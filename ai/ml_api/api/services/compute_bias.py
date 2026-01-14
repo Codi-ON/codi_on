@@ -20,28 +20,28 @@ def normalize_thickness(thickness: str) -> str:
 
 
 def run_blend_ratio(req: BlendRatioFeedbackRequest):
-    logger.info("=== [run_blend_ratio] START ===")
-    logger.info("items_count=%d", len(req.items))
-    logger.info("weather=%s", req.weather)
+    logger.error("=== [run_blend_ratio] START ===")
+    logger.error("items_count=%d", len(req.items))
+    logger.error("weather=%s", req.weather)
 
     for idx, item in enumerate(req.items):
-        logger.info("item[%d] thickness_before=%s", idx, item.thickness)
+        logger.error("item[%d] thickness_before=%s", idx, item.thickness)
 
         if item.thickness:
             item.thickness = normalize_thickness(item.thickness)
-            logger.info("item[%d] thickness_after=%s", idx, item.thickness)
+            logger.error("item[%d] thickness_after=%s", idx, item.thickness)
 
     raw_results = predict_comfort_batch(
         context=req.weather,
         items=req.items,
     )
 
-    logger.info("raw_results_count=%d", len(raw_results))
+    logger.error("raw_results_count=%d", len(raw_results))
 
     if raw_results:
-        logger.info("first_raw_result=%s", raw_results[0])
+        logger.error("first_raw_result=%s", raw_results[0])
     else:
-        logger.warning("raw_results is empty")
+        logger.error("raw_results is empty")
 
     results = [
         {
@@ -52,8 +52,8 @@ def run_blend_ratio(req: BlendRatioFeedbackRequest):
         if r.blendRatioScore is not None
     ]
 
-    logger.info("filtered_results_count=%d", len(results))
-    logger.info("=== [run_blend_ratio] END ===")
+    logger.error("filtered_results_count=%d", len(results))
+    logger.error("=== [run_blend_ratio] END ===")
 
     return results
 
@@ -63,13 +63,13 @@ def apply_bias_and_rerank(
     samples: List[Dict],
     min_samples: int = 5,
 ):
-    logger.info("=== [apply_bias_and_rerank] START ===")
-    logger.info("scored_items_count=%d", len(scored_items))
-    logger.info("samples_count=%d", len(samples))
-    logger.info("min_samples=%d", min_samples)
+    logger.error("=== [apply_bias_and_rerank] START ===")
+    logger.error("scored_items_count=%d", len(scored_items))
+    logger.error("samples_count=%d", len(samples))
+    logger.error("min_samples=%d", min_samples)
 
     if len(samples) < min_samples:
-        logger.warning(
+        logger.error(
             "not enough samples: %d < %d, skip training",
             len(samples),
             min_samples,
@@ -90,9 +90,9 @@ def apply_bias_and_rerank(
         for s in samples
     ]
 
-    logger.info("logs_count=%d", len(logs))
+    logger.error("logs_count=%d", len(logs))
     if logs:
-        logger.info("first_log=%s", logs[0])
+        logger.error("first_log=%s", logs[0])
 
     user_bias, item_bias_map = compute_time_decay_bias(logs)
 
@@ -110,7 +110,7 @@ def apply_bias_and_rerank(
         items=items_for_rerank,
     )
 
-    logger.info("=== [apply_bias_and_rerank] END ===")
+    logger.error("=== [apply_bias_and_rerank] END ===")
 
     return {
         "trained": True,
@@ -121,8 +121,8 @@ def apply_bias_and_rerank(
 
 
 def compute_time_decay_bias(logs: List[Dict]):
-    logger.info("=== [compute_time_decay_bias] START ===")
-    logger.info("logs_count=%d", len(logs))
+    logger.error("=== [compute_time_decay_bias] START ===")
+    logger.error("logs_count=%d", len(logs))
 
     user_num = 0.0
     user_den = 0.0
@@ -139,23 +139,23 @@ def compute_time_decay_bias(logs: List[Dict]):
         key=lambda x: _parse_ts(x["timestamp"])
     )
 
-    logger.info("logs_sorted_count=%d", len(logs_sorted))
+    logger.error("logs_sorted_count=%d", len(logs_sorted))
 
     total = len(logs_sorted)
     if total == 0:
-        logger.warning("no logs after sorting")
+        logger.error("no logs after sorting")
         return 0.0, {}
 
     for idx, log in enumerate(logs_sorted):
         direction = log.get("direction")
-        logger.info("log[%d] direction=%s", idx, direction)
+        logger.error("log[%d] direction=%s", idx, direction)
 
         if direction not in (-1, 0, 1):
-            logger.warning("log[%d] invalid direction, skipped", idx)
+            logger.error("log[%d] invalid direction, skipped", idx)
             continue
 
         time_weight = 1.0 - (total - idx - 1) / total
-        logger.info("log[%d] time_weight=%.4f", idx, time_weight)
+        logger.error("log[%d] time_weight=%.4f", idx, time_weight)
 
         user_num += direction * time_weight
         user_den += time_weight
@@ -165,7 +165,12 @@ def compute_time_decay_bias(logs: List[Dict]):
             item_den[cid] += time_weight
 
     user_bias = user_num / user_den if user_den > 0 else 0.0
-    logger.info("user_bias=%.4f (num=%.4f, den=%.4f)", user_bias, user_num, user_den)
+    logger.error(
+        "user_bias=%.4f (num=%.4f, den=%.4f)",
+        user_bias,
+        user_num,
+        user_den,
+    )
 
     item_bias_map = {
         cid: item_num[cid] / item_den[cid]
@@ -173,22 +178,22 @@ def compute_time_decay_bias(logs: List[Dict]):
         if item_den[cid] > 0
     }
 
-    logger.info("item_bias_map_size=%d", len(item_bias_map))
-    logger.info("=== [compute_time_decay_bias] END ===")
+    logger.error("item_bias_map_size=%d", len(item_bias_map))
+    logger.error("=== [compute_time_decay_bias] END ===")
 
     return user_bias, item_bias_map
 
 
 def rerank_items(user_bias: float, items: list[dict]) -> list[dict]:
-    logger.info("=== [rerank_items] START ===")
-    logger.info("user_bias=%.4f", user_bias)
-    logger.info("items_count=%d", len(items))
+    logger.error("=== [rerank_items] START ===")
+    logger.error("user_bias=%.4f", user_bias)
+    logger.error("items_count=%d", len(items))
 
     scored = []
     for idx, it in enumerate(items):
         rank_score = it["score"] + ALPHA * user_bias * it["itemBias"]
 
-        logger.info(
+        logger.error(
             "item[%d] base_score=%.4f itemBias=%.4f rank_score=%.4f",
             idx,
             it["score"],
@@ -196,14 +201,11 @@ def rerank_items(user_bias: float, items: list[dict]) -> list[dict]:
             rank_score,
         )
 
-        scored.append((rank_score, it))
-
-    logger.info("=== [rerank_items] END ===")
-
-    return [
-        {
+        scored.append({
             "clothingId": it["clothingId"],
-            "score": it["score"],
-        }
-        for _, it in scored
-    ]
+            "score": rank_score,
+        })
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    logger.error("=== [rerank_items] END ===")
+    return scored
