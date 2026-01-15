@@ -1,8 +1,8 @@
 // src/lib/repo/outfitRepo.ts
-import {outfitApi} from "@/lib/api/outfitApi";
-import type {MonthlyHistoryDto, TodayOutfitDto} from "@/lib/api/outfitApi";
-import {outfitSaveAdapter} from "@/lib/adapters/outfitAdapter";
-import {getSessionKey} from "@/lib/session/sessionKey.ts";
+import { outfitApi } from "@/lib/api/outfitApi";
+import type { MonthlyHistoryDto, TodayOutfitDto } from "@/lib/api/outfitApi";
+import { outfitSaveAdapter } from "@/lib/adapters/outfitAdapter";
+import { getSessionKey } from "@/lib/session/sessionKey.ts";
 
 /**
  * 저장 입력 허용 범위(프론트 편의용):
@@ -22,44 +22,53 @@ export type OutfitSaveInput =
 };
 
 /**
- * ✅ sessionKey를 모든 호출에 명시적으로 주입하는 Repo
- * - 이유: “저장”과 “히스토리 조회”가 같은 세션키를 써야 최근 저장이 바로 보임
- * - 원칙: outfitRepo 레벨에서는 항상 sessionKey를 받는다
- *
- * 사용 예)
- *   const sessionKey = effectiveSessionKey;
- *   await outfitRepo.saveTodayOutfit(clothingIds, sessionKey);
- *   const today = await outfitRepo.getTodayOutfit(sessionKey);
+ * ✅ sessionKey는 Repo 내부에서 getSessionKey()로 일관되게 주입
+ * - 호출부는 sessionKey 신경 안 쓰고 `outfitRepo.*()`만 사용
  */
 export const outfitRepo = {
     /**
      * 오늘 아웃핏 조회
      */
-    getTodayOutfit(sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.getToday({sessionKey});
+    async getTodayOutfit(): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
+        return outfitApi.getToday({ sessionKey });
     },
 
     /**
      * 오늘 아웃핏 저장
      * - input은 number[]든 items든 다 받아서 adapter에서 payload로 통일
      */
-    saveTodayOutfit(input: OutfitSaveInput, sessionKey: string): Promise<TodayOutfitDto> {
+    async saveTodayOutfit(input: OutfitSaveInput): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         const body = outfitSaveAdapter.toSaveTodayPayload(input);
-        return outfitApi.saveToday(body, {sessionKey});
+        return outfitApi.saveToday(body, { sessionKey });
     },
 
     /**
      * 오늘 피드백 등록
      */
-    postTodayFeedback(rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.postTodayFeedback({rating}, {sessionKey});
+    async postTodayFeedback(rating: 1 | 0 | -1): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
+        return outfitApi.postTodayFeedback({ rating }, { sessionKey });
     },
 
     /**
      * 특정 날짜 피드백 등록
      */
-    postOutfitFeedbackByDate(dateISO: string, rating: 1 | 0 | -1, sessionKey: string): Promise<TodayOutfitDto> {
-        return outfitApi.postFeedbackByDate(dateISO, {rating}, {sessionKey});
+    async postOutfitFeedbackByDate(
+        dateISO: string,
+        rating: 1 | 0 | -1
+    ): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
+        return outfitApi.postFeedbackByDate(dateISO, { rating }, { sessionKey });
     },
 
     /**
@@ -69,7 +78,6 @@ export const outfitRepo = {
         const sessionKey = getSessionKey();
         if (!sessionKey) throw new Error("세션키가 없습니다.");
 
-        return outfitApi.getMonthly({year, month}, {sessionKey});
+        return outfitApi.getMonthly({ year, month }, { sessionKey });
     },
-
 } as const;
