@@ -4,7 +4,7 @@ import { closetRepo } from "@/lib/repo/closetRepo";
 import { getUserMessage } from "@/lib/errors";
 import type { ClothingItem } from "@/shared/domain/clothing";
 
-export function useClothes(limit = 30) {
+export function useClothes(limit = 100) {
     const [items, setItems] = useState<ClothingItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
