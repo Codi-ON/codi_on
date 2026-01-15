@@ -77,8 +77,8 @@ export type RecommendCandidatesRequestDto = {
   region: string;
   lat: number;
   lon: number;
+  recommendationId: string;
   topNPerCategory?: number;      // default 10
-  recommendationKey?: string;    // 예: "RECO-202601"
   checklist: ChecklistSubmitDto; // 필수
 };
 
@@ -138,7 +138,7 @@ export const recoApi = {
           lat: body.lat,
           lon: body.lon,
           topNPerCategory: body.topNPerCategory ?? 10,
-          recommendationKey: body.recommendationKey ?? "RECO-202601",
+          recommendationId: body.recommendationId,
           checklist: body.checklist,
         }
     );

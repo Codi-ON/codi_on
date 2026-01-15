@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import {useAppDispatch, useAppSelector} from "@/state/hooks/hooks";
-import type {ChecklistSubmitDto} from "@/shared/domain/checklist";
+import type { ChecklistState } from "@/shared/domain/checklist";
 
 import {recoApi} from "@/lib/api/recoApi";
 import {outfitRepo} from "@/lib/repo/outfitRepo";
@@ -159,7 +159,9 @@ const RecommendationPage: React.FC = () => {
     const navigate = useNavigate();
     const dispatch = useAppDispatch();
 
-    const checklist = useAppSelector((s) => s.outfitReco.checklist as ChecklistSubmitDto | null);
+    // ✅ Redux 안에는 ChecklistSubmitDto & { recommendationId } 가 들어있고
+    // 여기서는 ChecklistState 로 캐스팅해서 사용
+    const checklist = useAppSelector((s) => s.outfitReco.checklist as ChecklistState | null);
 
     const favoritesIds = useAppSelector((s) => s.favorites.ids);
     const favoritesLoading = useAppSelector((s) => s.favorites.loading);
@@ -234,12 +236,27 @@ const RecommendationPage: React.FC = () => {
         setError(null);
 
         try {
+            // ✅ 방어: recommendationId 없으면 바로 에러
+            if (!checklist.recommendationId) {
+                throw new Error("추천 ID가 없습니다. 체크리스트부터 다시 진행해 주세요.");
+            }
+
             const raw = await recoApi.getCandidates({
                 region: "Seoul",
                 lat: 37.5665,
                 lon: 126.978,
                 topNPerCategory: 10,
-                checklist,
+
+                // ✅ 새 계약: top-level recommendationId
+                recommendationId: checklist.recommendationId,
+
+                // ✅ 새 계약: checklist 필드만 내부 객체로 전달
+                checklist: {
+                    usageType: checklist.usageType,
+                    thicknessLevel: checklist.thicknessLevel,
+                    activityLevel: checklist.activityLevel,
+                    yesterdayFeedback: checklist.yesterdayFeedback,
+                },
             } as any);
 
             const normalized = normalizeCandidatesResponse(raw);
@@ -367,7 +384,7 @@ const RecommendationPage: React.FC = () => {
         canSave,
         selectedOutfit,
         selectedModel?.modelType,
-        // data?.recommendationKey, // 위에서 사용하면 의존성 추가
+        // data?.recommendationKey,
     ]);
 
     const submitFeedback = useCallback(
@@ -816,8 +833,7 @@ const RecommendationPage: React.FC = () => {
 
                                 <div className="flex items-center gap-2">
                                     {selectedModelUI ? (
-                                        <>
-                                        </>
+                                        <></>
                                     ) : (
                                         <Badge variant="slate">기준</Badge>
                                     )}
@@ -965,7 +981,7 @@ const RecommendationPage: React.FC = () => {
                                     {/* model + outfit score strip */}
                                     <div className="mt-4 rounded-[18px] border border-slate-100 bg-slate-50 px-4 py-3">
                                         <div className="flex items-center justify-between gap-3">
-                                            <Badge variant="orange">{selectedModelUI.label}</Badge>
+                                            <Badge variant="orange">{selectedModelUI?.label ?? "모델"}</Badge>
                                             <ScorePill score={outfitScore}/>
                                         </div>
                                     </div>

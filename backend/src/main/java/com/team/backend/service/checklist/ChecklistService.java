@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -72,7 +73,11 @@ public class ChecklistService {
                 .build());
 
         // 2) CHECKLIST_SUBMITTED (신규 발급 시점에 1회)
-        // payload는 "체크리스트 원본"으로 남겨야 이후 분석/재현이 가능
+        // payload는 "체크리스트 원본" + sessionKey / clientDateISO까지 함께 저장
+        Map<String, Object> payload = new LinkedHashMap<>(req.toPayload());
+        payload.put("sessionKey", key);           // 나중에 세션키로 조회 가능하게
+        payload.put("clientDateISO", today.toString()); // YYYY-MM-DD (KST today 기준)
+
         recoLogRepo.insert(RecommendationEventLogRequestDto.builder()
                 .createdAt(null) // null이면 DB now()
                 .userId(null)
@@ -80,7 +85,7 @@ public class ChecklistService {
                 .recommendationId(recoId)
                 .funnelStep(FUNNEL_STEP_CHECKLIST)
                 .eventType(EVENT_CHECKLIST_SUBMITTED)
-                .payload(req.toPayload())
+                .payload(payload)
                 .build());
 
         return new ChecklistSubmitResponseDto(recoId.toString(), today, true);
