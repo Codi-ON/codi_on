@@ -51,7 +51,6 @@ export function normalizeISO(dateLike: unknown): string {
 }
 
 function toRecoStrategy(v: unknown): RecoStrategy | null {
-    // ✅ 서버가 string | null 로 내려와도 안전하게 좁힘
     return v === "BLEND_RATIO" || v === "MATERIAL_RATIO" ? (v as RecoStrategy) : null;
 }
 
@@ -97,10 +96,6 @@ function titleFromSelected(selected?: SelectedOutfit | null): string {
     return parts.length ? parts.join(" · ") : "오늘의 아웃핏";
 }
 
-/**
- * ✅ Monthly/day 아이템도 TodayOutfitItemDto와 “완전히 동일”하다고 보장 못함
- * - imageUrl만 뽑아쓰도록 최소 필드 기반으로 안전 처리
- */
 function imagesFromAnyItems(items: any[] | undefined | null): string[] {
     const arr = Array.isArray(items) ? items : [];
     return arr
@@ -132,7 +127,6 @@ function dayToEntry(day: MonthlyHistoryDayDto): HistoryEntryUI {
         recoStrategy: strategy,
         machineIcon: machineIconFromStrategy(strategy),
 
-        // ✅ MonthlyHistoryDayDto.items는 optional이라 안전 파싱
         images: imagesFromAnyItems((day as any).items),
     };
 }
@@ -204,33 +198,38 @@ function uniqNumbers(ids: number[]): number[] {
     return out;
 }
 
+/** uuid v4/v1 등 대부분 커버 (대소문자 허용) */
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(v: unknown): v is string {
+    return typeof v === "string" && UUID_RE.test(v);
+}
+
 /**
  * ✅ 저장 시 함께 보낼 메타
- * - outfitApi.SaveTodayOutfitRequest에 recoStrategy만 정의돼 있음
- * - recommendationKey는 백이 받는다면 payload에 포함해서 전송(구조적 타이핑)
+ * - SaveTodayOutfitRequest에는 recoStrategy만 정의되어 있어도,
+ *   payload는 구조적 타이핑으로 recommendationId(UUID string)까지 확장 가능.
  */
 function extractSaveMeta(input: unknown): {
     recoStrategy?: RecoStrategy | null;
-    recommendationKey?: string | null;
+    recommendationId?: string | null;
 } {
     if (!input || typeof input !== "object") return {};
-
     const obj = input as any;
 
     const recoStrategy = "recoStrategy" in obj ? toRecoStrategy(obj.recoStrategy) : undefined;
 
-    const recommendationKey =
-        "recommendationKey" in obj && typeof obj.recommendationKey === "string"
-            ? obj.recommendationKey
-            : undefined;
+    // ✅ UUID면 넣고, 아니면 무시(안전)
+    const recommendationId =
+        "recommendationId" in obj && isUuid(obj.recommendationId) ? obj.recommendationId : undefined;
 
-    return { recoStrategy, recommendationKey };
+    return { recoStrategy, recommendationId };
 }
 
 export const outfitSaveAdapter = {
     /**
-     * ✅ SaveTodayOutfitRequest + (옵션) recommendationKey 포함
-     * - TS 타입은 좁게, 런타임 payload는 계약에 맞춰 확장 가능
+     * ✅ SaveTodayOutfitRequest + (옵션) recommendationId 포함
      */
     toSaveTodayPayload(input: unknown): SaveTodayOutfitRequest {
         const clothingIds = uniqNumbers(extractIds(input));
@@ -244,7 +243,7 @@ export const outfitSaveAdapter = {
         };
 
         if (meta.recoStrategy) payload.recoStrategy = meta.recoStrategy;
-        if (meta.recommendationKey) payload.recommendationKey = meta.recommendationKey;
+        if (meta.recommendationId) payload.recommendationId = meta.recommendationId;
 
         return payload as SaveTodayOutfitRequest;
     },
@@ -284,15 +283,7 @@ export const outfitAdapter = {
         return next;
     },
 
-    /**
-     * ✅ “응답 DTO 없이” 로컬 Map만 즉시 업데이트하고 싶을 때(낙관적 업데이트용)
-     * - 보통은 서버 응답(TodayOutfitDto)을 mergeRecentlySaved로 덮어쓰는 걸 권장
-     */
-    applyFeedback(
-        base: Map<string, HistoryEntryUI>,
-        dateISO: string,
-        score: -1 | 0 | 1
-    ): Map<string, HistoryEntryUI> {
+    applyFeedback(base: Map<string, HistoryEntryUI>, dateISO: string, score: -1 | 0 | 1): Map<string, HistoryEntryUI> {
         const next = new Map(base);
         const prev = next.get(dateISO);
         if (!prev) return next;

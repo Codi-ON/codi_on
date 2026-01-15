@@ -22,6 +22,7 @@ function unwrap<T>(res: T | ApiEnvelope<T>): T {
 /** ---------- DTOs ---------- */
 export type TodayOutfitItemDto = {
     clothingId: number;
+    clothingItemId?: number;
     sortOrder: number;
     name?: string;
     imageUrl?: string;
@@ -40,6 +41,9 @@ export type TodayOutfitDto = {
 
     // 서버가 null 또는 문자열로 내려줄 수도 있음
     recoStrategy?: RecoStrategy | string | null;
+
+    // backend 변경 반영: recommendationKey -> recommendationId(UUID)
+    recommendationId?: string | null;
 };
 
 export type MonthlyHistoryDayDto = {
@@ -53,6 +57,9 @@ export type MonthlyHistoryDayDto = {
     weatherCloudAmount?: number | null;
 
     recoStrategy?: RecoStrategy | string | null;
+
+    // ✅ backend 변경 반영: recommendationKey -> recommendationId(UUID)
+    recommendationId?: string | null;
 };
 
 export type MonthlyHistoryDto = {
@@ -80,6 +87,8 @@ export type RecentOutfitHistoryDto = {
 export type SaveTodayOutfitRequest = {
     items: Array<{ clothingId: number; sortOrder: number }>;
     recoStrategy?: RecoStrategy | string | null;
+
+    recommendationId?: string | null;
 };
 
 export type OutfitFeedbackRequest = {
@@ -162,13 +171,10 @@ export const outfitApi = {
      * GET /api/outfits/monthly?year=YYYY&month=M
      */
     async getMonthly(q: { year: number; month: number }, opts?: SessionKeyOptions): Promise<MonthlyHistoryDto> {
-        const res = await sessionApi.get<ApiEnvelope<MonthlyHistoryDto> | MonthlyHistoryDto>(
-            "/api/outfits/monthly",
-            {
-                params: q,
-                ...withSessionKey(opts),
-            }
-        );
+        const res = await sessionApi.get<ApiEnvelope<MonthlyHistoryDto> | MonthlyHistoryDto>("/api/outfits/monthly", {
+            params: q,
+            ...withSessionKey(opts),
+        });
         return unwrap(res as any);
     },
 } as const;

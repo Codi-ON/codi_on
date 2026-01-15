@@ -33,7 +33,7 @@ const ClosetPage: React.FC = () => {
     const [favoritesOnly, setFavoritesOnly] = useState(false);
 
     // ✅ 30개 전체 로드
-    const { items, loading, error, toggleFavorite } = useClothes(30);
+    const { items, loading, error, toggleFavorite } = useClothes(100);
 
     const filtered = useMemo(() => {
         return items

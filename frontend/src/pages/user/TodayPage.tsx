@@ -40,21 +40,17 @@ import { buildTodayPreviewVM, type TodayWeatherMiniDto } from "@/lib/adapters/to
 
 /**
  * =========================
- * Endpoints (요청대로 RECENT_HISTORY_ENDPOINT 건드리지 않음)
+ * Endpoints
  * =========================
  */
 const TODAY_RECO_ENDPOINT = "/api/recommend/today/by-category";
 const RECENT_HISTORY_ENDPOINT = "/api/outfits/today"; // ✅ 유지(요청사항)
+const TODAY_WEATHER_ENDPOINT = "/api/weather/today";
 
 /**
  * ✅ 임시 고정 세션키
  */
 const TEMP_SESSION_KEY = "f817a912-162f-474e-abe2-52dc5236c1a2";
-
-/**
- * 날씨 “요약” API (실제 경로 맞추기)
- */
-const TODAY_WEATHER_ENDPOINT = "/api/weather/today";
 
 /**
  * =========================
@@ -85,7 +81,7 @@ type OutfitHistoryDto = {
     outfitDate?: string; // YYYY-MM-DD
     title?: string | null;
     thumbnailUrl?: string | null;
-    feedbackScore?: number | null; // ✅ (있을 때만 사용)
+    feedbackScore?: number | null;
     items?: Array<{
         category?: Category;
         clothingId?: number;
@@ -289,19 +285,15 @@ function TodayRecoByCategoryModal({
 
 /**
  * =========================
- * ✅ Preview UI (요청 레이아웃)
- * - 1번 레이아웃 + 2번 정보(dateLine/slotLine)
- * - 가운데 정렬 + 이모지 크게
- * - OUTER 미선택은 "비활성"처럼
+ * ✅ Preview UI helper
  * =========================
  */
 function parseSlots(slotLine: string) {
-    // "👕 ...  |  👖 ...  |  🧥 ..."
     const parts = slotLine.split("|").map((s) => s.trim());
     const safe = (i: number) => parts[i] ?? "";
 
     const parse = (s: string) => {
-        const icon = s.slice(0, 2).trim(); // emoji 1~2 codepoint 대응(실전에서 충분)
+        const icon = s.slice(0, 2).trim();
         const label = s.replace(icon, "").trim();
         const isMissing = label.includes("미선택");
         return { icon, label, isMissing };
@@ -325,8 +317,7 @@ const TodayPage: React.FC = () => {
     const lastSavedTodayOutfit = useAppSelector(selectLastSavedTodayOutfit);
     const selectedOutfitSnapshot = useAppSelector(selectSelectedOutfitSnapshot);
     const recoModelKey = useAppSelector(selectRecoModelKey);
-
-    const reduxRecentHistory = useAppSelector(selectRecentHistory); // ✅ 서버 실패 fallback + 전날 피드백 탐색용
+    const reduxRecentHistory = useAppSelector(selectRecentHistory);
 
     const region = "Seoul";
 
@@ -335,9 +326,7 @@ const TodayPage: React.FC = () => {
     );
     const effectiveSessionKey = sessionKeyFromStore ?? TEMP_SESSION_KEY;
 
-    const displayName = useMemo(() => {
-        return effectiveSessionKey === TEMP_SESSION_KEY ? "코디온" : "Guest";
-    }, [effectiveSessionKey]);
+    const displayName = useMemo(() => (effectiveSessionKey === TEMP_SESSION_KEY ? "코디온" : "Guest"), [effectiveSessionKey]);
 
     // ---------------------------
     // Weather (메인 위젯)
@@ -362,17 +351,17 @@ const TodayPage: React.FC = () => {
         const defaultLon = 126.978;
 
         if (!navigator.geolocation) {
-            fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+            void fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
             return;
         }
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
-                fetchDailyComment(latitude, longitude).then(setAiComment);
+                void fetchDailyComment(latitude, longitude).then(setAiComment);
             },
             () => {
-                fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
+                void fetchDailyComment(defaultLat, defaultLon).then(setAiComment);
             }
         );
     }, [fetchDailyComment]);
@@ -387,28 +376,56 @@ const TodayPage: React.FC = () => {
         null
     );
 
+    const baseRecoParams = useMemo(() => {
+        return {
+            region: "Seoul",
+            lat: 37.5665,
+            lon: 126.978,
+            limit: 10,
+        };
+    }, []);
+
+    const fetchCategory = useCallback(
+        async (category: Category): Promise<RecommendedItemDto[]> => {
+            const headers: Record<string, string> = { Accept: "application/json" };
+            if (effectiveSessionKey?.trim()) headers["X-Session-Key"] = effectiveSessionKey;
+
+            const qs = new URLSearchParams({
+                category,
+                region: baseRecoParams.region,
+                lat: String(baseRecoParams.lat),
+                lon: String(baseRecoParams.lon),
+                limit: String(baseRecoParams.limit),
+            });
+
+            const res = await fetch(`${TODAY_RECO_ENDPOINT}?${qs.toString()}`, { method: "GET", headers });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const json = (await res.json()) as unknown;
+
+            // ✅ 백이 ApiResponse 래핑이든, 배열 직접이든 둘 다 커버
+            if (Array.isArray(json)) return json as RecommendedItemDto[];
+            if (json && typeof json === "object" && Array.isArray((json as any).data)) return (json as any).data as RecommendedItemDto[];
+
+            return [];
+        },
+        [effectiveSessionKey, baseRecoParams]
+    );
+
     const fetchTodayReco = useCallback(async () => {
         setRecoLoading(true);
         setRecoError(null);
 
         try {
-            const headers: Record<string, string> = { Accept: "application/json" };
-            if (effectiveSessionKey && effectiveSessionKey.trim().length > 0) headers["X-Session-Key"] = effectiveSessionKey;
-
-            const res = await fetch(TODAY_RECO_ENDPOINT, { method: "GET", headers });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-            const json = (await res.json()) as ApiResponse<RecommendedItemDto[]>;
-            const list = Array.isArray(json?.data) ? json.data : [];
-            const grouped = byCategory(list);
-            setRecoData({ top: grouped.top, bottom: grouped.bottom, outer: grouped.outer });
+            const [top, bottom, outer] = await Promise.all([fetchCategory("TOP"), fetchCategory("BOTTOM"), fetchCategory("OUTER")]);
+            setRecoData({ top, bottom, outer });
         } catch (e) {
             setRecoError(getUserMessage(e));
             setRecoData(null);
         } finally {
             setRecoLoading(false);
         }
-    }, [effectiveSessionKey]);
+    }, [fetchCategory]);
 
     useEffect(() => {
         if (!openReco) return;
@@ -433,14 +450,13 @@ const TodayPage: React.FC = () => {
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-            const json = (await res.json()) as ApiResponse<OutfitHistoryDto[]>;
-            const list = Array.isArray(json?.data) ? json.data : [];
+            const json = (await res.json()) as ApiResponse<OutfitHistoryDto[]> | OutfitHistoryDto[];
+            const list = Array.isArray(json) ? json : Array.isArray((json as any)?.data) ? ((json as any).data as OutfitHistoryDto[]) : [];
             setHistory(list.slice(0, 3));
         } catch (e) {
             const msg = getUserMessage(e);
             setHistoryError(msg);
 
-            // ✅ 서버 실패 시 reduxRecentHistory로 fallback
             if (Array.isArray(reduxRecentHistory) && reduxRecentHistory.length > 0) {
                 setHistory((reduxRecentHistory as unknown as OutfitHistoryDto[]).slice(0, 3));
             } else {
@@ -456,11 +472,7 @@ const TodayPage: React.FC = () => {
     }, [fetchRecentHistory]);
 
     // ---------------------------
-    // ✅ Today Preview (adapter 기반, "진짜 데이터")
-    // - today: outfitRepo.getTodayOutfit(sessionKey) (없으면 lastSaved fallback)
-    // - weather: /api/weather/today (없으면 weatherVm fallback)
-    // - summary: /api/clothes/summary
-    // - feedback: 전날 > 오늘 > 없음
+    // ✅ Today Preview (adapter 기반)
     // ---------------------------
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState<string | null>(null);
@@ -471,25 +483,20 @@ const TodayPage: React.FC = () => {
 
     const yesterdayISO = useMemo(() => toISO(new Date(Date.now() - 24 * 60 * 60 * 1000)), []);
     const effectiveFeedbackScore = useMemo(() => {
-        // 1) 전날 피드백(서버 history or redux history)
         const y1 = (history as any[])?.find((x) => x?.outfitDate === yesterdayISO)?.feedbackScore;
         if (typeof y1 === "number") return y1;
 
         const y2 = (reduxRecentHistory as any[])?.find((x) => x?.dateISO === yesterdayISO)?.feedbackScore;
         if (typeof y2 === "number") return y2;
 
-        // 2) 오늘 피드백(현재 outfit)
         const t = (todayOutfit as any)?.feedbackScore;
         if (typeof t === "number") return t;
 
-        // 3) lastSaved에라도 있으면
         const ls = (lastSavedTodayOutfit as any)?.feedbackScore;
         if (typeof ls === "number") return ls;
 
         return null;
     }, [history, reduxRecentHistory, yesterdayISO, todayOutfit, lastSavedTodayOutfit]);
-
-    const canGoChecklist = effectiveFeedbackScore == null;
 
     const fetchTodayPreview = useCallback(async () => {
         setPreviewLoading(true);
@@ -499,23 +506,24 @@ const TodayPage: React.FC = () => {
             // 1) 오늘 아웃핏 (repo)
             let today: TodayOutfitDto | null = null;
             try {
-                today = await outfitRepo.getTodayOutfit(effectiveSessionKey);
+                today = await outfitRepo.getTodayOutfit({ sessionKey: effectiveSessionKey });
             } catch {
-                // repo 실패 시 lastSaved fallback
                 today = (lastSavedTodayOutfit as TodayOutfitDto) ?? null;
             }
             setTodayOutfit(today);
 
-            // 2) 날씨 mini (/api/weather/today)
+            // 2) 날씨 mini
             let mini: TodayWeatherMiniDto | null = null;
             try {
                 const wRes = await fetch(TODAY_WEATHER_ENDPOINT, {
                     method: "GET",
                     headers: { Accept: "application/json", "X-Session-Key": effectiveSessionKey },
                 });
+
                 if (wRes.ok) {
-                    const wJson = (await wRes.json()) as ApiResponse<any>;
-                    const d = wJson?.data ?? null;
+                    const wJson = (await wRes.json()) as ApiResponse<any> | any;
+                    const d = (wJson && typeof wJson === "object" && "data" in wJson) ? (wJson as any).data : wJson;
+
                     mini = {
                         temperature: typeof d?.temperature === "number" ? d.temperature : null,
                         feelsLikeTemperature: typeof d?.feelsLikeTemperature === "number" ? d.feelsLikeTemperature : null,
@@ -526,7 +534,6 @@ const TodayPage: React.FC = () => {
                 // ignore
             }
 
-            // fallback: weatherVm로 대체
             if (!mini && weatherVm) {
                 mini = {
                     temperature: (weatherVm as any)?.temperature ?? (weatherVm as any)?.temp ?? null,
@@ -536,16 +543,24 @@ const TodayPage: React.FC = () => {
             }
             setWeatherMini(mini);
 
-            // 3) summary
+            // 3) summary (ids 없으면 호출 스킵)
             const ids =
-                Array.isArray(today?.items) && today?.items?.length
-                    ? today!.items
-                        .map((x) => x?.clothingId)
+                Array.isArray(today?.items) && today.items.length
+                    ? today.items
+                        .map((x: any) => {
+                            if (typeof x?.clothingId === "number") return x.clothingId;
+                            if (typeof x?.clothingItemId === "number") return x.clothingItemId;
+                            return undefined;
+                        })
                         .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
                     : [];
 
-            const s = await closetApi.getClothesSummary(ids);
-            setSummary(s ?? []);
+            if (!ids.length) {
+                setSummary([]);
+            } else {
+                const s = await closetApi.getClothesSummary(ids);
+                setSummary(s ?? []);
+            }
         } catch (e) {
             setPreviewError(getUserMessage(e));
             setTodayOutfit(null);
@@ -700,12 +715,8 @@ const TodayPage: React.FC = () => {
                                     <Sparkles className="absolute -top-4 -right-4 w-24 h-24 text-white/5" />
 
                                     <div className="flex items-center gap-2 mb-4">
-                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">
-                                            AI
-                                        </div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Today Weather Report
-                    </span>
+                                        <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-xs font-black">AI</div>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Today Weather Report</span>
                                     </div>
 
                                     <p className="text-xl font-black leading-snug">
@@ -723,9 +734,7 @@ const TodayPage: React.FC = () => {
                                             >
                                                 {c.icon}
                                                 {c.mock ? (
-                                                    <span className="px-2 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black">
-                            예시
-                          </span>
+                                                    <span className="px-2 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black">예시</span>
                                                 ) : null}
                                                 <span>{c.text}</span>
                                             </div>
@@ -784,18 +793,13 @@ const TodayPage: React.FC = () => {
                 <div className="lg:col-span-4 space-y-10">
                     <Card title="최근 저장한 아웃핏" className="h-full">
                         <div className="space-y-8">
-                            {/* 상태 */}
-                            {previewLoading ? (
-                                <div className="text-[11px] font-bold text-slate-400">데이터 병합 중...</div>
-                            ) : null}
-                            {previewError ? (
-                                <div className="text-[11px] font-bold text-slate-400">미리보기 실패: {previewError}</div>
-                            ) : null}
+                            {previewLoading ? <div className="text-[11px] font-bold text-slate-400">데이터 병합 중...</div> : null}
+                            {previewError ? <div className="text-[11px] font-bold text-slate-400">미리보기 실패: {previewError}</div> : null}
+
                             {previewVM ? (
-                                <div className="rounded-3xl border border-slate-100 bg-white placeholder-amber-50">
-                                    {/* 상단: 날짜(텍스트) + 날씨/피드백(칩) */}
+                                <div className="rounded-3xl border border-slate-100 bg-white placeholder-amber-50 p-6">
                                     {(() => {
-                                        const raw = previewVM.dateLine ?? ""; // "2026.01.13 • ☀️ -4° / 체감 -10° • 피드백 😐"
+                                        const raw = previewVM.dateLine ?? "";
                                         const date = (raw.split("•")[0] ?? "").trim();
 
                                         const afterFirstDot = raw.split("•")[1]?.trim() ?? "";
@@ -807,9 +811,7 @@ const TodayPage: React.FC = () => {
 
                                         return (
                                             <div className="text-center">
-                                                <div className="text-[12px] font-black text-slate-400 tracking-wide">
-                                                    {date || "-"}
-                                                </div>
+                                                <div className="text-[12px] font-black text-slate-400 tracking-wide">{date || "-"}</div>
 
                                                 <div className="mt-4 flex items-center justify-center gap-6">
                                                     <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5">
@@ -826,58 +828,44 @@ const TodayPage: React.FC = () => {
                                         );
                                     })()}
 
-                                        {/* 상의/하의/아우터만 */}
-                                        <div className="mt-6 grid grid-cols-3 gap-4">
-                                            {parseSlots(previewVM.slotLine)
-                                                .slice(0, 3)
-                                                .map((x) => (
-                                                    <div
-                                                        key={x.title}
-                                                        className={cn(
-                                                            "rounded-2xl p-5 text-center",
-                                                            x.isMissing ? "bg-slate-50 text-slate-400" : "bg-white"
-                                                        )}
-                                                    >
-                                                        <div className={cn("text-[36px] leading-none", x.isMissing && "opacity-40")}>
-                                                            {x.icon}
-                                                        </div>
-                                                        <div className="mt-2 text-[12px] font-black text-slate-500">{x.title}</div>
-                                                        <div
-                                                            className={cn(
-                                                                "mt-1 text-[12px] font-black",
-                                                                x.isMissing ? "text-slate-400" : "text-slate-700"
-                                                            )}
-                                                        >
-                                                            {x.isMissing ? "미선택" : "선택 완료"}
-                                                        </div>
+                                    <div className="mt-6 grid grid-cols-3 gap-4">
+                                        {parseSlots(previewVM.slotLine)
+                                            .slice(0, 3)
+                                            .map((x) => (
+                                                <div
+                                                    key={x.title}
+                                                    className={cn("rounded-2xl p-5 text-center", x.isMissing ? "bg-slate-50 text-slate-400" : "bg-white")}
+                                                >
+                                                    <div className={cn("text-[36px] leading-none", x.isMissing && "opacity-40")}>{x.icon}</div>
+                                                    <div className="mt-2 text-[12px] font-black text-slate-500">{x.title}</div>
+                                                    <div className={cn("mt-1 text-[12px] font-black", x.isMissing ? "text-slate-400" : "text-slate-700")}>
+                                                        {x.isMissing ? "미선택" : "선택 완료"}
                                                     </div>
-                                                ))}
-                                        </div>
-
-                                        {/* 저장된 값 있으면: 히스토리만 */}
-                                        <div className="mt-4 flex items-center justify-center">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                icon={HistoryIcon}
-                                                onClick={() =>
-                                                    navigate("/calendar", {
-                                                        state: {
-                                                            sessionKey: effectiveSessionKey,
-                                                            recentlySaved: lastSavedTodayOutfit,
-                                                            selectedSnapshot: selectedOutfitSnapshot,
-                                                            recoModelKey,
-                                                        },
-                                                    })
-                                                }
-                                            >
-                                                전체 히스토리 보기
-                                            </Button>
-                                        </div>
+                                                </div>
+                                            ))}
                                     </div>
 
+                                    <div className="mt-4 flex items-center justify-center">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            icon={HistoryIcon}
+                                            onClick={() =>
+                                                navigate("/calendar", {
+                                                    state: {
+                                                        sessionKey: effectiveSessionKey,
+                                                        recentlySaved: lastSavedTodayOutfit,
+                                                        selectedSnapshot: selectedOutfitSnapshot,
+                                                        recoModelKey,
+                                                    },
+                                                })
+                                            }
+                                        >
+                                            전체 히스토리 보기
+                                        </Button>
+                                    </div>
+                                </div>
                             ) : (
-                                /* ✅ 저장된 값 없으면: 두 버튼 활성화 */
                                 <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 text-center">
                                     <div className="text-sm font-black text-slate-700">표시할 아웃핏이 없습니다</div>
                                     <div className="text-xs font-bold text-slate-500 mt-1 leading-5">
@@ -910,11 +898,7 @@ const TodayPage: React.FC = () => {
                                         </Button>
                                     </div>
 
-                                    {historyError ? (
-                                        <div className="mt-3 text-[11px] font-bold text-slate-400">
-                                            히스토리 로드 실패: {historyError}
-                                        </div>
-                                    ) : null}
+                                    {historyError ? <div className="mt-3 text-[11px] font-bold text-slate-400">히스토리 로드 실패: {historyError}</div> : null}
                                 </div>
                             )}
 
@@ -948,9 +932,7 @@ const TodayPage: React.FC = () => {
                                                         {formatDateKR((h as any)?.outfitDate)} • 피드백{" "}
                                                         {typeof (h as any)?.feedbackScore === "number" ? (h as any).feedbackScore : "—"}
                                                     </div>
-                                                    <div className="mt-1 text-sm font-black text-slate-900 truncate">
-                                                        👕/👖/🧥 히스토리 상세 보기
-                                                    </div>
+                                                    <div className="mt-1 text-sm font-black text-slate-900 truncate">👕/👖/🧥 히스토리 상세 보기</div>
                                                 </div>
                                                 <div className="text-slate-300">›</div>
                                             </div>
