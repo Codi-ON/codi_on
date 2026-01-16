@@ -9,7 +9,8 @@ import { AppProviders } from "@/app/providers";
 import { store } from "@/app/store";
 import { bootstrapApp } from "@/app/bootstrap";
 
-bootstrapApp(store.dispatch);
+// 여기서 dispatch 넘기지 말고 그냥 호출
+bootstrapApp();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
