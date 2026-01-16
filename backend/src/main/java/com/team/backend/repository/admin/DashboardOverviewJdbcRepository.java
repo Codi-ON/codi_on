@@ -31,7 +31,7 @@ public class DashboardOverviewJdbcRepository {
     private static final List<String> R_GENERATED_LIST = List.of(
             "RECO_GENERATED",
             "RECO_TODAY_GENERATED",
-            "RECO_SHOWN" // (혹시 과거에 찍힌 적 있으면 포함)
+            "RECO_SHOWN"
     );
 
     private static final List<String> R_EMPTY_LIST = List.of(
@@ -47,8 +47,13 @@ public class DashboardOverviewJdbcRepository {
             "RECO_SHOWN"
     );
     private static final String F_FEEDBACK = "RECO_FEEDBACK_SUBMITTED";
+    private static final String F_SELECTED = "RECO_ITEM_SELECTED"; // 있으면 같이 집계 (없으면 0)
 
     private final NamedParameterJdbcTemplate jdbc;
+
+    // =========================
+    // Public APIs
+    // =========================
 
     public SummaryRow findSummary(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
@@ -157,7 +162,7 @@ public class DashboardOverviewJdbcRepository {
                     0, 0, 0.0,
                     0, 0, 0.0,
                     0.0,
-                    new FunnelRow(0, 0, 0, 0.0, 0.0)
+                    new FunnelRow(0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0)
             );
         }
     }
@@ -195,19 +200,16 @@ public class DashboardOverviewJdbcRepository {
     }
 
     /**
-     * 퍼널 정의를 "체크리스트 → 추천(생성/노출) → 피드백 제출"로 변경
-     *
-     * DTO 필드명은 유지:
-     * - recoShown  := 추천 생성(RECO_GENERATED 계열)
-     * - itemSelected := 피드백 제출(RECO_FEEDBACK_SUBMITTED)
-     * - shownToSelectRate := (추천 → 피드백) 전환율로 의미 변경
+     * 퍼널: 체크리스트 → 추천(생성/노출) → 피드백(제출)
+     * + 옵션으로 "아이템 선택"도 같이 보여주면 쓸 수 있게 포함
      */
     public FunnelRow findFunnel(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
             SELECT
-              COALESCE(COUNT(*) FILTER (WHERE event_type = :CHECKLIST), 0) AS checklist_submitted,
-              COALESCE(COUNT(*) FILTER (WHERE event_type IN (:RECO_LIST)), 0) AS reco_shown,
-              COALESCE(COUNT(*) FILTER (WHERE event_type = :FEEDBACK), 0) AS item_selected
+              COALESCE(COUNT(*) FILTER (WHERE event_type = :CHECKLIST), 0)          AS checklist_submitted,
+              COALESCE(COUNT(*) FILTER (WHERE event_type IN (:RECO_LIST)), 0)      AS reco_shown,
+              COALESCE(COUNT(*) FILTER (WHERE event_type = :FEEDBACK), 0)          AS feedback_requested,
+              COALESCE(COUNT(*) FILTER (WHERE event_type = :SELECTED), 0)          AS item_selected
             FROM public.recommendation_event_log
             WHERE created_at >= :from
               AND created_at <  :to
@@ -216,21 +218,28 @@ public class DashboardOverviewJdbcRepository {
         MapSqlParameterSource p = baseParams(from, to)
                 .addValue("CHECKLIST", F_CHECKLIST)
                 .addValue("RECO_LIST", F_RECO_LIST)
-                .addValue("FEEDBACK", F_FEEDBACK);
+                .addValue("FEEDBACK", F_FEEDBACK)
+                .addValue("SELECTED", F_SELECTED);
 
         try {
             return jdbc.queryForObject(sql, p, (rs, rowNum) -> {
                 long checklist = rs.getLong("checklist_submitted");
                 long shown     = rs.getLong("reco_shown");
-                long feedback  = rs.getLong("item_selected");
+                long feedback  = rs.getLong("feedback_requested");
+                long selected  = rs.getLong("item_selected");
 
-                double checklistToShown = rate100(shown, checklist);
-                double shownToFeedback  = rate100(feedback, shown);
+                double checklistToShown    = rate100(shown, checklist);
+                double shownToFeedback     = rate100(feedback, shown);
+                double checklistToFeedback = rate100(feedback, checklist);
+                double shownToSelect       = rate100(selected, shown);
 
-                return new FunnelRow(checklist, shown, feedback, checklistToShown, shownToFeedback);
+                return new FunnelRow(
+                        checklist, shown, feedback, selected,
+                        checklistToShown, shownToFeedback, checklistToFeedback, shownToSelect
+                );
             });
         } catch (EmptyResultDataAccessException e) {
-            return new FunnelRow(0, 0, 0, 0.0, 0.0);
+            return new FunnelRow(0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0);
         }
     }
 
@@ -349,10 +358,14 @@ public class DashboardOverviewJdbcRepository {
     @AllArgsConstructor
     public static class FunnelRow {
         private final long checklistSubmitted;
-        private final long recoShown;          // 실의미: RECO_GENERATED 계열
-        private final long itemSelected;       // 실의미: RECO_FEEDBACK_SUBMITTED
+        private final long recoShown;
+        private final long feedbackRequested;
+        private final long itemSelected;
+
         private final double checklistToShownRate;
-        private final double shownToSelectRate; // 실의미: 추천→피드백 전환율
+        private final double shownToFeedbackRate;
+        private final double checklistToFeedbackRate;
+        private final double shownToSelectRate;
     }
 
     @Getter
