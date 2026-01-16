@@ -1,9 +1,10 @@
+// src/main/java/com/team/backend/api/dto/admin/dashboard/DashboardMonthlyRowResponseDto.java
 package com.team.backend.api.dto.admin.dashboard;
 
 import java.util.List;
 
 public record DashboardMonthlyRowResponseDto(
-        String month, // "YYYY-MM"
+        String month,
 
         long totalSessionEvents,
         long totalSessions,
@@ -17,19 +18,33 @@ public record DashboardMonthlyRowResponseDto(
 
         long startedSessions,
         long endedSessions,
-        double sessionEndRate, // 0~100
+        double sessionEndRate,
 
         long recoEmpty,
         long recoGenerated,
-        double recoEmptyRate,  // 0~100
+        double recoEmptyRate,
 
-        List<TopClickedItem> topClickedItems // topN
+        Funnel funnel,
+
+        List<TopClickedItem> topClickedItems
 ) {
+    public record Funnel(
+            long checklistSubmitted,
+            long recoShown,
+            long feedbackRequested,
+            long itemSelected,
+
+            double checklistToShownRate,
+            double shownToFeedbackRate,
+            double checklistToFeedbackRate,
+            double shownToSelectRate
+    ) {}
+
     public record TopClickedItem(
             int rank,
             long itemId,
             String name,
             long clickCount,
-            double clickRatio // 0~1
+            double clickRatio
     ) {}
 }

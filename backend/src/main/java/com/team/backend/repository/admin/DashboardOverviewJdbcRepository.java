@@ -24,20 +24,31 @@ public class DashboardOverviewJdbcRepository {
     private static final String S_END   = "END";
     private static final String S_ERROR = "ERROR";
 
-    // recommendation_event_log event_type
-    private static final String R_EMPTY     = "RECO_TODAY_EMPTY";
-    private static final String R_GENERATED = "RECO_TODAY_GENERATED";
+    /**
+     * recommendation_event_log event_type (실데이터 기준)
+     * - 레거시/변형 이름까지 흡수하려고 LIST로 처리
+     */
+    private static final List<String> R_GENERATED_LIST = List.of(
+            "RECO_GENERATED",
+            "RECO_TODAY_GENERATED",
+            "RECO_SHOWN" // (혹시 과거에 찍힌 적 있으면 포함)
+    );
 
-    // funnel (recommendation_event_log 기준)
+    private static final List<String> R_EMPTY_LIST = List.of(
+            "RECO_EMPTY",
+            "RECO_TODAY_EMPTY"
+    );
+
+    // funnel (요구사항: 체크리스트 → 추천 → 피드백)
     private static final String F_CHECKLIST = "CHECKLIST_SUBMITTED";
-    private static final String F_SHOWN     = "RECO_SHOWN";
-    private static final String F_SELECTED  = "RECO_ITEM_SELECTED";
+    private static final List<String> F_RECO_LIST = List.of(
+            "RECO_GENERATED",
+            "RECO_TODAY_GENERATED",
+            "RECO_SHOWN"
+    );
+    private static final String F_FEEDBACK = "RECO_FEEDBACK_SUBMITTED";
 
     private final NamedParameterJdbcTemplate jdbc;
-
-    // =========================
-    // Public APIs
-    // =========================
 
     public SummaryRow findSummary(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
@@ -76,11 +87,11 @@ public class DashboardOverviewJdbcRepository {
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to) AS total_reco_events,
 
-              (SELECT COUNT(*) FILTER (WHERE event_type = :R_EMPTY)
+              (SELECT COUNT(*) FILTER (WHERE event_type IN (:R_EMPTY_LIST))
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to) AS reco_empty,
 
-              (SELECT COUNT(*) FILTER (WHERE event_type = :R_GENERATED)
+              (SELECT COUNT(*) FILTER (WHERE event_type IN (:R_GENERATED_LIST))
                  FROM public.recommendation_event_log
                 WHERE created_at >= :from AND created_at < :to) AS reco_generated
             """;
@@ -89,8 +100,8 @@ public class DashboardOverviewJdbcRepository {
                 .addValue("S_START", S_START)
                 .addValue("S_END", S_END)
                 .addValue("S_ERROR", S_ERROR)
-                .addValue("R_EMPTY", R_EMPTY)
-                .addValue("R_GENERATED", R_GENERATED);
+                .addValue("R_EMPTY_LIST", R_EMPTY_LIST)
+                .addValue("R_GENERATED_LIST", R_GENERATED_LIST);
 
         FunnelRow funnel = findFunnel(from, to);
         double returningRate = findReturningRate(from, to);
@@ -183,12 +194,20 @@ public class DashboardOverviewJdbcRepository {
         }
     }
 
+    /**
+     * 퍼널 정의를 "체크리스트 → 추천(생성/노출) → 피드백 제출"로 변경
+     *
+     * DTO 필드명은 유지:
+     * - recoShown  := 추천 생성(RECO_GENERATED 계열)
+     * - itemSelected := 피드백 제출(RECO_FEEDBACK_SUBMITTED)
+     * - shownToSelectRate := (추천 → 피드백) 전환율로 의미 변경
+     */
     public FunnelRow findFunnel(OffsetDateTime from, OffsetDateTime to) {
         String sql = """
             SELECT
               COALESCE(COUNT(*) FILTER (WHERE event_type = :CHECKLIST), 0) AS checklist_submitted,
-              COALESCE(COUNT(*) FILTER (WHERE event_type = :SHOWN), 0)     AS reco_shown,
-              COALESCE(COUNT(*) FILTER (WHERE event_type = :SELECTED), 0)  AS item_selected
+              COALESCE(COUNT(*) FILTER (WHERE event_type IN (:RECO_LIST)), 0) AS reco_shown,
+              COALESCE(COUNT(*) FILTER (WHERE event_type = :FEEDBACK), 0) AS item_selected
             FROM public.recommendation_event_log
             WHERE created_at >= :from
               AND created_at <  :to
@@ -196,19 +215,19 @@ public class DashboardOverviewJdbcRepository {
 
         MapSqlParameterSource p = baseParams(from, to)
                 .addValue("CHECKLIST", F_CHECKLIST)
-                .addValue("SHOWN", F_SHOWN)
-                .addValue("SELECTED", F_SELECTED);
+                .addValue("RECO_LIST", F_RECO_LIST)
+                .addValue("FEEDBACK", F_FEEDBACK);
 
         try {
             return jdbc.queryForObject(sql, p, (rs, rowNum) -> {
                 long checklist = rs.getLong("checklist_submitted");
                 long shown     = rs.getLong("reco_shown");
-                long selected  = rs.getLong("item_selected");
+                long feedback  = rs.getLong("item_selected");
 
                 double checklistToShown = rate100(shown, checklist);
-                double shownToSelected  = rate100(selected, shown);
+                double shownToFeedback  = rate100(feedback, shown);
 
-                return new FunnelRow(checklist, shown, selected, checklistToShown, shownToSelected);
+                return new FunnelRow(checklist, shown, feedback, checklistToShown, shownToFeedback);
             });
         } catch (EmptyResultDataAccessException e) {
             return new FunnelRow(0, 0, 0, 0.0, 0.0);
@@ -268,12 +287,6 @@ public class DashboardOverviewJdbcRepository {
         );
     }
 
-    /**
-     * ✅ TopClicked 최종:
-     * - item_click_log: clothing_id 사용
-     * - clothing_item: clothing_id로 매핑해서 PK(id)를 가져옴
-     * - 결과 itemId는 clothing_item.id (PK)로 통일
-     */
     public List<TopClickedItemRow> findTopClickedItems(OffsetDateTime from, OffsetDateTime to, int topN) {
         String sql = """
             SELECT
@@ -336,10 +349,10 @@ public class DashboardOverviewJdbcRepository {
     @AllArgsConstructor
     public static class FunnelRow {
         private final long checklistSubmitted;
-        private final long recoShown;
-        private final long itemSelected;
+        private final long recoShown;          // 실의미: RECO_GENERATED 계열
+        private final long itemSelected;       // 실의미: RECO_FEEDBACK_SUBMITTED
         private final double checklistToShownRate;
-        private final double shownToSelectRate;
+        private final double shownToSelectRate; // 실의미: 추천→피드백 전환율
     }
 
     @Getter

@@ -25,9 +25,20 @@ public record DashboardOverviewResponseDto(
     public record Funnel(
             long checklistSubmitted,
             long recoShown,
+
+            // ✅ 추가
+            long feedbackRequested,
+
+            // (기존 유지)
             long itemSelected,
-            double checklistToShownRate,  // 0~100
-            double shownToSelectRate      // 0~100
+
+            // ✅ 3개 전환율
+            double checklistToShownRate,     // 0~100
+            double shownToFeedbackRate,      // 0~100
+            double checklistToFeedbackRate,  // 0~100
+
+            // (기존 유지)
+            double shownToSelectRate         // 0~100
     ) {}
 
     // -----------------------
@@ -114,12 +125,17 @@ public record DashboardOverviewResponseDto(
             D1RetentionSummary d1Summary,
             List<DailyD1Retention> d1Trend
     ) {
+        var f = summaryRow.getFunnel();
+
         var funnel = new Funnel(
-                summaryRow.getFunnel().getChecklistSubmitted(),
-                summaryRow.getFunnel().getRecoShown(),
-                summaryRow.getFunnel().getItemSelected(),
-                summaryRow.getFunnel().getChecklistToShownRate(),
-                summaryRow.getFunnel().getShownToSelectRate()
+                f.getChecklistSubmitted(),
+                f.getRecoShown(),
+                f.getFeedbackRequested(),
+                f.getItemSelected(),
+                f.getChecklistToShownRate(),
+                f.getShownToFeedbackRate(),
+                f.getChecklistToFeedbackRate(),
+                f.getShownToSelectRate()
         );
 
         var summary = new Summary(
