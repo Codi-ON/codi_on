@@ -42,9 +42,9 @@ export type DashboardOverviewDto = {
 export type DonutDatum = {
     category: DashboardCategory;
     name: string;
-    value: number;     // count
-    ratioRaw: number;  // 0~1
-    ratio: number;     // 0~1 rounded(4)
+    value: number; // count
+    ratioRaw: number; // 0~1
+    ratio: number; // 0~1 rounded(4)
 };
 
 export type TopItemUI = {
@@ -104,6 +104,19 @@ export function safeNullableString(v: unknown): string | null {
     return typeof v === "string" ? v : null;
 }
 
+function normalizeCategory(v: unknown): DashboardCategory {
+    switch (v) {
+        case "TOP":
+        case "BOTTOM":
+        case "OUTER":
+        case "DRESS":
+        case "ETC":
+            return v;
+        default:
+            return "ETC";
+    }
+}
+
 export function categoryLabel(c: DashboardCategory | null | undefined): string {
     switch (c) {
         case "TOP":
@@ -119,15 +132,29 @@ export function categoryLabel(c: DashboardCategory | null | undefined): string {
     }
 }
 
+/**
+ * 서버/클라 계약이 흔들릴 때를 대비:
+ * - dto 그대로 오거나
+ * - { data: dto }로 오거나
+ * 둘 다 흡수
+ */
+function unwrapOverviewDto(input: unknown): any {
+    if (!input || typeof input !== "object") return {};
+    const obj = input as any;
+    if ("range" in obj && "summary" in obj) return obj;
+    if ("data" in obj && obj.data && typeof obj.data === "object") return obj.data;
+    return obj;
+}
+
 function normalizeTopItems(arr: unknown): TopItemUI[] {
     const list = Array.isArray(arr) ? arr : [];
     return list
         .filter((x) => x && typeof x === "object")
         .map((x: any) => {
-            const category = (x.category as DashboardCategory) ?? "ETC";
+            const category = normalizeCategory(x.category);
             return {
                 clothingId: safeNumber(x.clothingId, 0),
-                name: safeString(x.name, "-"),
+                name: typeof x.name === "string" && x.name.trim() ? x.name : "-",
                 category,
                 count: safeNumber(x.count, 0),
                 imageUrl: typeof x.imageUrl === "string" ? x.imageUrl : null,
@@ -141,11 +168,10 @@ function normalizeDonut(dto: any): DashboardOverviewUI["donut"] {
     const totalClicks = safeNumber(dto?.totalClicks, 0);
     const items = Array.isArray(dto?.items) ? dto.items : [];
 
-    // ✅ count=0도 데이터로는 유지 가능(다만 차트는 totalClicks 기준으로 empty 처리하는게 UX 좋음)
     const data: DonutDatum[] = items
         .filter((x: any) => x && typeof x.count === "number" && Number.isFinite(x.count))
         .map((x: any) => {
-            const category = (x.category as DashboardCategory) ?? "ETC";
+            const category = normalizeCategory(x.category);
             const ratioRaw = typeof x.ratio === "number" && Number.isFinite(x.ratio) ? x.ratio : 0;
             return {
                 category,
@@ -161,7 +187,9 @@ function normalizeDonut(dto: any): DashboardOverviewUI["donut"] {
 
 // ---------- Adapter ----------
 export const userDashboardAdapter = {
-    toOverviewUI(dto: DashboardOverviewDto): DashboardOverviewUI {
+    toOverviewUI(input: DashboardOverviewDto): DashboardOverviewUI {
+        const dto = unwrapOverviewDto(input);
+
         const range = {
             from: safeString(dto?.range?.from, "1970-01-01"),
             to: safeString(dto?.range?.to, "1970-01-01"),

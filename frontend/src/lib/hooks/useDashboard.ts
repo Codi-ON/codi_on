@@ -23,8 +23,8 @@ function toUserMessage(e: any) {
 }
 
 /**
- * - userDashboardApi.getOverview()는 "DTO만" 반환 (sessionApi가 unwrap 처리)
- * - 여기서 unwrapApiPayload 같은 거 쓰면 다시 깨짐
+ * - userDashboardApi.getOverview()는 "DTO만" 반환(unwrap 처리) 전제
+ * - abort(signal) 전달 가능하면 전달하고, 아니면 무시되도록 any로 처리
  */
 export function useDashboardOverview(query: DashboardOverviewQuery): UseDashboardResult {
     const [raw, setRaw] = useState<DashboardOverviewDto | null>(null);
@@ -36,6 +36,7 @@ export function useDashboardOverview(query: DashboardOverviewQuery): UseDashboar
     const fetchOnce = useCallback(async () => {
         if (!query?.year || !query?.month) return;
 
+        // 이전 요청 취소
         abortRef.current?.abort();
         const ac = new AbortController();
         abortRef.current = ac;
@@ -44,25 +45,35 @@ export function useDashboardOverview(query: DashboardOverviewQuery): UseDashboar
         setError(null);
 
         try {
-            // NOTE: sessionApi는 axios config를 받아 signal도 통과 가능
-            const dto = await userDashboardApi.getOverview({
+            const params = {
                 year: query.year,
                 month: query.month,
                 ...(query.section ? { section: query.section } : {}),
-            });
+            };
 
-            setRaw(dto);
+            /**
+             * axios 기반이면 보통 2번째 인자로 config를 받고, fetch 기반이면 무시될 수 있음.
+             * 타입 충돌은 any로 흡수.
+             */
+            const dto = await (userDashboardApi.getOverview as any)(params, { signal: ac.signal });
+
+            // signal로 취소된 뒤 뒤늦게 resolve되는 케이스 방지
+            if (ac.signal.aborted) return;
+
+            setRaw(dto as DashboardOverviewDto);
         } catch (e: any) {
             if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
+            if (ac.signal.aborted) return;
+
             setError(toUserMessage(e));
             setRaw(null);
         } finally {
-            setLoading(false);
+            if (!ac.signal.aborted) setLoading(false);
         }
     }, [query.year, query.month, query.section]);
 
     useEffect(() => {
-        fetchOnce();
+        void fetchOnce();
         return () => abortRef.current?.abort();
     }, [fetchOnce]);
 
