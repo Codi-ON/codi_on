@@ -1,7 +1,6 @@
 // src/lib/api/recoApi.ts
 import { sessionApi } from "@/lib/http";
 import type { ChecklistSubmitDto } from "@/shared/domain/checklist";
-import {UUID} from "node:crypto";
 
 export type RecommendCategory = "TOP" | "BOTTOM" | "OUTER";
 
@@ -78,8 +77,8 @@ export type RecommendCandidatesRequestDto = {
   region: string;
   lat: number;
   lon: number;
+  recommendationId: string;
   topNPerCategory?: number;      // default 10
-  recommendationId?: UUID;    // 예: "RECO-202601"
   checklist: ChecklistSubmitDto; // 필수
 };
 
@@ -139,7 +138,7 @@ export const recoApi = {
           lat: body.lat,
           lon: body.lon,
           topNPerCategory: body.topNPerCategory ?? 10,
-          recommendationId: body.recommendationId ?? "RECO-202601",
+          recommendationId: body.recommendationId,
           checklist: body.checklist,
         }
     );
