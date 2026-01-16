@@ -1,34 +1,25 @@
 // src/lib/session/sessionKey.ts
-import.meta.env.VITE_SESSION_KEY
+
 const STORAGE_KEY = "codion.sessionKey";
 
-function getEnvSessionKey(): string | null {
-    const v = import.meta.env.VITE_SESSION_KEY;
-    if (!v) return null;
-    const trimmed = String(v).trim();
-    return trimmed.length > 0 ? trimmed : null;
-}
+// 여기 값만 바꾸면 전체 앱의 세션키가 바뀜
+const FIXED_SESSION_KEY = "f817a912-162f-474e-abe2-52dc5236c1a2";
 
 // UUID v4 only (버전 4 + variant 8/9/a/b)
 export function isUuidV4(v: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 
+// env/localStorage에서 읽는 함수들은 형식상만 남겨두고,
+// 실제로는 FIXED_SESSION_KEY만 쓰게 만드는 구조로 둔다.
 export function getSessionKey(): string | null {
-    const envKey = getEnvSessionKey();
-    if (envKey) return envKey;
-
-    try {
-        const v = localStorage.getItem(STORAGE_KEY);
-        return v && v.trim().length > 0 ? v.trim() : null;
-    } catch {
-        return null;
-    }
+    return FIXED_SESSION_KEY;
 }
 
-export function setSessionKey(key: string): void {
+export function setSessionKey(_: string): void {
+    // 호출은 그대로 두되, 굳이 localStorage에 쓸 필요 없으면 비워도 됨.
     try {
-        localStorage.setItem(STORAGE_KEY, key);
+        localStorage.setItem(STORAGE_KEY, FIXED_SESSION_KEY);
     } catch {}
 }
 
@@ -38,44 +29,15 @@ export function clearSessionKey(): void {
     } catch {}
 }
 
-function uuidV4(): string {
-    // crypto.randomUUID()가 있으면 그게 제일 안전
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-        return (crypto as any).randomUUID();
-    }
-
-    // fallback: RFC4122 v4 포맷 맞춤
-    let dt = new Date().getTime();
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-        const r = ((dt + Math.random() * 16) % 16) | 0;
-        dt = Math.floor(dt / 16);
-        const v = c === "x" ? r : (r & 0x3) | 0x8; // variant 8/9/a/b
-        return v.toString(16);
-    });
-}
-
+/**
+ * 어떤 값이 들어와도 최종적으로는 FIXED_SESSION_KEY만 사용
+ */
 export function ensureSessionKey(): string {
-    // 1) envKey 우선 + 검증
-    const envKey = getEnvSessionKey();
-    if (envKey) {
-        if (!isUuidV4(envKey)) {
-            // envKey가 잘못이면 백이 무조건 400/500 내므로, 여기서 막아야 함
-            throw new Error("VITE_SESSION_KEY is not a valid UUID v4.");
-        }
-        setSessionKey(envKey);
-        return envKey;
+    if (!isUuidV4(FIXED_SESSION_KEY)) {
+        throw new Error("FIXED_SESSION_KEY is not a valid UUID v4.");
     }
 
-    // 2) localStorage key 검증
-    const existing = getSessionKey();
-    if (existing && isUuidV4(existing)) return existing;
-
-    // 3) 불량키면 제거 후 재발급
-    if (existing && !isUuidV4(existing)) {
-        clearSessionKey();
-    }
-
-    const key = uuidV4();
-    setSessionKey(key);
-    return key;
+    // 디버깅 편하게 하려면 localStorage에도 한 번 써 준다.
+    setSessionKey(FIXED_SESSION_KEY);
+    return FIXED_SESSION_KEY;
 }

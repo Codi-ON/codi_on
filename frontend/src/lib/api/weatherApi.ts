@@ -1,4 +1,4 @@
-import { publicApi } from "@/lib/http";
+import { sessionApi } from "@/lib/http";
 
 export type WeatherTodayDto = {
   region: string;
@@ -23,13 +23,13 @@ export type WeatherWeeklyResponseDto = {
 
 export const weatherApi = {
   getToday(region = "Seoul") {
-    return publicApi.get<WeatherTodayDto>("/api/weather/today", {
+    return sessionApi.get<WeatherTodayDto>("/api/weather/today", {
       params: { region },
     });
   },
 
   getWeekly(region = "Seoul") {
-    return publicApi.get<WeatherWeeklyResponseDto>("/api/weather/weekly", {
+    return sessionApi.get<WeatherWeeklyResponseDto>("/api/weather/weekly", {
       params: { region },
     });
   },

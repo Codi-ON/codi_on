@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: codion-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-codion}
-      POSTGRES_USER: ${POSTGRES_USER:-codion}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+      POSTGRES_DB: ${POSTGRES_DB:codion}
+      POSTGRES_USER: ${POSTGRES_USER:codion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:1234}
     ports:
       - "5432:5432"
     volumes:
