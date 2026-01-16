@@ -498,78 +498,111 @@ const TodayPage: React.FC = () => {
         return null;
     }, [history, reduxRecentHistory, yesterdayISO, todayOutfit, lastSavedTodayOutfit]);
 
-    const fetchTodayPreview = useCallback(async () => {
-        setPreviewLoading(true);
-        setPreviewError(null);
+    const fetchTodayPreview = useCallback(
+        async () => {
+            setPreviewLoading(true);
+            setPreviewError(null);
 
-        try {
-            // 1) 오늘 아웃핏 (repo)
-            let today: TodayOutfitDto | null = null;
             try {
-                today = await outfitRepo.getTodayOutfit({ sessionKey: effectiveSessionKey });
-            } catch {
-                today = (lastSavedTodayOutfit as TodayOutfitDto) ?? null;
-            }
-            setTodayOutfit(today);
+                // 1) 오늘 아웃핏 (repo)
+                let today: TodayOutfitDto | null = null;
+                try {
+                    // 세션키는 sessionAxios 인터셉터에서 고정값으로 붙으니까
+                    // 더 이상 인자로 넘기지 않는다.
+                    today = await outfitRepo.getTodayOutfit();
+                } catch {
+                    today = (lastSavedTodayOutfit as TodayOutfitDto) ?? null;
+                }
+                setTodayOutfit(today);
 
-            // 2) 날씨 mini
-            let mini: TodayWeatherMiniDto | null = null;
-            try {
-                const wRes = await fetch(TODAY_WEATHER_ENDPOINT, {
-                    method: "GET",
-                    headers: { Accept: "application/json", "X-Session-Key": effectiveSessionKey },
-                });
+                // 2) 날씨 mini (weather API는 세션키 필요 없음)
+                let mini: TodayWeatherMiniDto | null = null;
+                try {
+                    const wRes = await fetch(TODAY_WEATHER_ENDPOINT, {
+                        method: "GET",
+                        headers: { Accept: "application/json" },
+                    });
 
-                if (wRes.ok) {
-                    const wJson = (await wRes.json()) as ApiResponse<any> | any;
-                    const d = (wJson && typeof wJson === "object" && "data" in wJson) ? (wJson as any).data : wJson;
+                    if (wRes.ok) {
+                        const wJson = (await wRes.json()) as ApiResponse<any> | any;
+                        const d =
+                            wJson && typeof wJson === "object" && "data" in wJson
+                                ? (wJson as any).data
+                                : wJson;
 
+                        mini = {
+                            temperature:
+                                typeof d?.temperature === "number"
+                                    ? d.temperature
+                                    : null,
+                            feelsLikeTemperature:
+                                typeof d?.feelsLikeTemperature === "number"
+                                    ? d.feelsLikeTemperature
+                                    : null,
+                            sky: d?.sky ?? null,
+                        };
+                    }
+                } catch {
+                    // ignore
+                }
+
+                if (!mini && weatherVm) {
                     mini = {
-                        temperature: typeof d?.temperature === "number" ? d.temperature : null,
-                        feelsLikeTemperature: typeof d?.feelsLikeTemperature === "number" ? d.feelsLikeTemperature : null,
-                        sky: d?.sky ?? null,
+                        temperature:
+                            (weatherVm as any)?.temperature ??
+                            (weatherVm as any)?.temp ??
+                            null,
+                        feelsLikeTemperature:
+                            (weatherVm as any)?.feelsLikeTemperature ??
+                            (weatherVm as any)?.feelsLike ??
+                            null,
+                        sky:
+                            (weatherVm as any)?.sky ??
+                            (weatherVm as any)?.condition ??
+                            null,
                     };
                 }
-            } catch {
-                // ignore
-            }
+                setWeatherMini(mini);
 
-            if (!mini && weatherVm) {
-                mini = {
-                    temperature: (weatherVm as any)?.temperature ?? (weatherVm as any)?.temp ?? null,
-                    feelsLikeTemperature: (weatherVm as any)?.feelsLikeTemperature ?? (weatherVm as any)?.feelsLike ?? null,
-                    sky: (weatherVm as any)?.sky ?? (weatherVm as any)?.condition ?? null,
-                };
-            }
-            setWeatherMini(mini);
+                // 3) summary (ids 없으면 호출 스킵)
+                const ids =
+                    Array.isArray(today?.items) && today.items.length
+                        ? today.items
+                            .map((x: any) => {
+                                if (typeof x?.clothingId === "number")
+                                    return x.clothingId;
+                                if (typeof x?.clothingItemId === "number")
+                                    return x.clothingItemId;
+                                return undefined;
+                            })
+                            .filter(
+                                (v): v is number =>
+                                    typeof v === "number" &&
+                                    Number.isFinite(v),
+                            )
+                        : [];
 
-            // 3) summary (ids 없으면 호출 스킵)
-            const ids =
-                Array.isArray(today?.items) && today.items.length
-                    ? today.items
-                        .map((x: any) => {
-                            if (typeof x?.clothingId === "number") return x.clothingId;
-                            if (typeof x?.clothingItemId === "number") return x.clothingItemId;
-                            return undefined;
-                        })
-                        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
-                    : [];
-
-            if (!ids.length) {
+                if (!ids.length) {
+                    setSummary([]);
+                } else {
+                    const s = await closetApi.getClothesSummary(ids);
+                    setSummary(s ?? []);
+                }
+            } catch (e) {
+                setPreviewError(getUserMessage(e));
+                setTodayOutfit(null);
+                setWeatherMini(null);
                 setSummary([]);
-            } else {
-                const s = await closetApi.getClothesSummary(ids);
-                setSummary(s ?? []);
+            } finally {
+                setPreviewLoading(false);
             }
-        } catch (e) {
-            setPreviewError(getUserMessage(e));
-            setTodayOutfit(null);
-            setWeatherMini(null);
-            setSummary([]);
-        } finally {
-            setPreviewLoading(false);
-        }
-    }, [effectiveSessionKey, lastSavedTodayOutfit, weatherVm]);
+        },
+        [lastSavedTodayOutfit, weatherVm],
+    );
+
+    useEffect(() => {
+        void fetchTodayPreview();
+    }, [fetchTodayPreview]);
 
     useEffect(() => {
         void fetchTodayPreview();
