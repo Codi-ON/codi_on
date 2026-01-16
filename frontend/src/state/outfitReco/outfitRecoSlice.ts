@@ -5,7 +5,8 @@ import { getUserMessage } from "@/lib/errors";
 import { recoApi } from "@/lib/api/recoApi";
 import { outfitRepo } from "@/lib/repo/outfitRepo";
 import type { TodayOutfitDto } from "@/lib/api/outfitApi";
-import type { ChecklistState } from "@/shared/domain/checklist";
+import {ChecklistSubmitDto} from "@/shared/domain/checklist.ts";
+
 
 export type FeedbackScore = 1 | 0 | -1; // GOOD(1), NEUTRAL(0), BAD(-1)
 
@@ -95,7 +96,7 @@ export type OutfitHistoryVm = {
 
 export type OutfitRecoState = {
     // ✅ ChecklistState 안에 recommendationId: string 포함
-    checklist: ChecklistState | null;
+    checklist: ChecklistSubmitDto | null;
 
     // RecommendationPage가 쓰는 리스트(각 카테고리 3개만)
     recoList: RecommendationClosetList | null;
@@ -384,11 +385,25 @@ export const saveTodayOutfitThunk = createAsyncThunk<SaveTodayOutfitResult, void
 
             const snapshot: SelectedOutfit = { top, bottom, outer };
 
-            const clothingIds = [top?.clothingId, bottom?.clothingId, outer?.clothingId].filter(
-                (v): v is number => typeof v === "number"
+            // ✅ 서버 저장용 payload (sortOrder 포함)
+            const items = [
+                top && { clothingId: top.clothingId, sortOrder: 1 },
+                bottom && { clothingId: bottom.clothingId, sortOrder: 2 },
+                outer && { clothingId: outer.clothingId, sortOrder: 3 },
+            ].filter(
+                (v): v is { clothingId: number; sortOrder: number } =>
+                    !!v && typeof v.clothingId === "number"
             );
 
-            const saved = await outfitRepo.saveTodayOutfit(clothingIds);
+            if (!items.length) {
+                throw new Error("저장할 아이템이 없습니다.");
+            }
+
+            const saved = await outfitRepo.saveTodayOutfit({
+                items,
+                recoStrategy: recoModelKey === "UNKNOWN" ? null : recoModelKey,
+                // recommendationKey: null, // 필요하면 나중에 checklist.recommendationId 등 연결
+            });
 
             return {
                 saved,
@@ -400,12 +415,11 @@ export const saveTodayOutfitThunk = createAsyncThunk<SaveTodayOutfitResult, void
         }
     }
 );
-
 const outfitRecoSlice = createSlice({
     name: "outfitReco",
     initialState,
     reducers: {
-        setChecklist(state, action: PayloadAction<ChecklistState>) {
+        setChecklist(state, action: PayloadAction<ChecklistSubmitDto>) {
             state.checklist = action.payload;
         },
 
@@ -527,7 +541,7 @@ export const selectRecoFeedbackScore = (s: any) =>
     s.outfitReco.recoFeedbackScore as FeedbackScore;
 
 export const selectChecklist = (s: any) =>
-    s.outfitReco.checklist as ChecklistState | null;
+    s.outfitReco.checklist as ChecklistSubmitDto | null;
 
 export const selectRecentHistory = (s: any) =>
     s.outfitReco.recentHistory as OutfitHistoryVm[];

@@ -2,16 +2,14 @@
 import { outfitApi } from "@/lib/api/outfitApi";
 import type { MonthlyHistoryDto, TodayOutfitDto } from "@/lib/api/outfitApi";
 import { outfitSaveAdapter } from "@/lib/adapters/outfitAdapter";
-import { getSessionKey } from "@/lib/session/sessionKey";
+import { getSessionKey } from "@/lib/session/sessionKey.ts";
 
 /**
  * 저장 입력 허용 범위(프론트 편의용):
  * - number[]
  * - { clothingIds: number[] }
  * - { items: [{ clothingId, sortOrder? }] }
- * - ✅ 확장: { items: [...], recoStrategy?: string|null, recommendationId?: string|null }
- *
- * NOTE: recommendationId는 UUID "문자열"로만 다룬다. (node:crypto UUID 금지)
+ * - ✅ 확장: { items: [...], recoStrategy?: string|null, recommendationKey?: string|null }
  */
 export type OutfitSaveInput =
     | number[]
@@ -20,55 +18,66 @@ export type OutfitSaveInput =
     | {
     items: Array<{ clothingId: number; sortOrder?: number }>;
     recoStrategy?: string | null;
-    recommendationId?: string | null; // ✅ UUID는 string으로 받는다
+    recommendationKey?: string | null;
 };
 
-type SessionKeyOptions = { sessionKey?: string };
-
-function requireSessionKey(opts?: SessionKeyOptions): string {
-    const key = opts?.sessionKey ?? getSessionKey();
-    if (!key) throw new Error("세션키가 없습니다.");
-    return key;
-}
-
 /**
- * ✅ Repo
- * - 기본: 내부에서 getSessionKey() 사용 (기존 호출 안 깨짐)
- * - 필요 시: opts.sessionKey로 override 가능
+ * ✅ sessionKey는 Repo 내부에서 getSessionKey()로 일관되게 주입
+ * - 호출부는 sessionKey 신경 안 쓰고 `outfitRepo.*()`만 사용
  */
 export const outfitRepo = {
-    /** 오늘 아웃핏 조회 */
-    getTodayOutfit(opts?: SessionKeyOptions): Promise<TodayOutfitDto> {
-        const sessionKey = requireSessionKey(opts);
+    /**
+     * 오늘 아웃핏 조회
+     */
+    async getTodayOutfit(): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         return outfitApi.getToday({ sessionKey });
     },
 
-    /** 오늘 아웃핏 저장 */
-    saveTodayOutfit(input: OutfitSaveInput, opts?: SessionKeyOptions): Promise<TodayOutfitDto> {
-        const sessionKey = requireSessionKey(opts);
+    /**
+     * 오늘 아웃핏 저장
+     * - input은 number[]든 items든 다 받아서 adapter에서 payload로 통일
+     */
+    async saveTodayOutfit(input: OutfitSaveInput): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         const body = outfitSaveAdapter.toSaveTodayPayload(input);
         return outfitApi.saveToday(body, { sessionKey });
     },
 
-    /** 오늘 피드백 등록 */
-    postTodayFeedback(rating: 1 | 0 | -1, opts?: SessionKeyOptions): Promise<TodayOutfitDto> {
-        const sessionKey = requireSessionKey(opts);
+    /**
+     * 오늘 피드백 등록
+     */
+    async postTodayFeedback(rating: 1 | 0 | -1): Promise<TodayOutfitDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         return outfitApi.postTodayFeedback({ rating }, { sessionKey });
     },
 
-    /** 특정 날짜 피드백 등록 */
-    postOutfitFeedbackByDate(
+    /**
+     * 특정 날짜 피드백 등록
+     */
+    async postOutfitFeedbackByDate(
         dateISO: string,
-        rating: 1 | 0 | -1,
-        opts?: SessionKeyOptions
+        rating: 1 | 0 | -1
     ): Promise<TodayOutfitDto> {
-        const sessionKey = requireSessionKey(opts);
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         return outfitApi.postFeedbackByDate(dateISO, { rating }, { sessionKey });
     },
 
-    /** 월별 히스토리 조회 */
-    getMonthlyOutfits(year: number, month: number, opts?: SessionKeyOptions): Promise<MonthlyHistoryDto> {
-        const sessionKey = requireSessionKey(opts);
+    /**
+     * 월별 히스토리 조회
+     */
+    async getMonthlyOutfits(year: number, month: number): Promise<MonthlyHistoryDto> {
+        const sessionKey = getSessionKey();
+        if (!sessionKey) throw new Error("세션키가 없습니다.");
+
         return outfitApi.getMonthly({ year, month }, { sessionKey });
     },
 } as const;
