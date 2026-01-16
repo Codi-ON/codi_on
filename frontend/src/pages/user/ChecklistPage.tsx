@@ -17,24 +17,24 @@ import {
 } from "lucide-react";
 
 import { useAppDispatch } from "@/state/hooks/hooks";
-import { setChecklist } from "@/state/outfitReco/outfitRecoSlice";
 
 import type {
   UsageType,
   ThicknessLevel,
   ActivityLevel,
-  YesterdayTempFeedback,
-  ChecklistSubmitDto, YesterdayFeedback,
+  ChecklistSubmitDto,
+  YesterdayFeedback,
 } from "@/shared/domain/checklist";
 
 import { useChecklistToday, useChecklistSubmit } from "@/lib/hooks/useChecklist";
+import {setChecklist} from "@/state/outfitReco/outfitRecoSlice.ts";
 
 const STORAGE_KEY = "codion.checklist.answer.v1";
 
 type DraftChecklistAnswer = {
   usageType?: UsageType;
   thicknessLevel?: ThicknessLevel; // UI 2번 질문 결과(THICK/NORMAL/THIN)
-  yesterdayTempFeedback?: YesterdayFeedback;
+  yesterdayFeedback?: YesterdayFeedback;
 };
 
 type QuestionKey = keyof DraftChecklistAnswer;
@@ -77,7 +77,7 @@ const questions: Array<Question<any>> = [
     ],
   },
   {
-    key: "yesterdayTempFeedback",
+    key: "yesterdayFeedback",
     q: "어제 코디는 어땠나요?",
     subtitle: "누적 피드백으로 다음 추천을 미세조정합니다.",
     cols: 4,
@@ -91,16 +91,12 @@ const questions: Array<Question<any>> = [
 ];
 
 function mapThicknessToActivity(level: ThicknessLevel): ActivityLevel {
-  // UI에서 “정적/적당/매우”를 thicknessLevel로 받고 있으니,
-  // 백 필드 activityLevel을 자동으로 생성해서 채움
   if (level === "THICK") return "STATIC";
   if (level === "THIN") return "HIGH";
   return "NORMAL";
 }
 
 function normalizeYesterdayFeedback(v: YesterdayFeedback): YesterdayFeedback {
-  // 백이 UNKNOWN을 허용하지 않으면 여기서 OK로 내려도 됨.
-  // 우선은 UNKNOWN 그대로 보냄(백이 받도록 맞추는 게 정석)
   return v;
 }
 
@@ -118,26 +114,32 @@ const ChecklistPage: React.FC = () => {
     return todayQ.data !== null && todayQ.data !== undefined;
   }, [todayQ.isLoading, todayQ.isError, todayQ.data]);
 
+  // 세션 저장값 로드
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") setAnswer(parsed);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, []);
 
+  // 세션 저장값 업데이트
   useEffect(() => {
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(answer));
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, [answer]);
 
   const completedCount = useMemo(() => {
     let c = 0;
     if (answer.usageType) c++;
     if (answer.thicknessLevel) c++;
-    if (answer.yesterdayTempFeedback) c++;
+    if (answer.yesterdayFeedback) c++;
     return c;
   }, [answer]);
 
@@ -151,31 +153,27 @@ const ChecklistPage: React.FC = () => {
     if (!isReady) return;
 
     const thickness = answer.thicknessLevel!;
-    const payload: ChecklistSubmitDto = {
+    const checklistPayload: ChecklistSubmitDto = {
       usageType: answer.usageType!,
       thicknessLevel: thickness,
       activityLevel: mapThicknessToActivity(thickness),
-      yesterdayTempFeedback: normalizeYesterdayFeedback(answer.yesterdayTempFeedback!),
+      yesterdayFeedback: normalizeYesterdayFeedback(answer.yesterdayFeedback!),
     };
 
-    // 이미 제출이면 submit 없이 진행
+    // 이미 제출이면 today API 응답에서 recommendationId 꺼내 쓰기
     if (alreadySubmitted) {
-      dispatch(setChecklist(payload));
+      const recoId = todayQ.data!.recommendationId; // <- getToday 응답 타입에 있음
+      dispatch(setChecklist({ ...checklistPayload, recommendationId: recoId }));
       navigate("/recommendation");
       return;
     }
 
-    console.log("CHECKLIST SUBMIT BODY =>", payload);
+    // 최초 제출: submit 응답에서 recoId 받기
+    const res = await submitM.mutateAsync(checklistPayload);
+    const recoId = res.recommendationId; // ChecklistSubmitResponseDto
 
-    try {
-      await submitM.mutateAsync(payload);
-
-      dispatch(setChecklist(payload));
-      navigate("/recommendation");
-    } catch (e: any) {
-      console.log("CHECKLIST SUBMIT ERROR DATA =>", e?.response?.data);
-      // 실패 시 이동하지 않음
-    }
+    dispatch(setChecklist({ ...checklistPayload, recommendationId: recoId }));
+    navigate("/recommendation");
   };
 
   const ctaDisabled = !isReady || todayQ.isLoading || submitM.isPending;
@@ -188,10 +186,7 @@ const ChecklistPage: React.FC = () => {
           <Button
               variant="secondary"
               size="lg"
-              className={cn(
-                  "h-14 px-10 shadow-2xl",
-                  isReady ? "shadow-orange-500/20" : "shadow-slate-200/40"
-              )}
+              className={cn("h-14 px-10 shadow-2xl", isReady ? "shadow-orange-500/20" : "shadow-slate-200/40")}
               disabled={ctaDisabled}
               onClick={goNext}
           >
@@ -211,7 +206,7 @@ const ChecklistPage: React.FC = () => {
               <p className="text-red-500 text-sm font-medium">체크리스트 상태 조회 실패 (백 로그 확인)</p>
           ) : alreadySubmitted ? (
               <p className="text-slate-500 text-sm font-medium">
-                오늘 체크리스트는 이미 제출되어 있습니다. (다시 제출하지 않고 진행)
+                오늘 체크리스트는 이미 제출되어 있습니다. (다시 제출해도 추천에만 반영됩니다.)
               </p>
           ) : (
               <p className="text-slate-400 text-sm font-medium">
@@ -221,7 +216,10 @@ const ChecklistPage: React.FC = () => {
 
           {submitM.isError && (
               <p className="text-red-500 text-sm font-medium">
-                제출 실패: {(submitM.error as any)?.response?.data?.message ?? (submitM.error as any)?.message ?? "알 수 없는 오류"}
+                제출 실패:{" "}
+                {(submitM.error as any)?.response?.data?.message ??
+                    (submitM.error as any)?.message ??
+                    "알 수 없는 오류"}
               </p>
           )}
         </div>
@@ -254,18 +252,20 @@ const ChecklistPage: React.FC = () => {
                                   "flex flex-col items-center gap-4 p-8 rounded-[32px] border-2 transition-all group",
                                   active
                                       ? "bg-navy-900 border-navy-900 text-white shadow-2xl shadow-navy-900/20"
-                                      : "bg-white border-slate-100 text-slate-500 hover:border-orange-500/20 hover:bg-orange-50/30"
+                                      : "bg-white border-slate-100 text-slate-500 hover:border-orange-500/20 hover:bg-orange-50/30",
                               )}
                           >
                             <div
                                 className={cn(
                                     "w-14 h-14 rounded-2xl flex items-center justify-center transition-all",
-                                    active ? "bg-white/10" : "bg-slate-50 group-hover:bg-white"
+                                    active ? "bg-white/10" : "bg-slate-50 group-hover:bg-white",
                                 )}
                             >
                               <opt.icon
                                   size={24}
-                                  className={cn(active ? "text-orange-500" : "text-slate-400 group-hover:text-navy-900")}
+                                  className={cn(
+                                      active ? "text-orange-500" : "text-slate-400 group-hover:text-navy-900",
+                                  )}
                               />
                             </div>
                             <span className="text-sm font-black tracking-tight">{opt.label}</span>
@@ -280,7 +280,9 @@ const ChecklistPage: React.FC = () => {
 
         <div className="flex items-center justify-center gap-3 p-6 bg-slate-50 rounded-[32px] border border-slate-100">
           <Info size={18} className="text-slate-400" />
-          <p className="text-xs text-slate-500 font-medium">답변은 세션에만 임시 저장되며, 오늘의 추천 생성에만 반영됩니다.</p>
+          <p className="text-xs text-slate-500 font-medium">
+            답변은 세션에만 임시 저장되며, 오늘의 추천 생성에만 반영됩니다.
+          </p>
         </div>
       </div>
   );

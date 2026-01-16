@@ -13,7 +13,8 @@ import {
     RefreshCcw,
     Calendar,
     MousePointerClick,
-    Sparkles, MessageSquareHeart,
+    Sparkles,
+    MessageSquareHeart,
 } from "lucide-react";
 
 import {
@@ -32,8 +33,7 @@ import {
 
 import { categoryLabel, ratioToPercentText } from "@/lib/adapters/userDashboardAdapter";
 import { useDashboardOverview } from "@/lib/hooks/useDashboard";
-import {Tooltip} from "@/shared/ui/components/Tooltip.tsx";
-
+import { Tooltip } from "@/shared/ui/components/Tooltip.tsx";
 
 type DonutBasis = "ALL_CLICKS" | "FAVORITED_CLICKS";
 
@@ -67,6 +67,79 @@ const DASHBOARD_THEME = {
 } as const;
 
 /** =========================
+ * Mock 데이터 (실제 로그가 없을 때 Demo 용)
+ * ========================= */
+
+const MOCK_DONUT = [
+    { category: "TOP", name: "상의", value: 18, ratioRaw: 0.42 },
+    { category: "BOTTOM", name: "하의", value: 13, ratioRaw: 0.30 },
+    { category: "OUTER", name: "아우터", value: 8, ratioRaw: 0.19 },
+    { category: "ONEPIECE", name: "원피스", value: 4, ratioRaw: 0.09 },
+];
+
+const MOCK_TOP_CLICKED = [
+    {
+        clothingId: 10001,
+        name: "기본 기모 맨투맨",
+        category: "TOP",
+        count: 7,
+        imageUrl: null,
+    },
+    {
+        clothingId: 20001,
+        name: "일자 핏 데님 팬츠",
+        category: "BOTTOM",
+        count: 5,
+        imageUrl: null,
+    },
+    {
+        clothingId: 30001,
+        name: "롱 패딩 점퍼",
+        category: "OUTER",
+        count: 4,
+        imageUrl: null,
+    },
+    {
+        clothingId: 10002,
+        name: "하프넥 니트 스웨터",
+        category: "TOP",
+        count: 3,
+        imageUrl: null,
+    },
+    {
+        clothingId: 20002,
+        name: "코튼 와이드 팬츠",
+        category: "BOTTOM",
+        count: 2,
+        imageUrl: null,
+    },
+];
+
+const MOCK_TOP_FAV_CLICKED = [
+    {
+        clothingId: 30002,
+        name: "숏 패딩 점퍼",
+        category: "OUTER",
+        count: 4,
+        imageUrl: null,
+    },
+    {
+        clothingId: 10003,
+        name: "스트라이프 니트",
+        category: "TOP",
+        count: 3,
+        imageUrl: null,
+    },
+    {
+        clothingId: 20003,
+        name: "플리츠 롱 스커트",
+        category: "BOTTOM",
+        count: 2,
+        imageUrl: null,
+    },
+];
+
+/** =========================
  * Utils
  * ========================= */
 function pad2(n: number) {
@@ -81,7 +154,6 @@ function formatRange(fromISO: string, toISO: string) {
     return `${f} ~ ${t}`;
 }
 function tempText(v: number | null | undefined) {
-    // ✅ 0도 표시. null/undefined만 "-"
     if (v === null || v === undefined || !Number.isFinite(v)) return "-";
     return `${Math.round(v)}°`;
 }
@@ -183,9 +255,9 @@ const TopItemRow = ({
         <div className="min-w-0 flex-1">
             <div className="text-sm font-black text-slate-800 truncate">{name}</div>
             <div className="mt-0.5 text-[11px] font-bold text-slate-500">
-        <span className={`inline-flex items-center px-2 h-5 rounded-full ${DASHBOARD_THEME.badge.soft}`}>
-          {category}
-        </span>
+                <span className={`inline-flex items-center px-2 h-5 rounded-full ${DASHBOARD_THEME.badge.soft}`}>
+                    {category}
+                </span>
             </div>
         </div>
 
@@ -197,8 +269,6 @@ const UserDashboardPage: React.FC = () => {
     const now = new Date();
     const [year, setYear] = useState(now.getFullYear());
     const [month, setMonth] = useState(now.getMonth() + 1);
-
-    // 현재 API는 basis 토글 리패치 미지원 가정 → 표시 토글만 유지
     const [donutBasis, setDonutBasis] = useState<DonutBasis>("ALL_CLICKS");
 
     const { ui, loading, error, refetch } = useDashboardOverview({
@@ -230,7 +300,7 @@ const UserDashboardPage: React.FC = () => {
     }, [ui]);
 
     /** =========================
-     * KPI (데이터로만 만든다)
+     * KPI
      * ========================= */
     const kpi = useMemo(() => {
         if (!ui) return null;
@@ -305,10 +375,20 @@ const UserDashboardPage: React.FC = () => {
     }, [ui]);
 
     /** =========================
-     * Donut
+     * Donut (실데이터 없으면 Mock로 대체)
      * ========================= */
-    const donutData = useMemo(() => (ui ? ui.donut.data ?? [] : []), [ui]);
-    const donutEmpty = !ui || (ui.donut.totalClicks ?? 0) <= 0 || donutData.length === 0;
+    const { donutData, isMockDonut } = useMemo(() => {
+        if (!ui || !ui.donut) {
+            return { donutData: MOCK_DONUT, isMockDonut: true };
+        }
+        const raw = ui.donut.data ?? [];
+        const empty = (ui.donut.totalClicks ?? 0) <= 0 || raw.length === 0;
+
+        if (empty) {
+            return { donutData: MOCK_DONUT, isMockDonut: true };
+        }
+        return { donutData: raw, isMockDonut: false };
+    }, [ui]);
 
     const donutCenter = useMemo(() => {
         if (!donutData.length) return { title: "-", sub: "-" };
@@ -317,8 +397,24 @@ const UserDashboardPage: React.FC = () => {
         return { title: ratioToPercentText(top?.ratioRaw), sub: top?.name ?? "-" };
     }, [donutData]);
 
-    const topClicked = ui?.topClickedItems ?? [];
-    const topFavClicked = ui?.topFavoritedClickedItems ?? [];
+    /** =========================
+     * Top Lists (실데이터 없으면 Mock로)
+     * ========================= */
+    const { topClicked, topFavClicked, isMockTopClicked, isMockTopFavClicked } = useMemo(() => {
+        const rawTop = ui?.topClickedItems ?? [];
+        const rawFav = ui?.topFavoritedClickedItems ?? [];
+
+        const useMockTop = rawTop.length === 0;
+        const useMockFav = rawFav.length === 0;
+
+        return {
+            topClicked: useMockTop ? MOCK_TOP_CLICKED : rawTop,
+            topFavClicked: useMockFav ? MOCK_TOP_FAV_CLICKED : rawFav,
+            isMockTopClicked: useMockTop,
+            isMockTopFavClicked: useMockFav,
+        };
+    }, [ui]);
+
     const monthOptions = useMemo(() => Array.from({ length: 12 }).map((_, i) => i + 1), []);
 
     const goPrevMonth = () => {
@@ -345,8 +441,12 @@ const UserDashboardPage: React.FC = () => {
             <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <div>
-                        <h1 className="text-3xl font-black text-[#0F172A] tracking-tighter">나의 스타일 통계</h1>
-                        <p className="text-slate-500 text-sm font-medium mt-1">월별 저장/피드백/클릭 데이터를 요약합니다.</p>
+                        <h1 className="text-3xl font-black text-[#0F172A] tracking-tight">
+                            나의 스타일 통계
+                        </h1>
+                        <p className="text-slate-500 text-sm font-medium mt-1">
+                            월별 저장/피드백/클릭 데이터를 요약합니다.
+                        </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -356,7 +456,9 @@ const UserDashboardPage: React.FC = () => {
 
                         <div className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-white px-3 h-9">
                             <Calendar size={16} className="text-slate-400" />
-                            <span className="text-sm font-black text-slate-700">{yyyymm(year, month)} 리포트</span>
+                            <span className="text-sm font-black text-slate-700">
+                                {yyyymm(year, month)} 리포트
+                            </span>
                             <span className="text-slate-200">|</span>
                             <select
                                 className="text-sm font-black text-slate-600 bg-transparent outline-none"
@@ -370,9 +472,11 @@ const UserDashboardPage: React.FC = () => {
                                 ))}
                             </select>
 
-                            <span className={`ml-2 inline-flex items-center px-2 h-6 rounded-full ${DASHBOARD_THEME.badge.orange}`}>
-                {ui ? rangeText : "-"}
-              </span>
+                            <span
+                                className={`ml-2 inline-flex items-center px-2 h-6 rounded-full ${DASHBOARD_THEME.badge.orange}`}
+                            >
+                                {ui ? rangeText : "-"}
+                            </span>
                         </div>
 
                         <Button variant="outline" size="sm" onClick={goNextMonth} aria-label="next-month">
@@ -383,6 +487,10 @@ const UserDashboardPage: React.FC = () => {
                             이번달
                         </Button>
 
+                        <Button variant="outline" size="sm" onClick={() => refetch()}>
+                            <RefreshCcw size={14} className="mr-1" />
+                            새로고침
+                        </Button>
                     </div>
                 </div>
 
@@ -400,12 +508,17 @@ const UserDashboardPage: React.FC = () => {
                             <Sparkles size={22} />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-base md:text-lg font-black text-slate-900 leading-7">{hero.title}</div>
-                            <div className="mt-1 text-xs md:text-sm font-bold text-slate-500 leading-6">{hero.desc}</div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-
+                            <div className="text-base md:text-lg font-black text-slate-900 leading-7">
+                                {hero.title}
                             </div>
+                            <div className="mt-1 text-xs md:text-sm font-bold text-slate-500 leading-6">
+                                {hero.desc}
+                            </div>
+                            {isMockDonut && (
+                                <div className="mt-2 inline-flex items-center px-2.5 h-6 rounded-full bg-slate-900 text-[11px] font-bold text-white">
+                                    현재는 예시 데이터 기준 화면입니다. 실제 클릭 로그가 쌓이면 자동으로 교체됩니다.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -457,7 +570,9 @@ const UserDashboardPage: React.FC = () => {
                                 <InfoTip help={x.help} />
                             </div>
 
-                            <div className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{x.label}</div>
+                            <div className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                {x.label}
+                            </div>
                             <div className="text-2xl font-black text-[#0F172A] mt-1">{x.value}</div>
                             <div className="text-xs font-bold text-slate-500 mt-2 leading-5">{x.sub}</div>
                         </Card>
@@ -481,30 +596,47 @@ const UserDashboardPage: React.FC = () => {
                                     <div className="flex items-center justify-between pt-4 pb-3">
                                         <div className="text-xs font-black text-slate-600 flex items-center gap-2">
                                             전환율:{" "}
-                                            <span className="text-slate-900">{funnelRate === null ? "-" : `${Math.round(funnelRate)}%`}</span>
-                                            <InfoTip help={{ title: "전환율", desc: "전환율 = 피드백 / 저장\n저장이 0이면 전환율은 '-' 처리합니다." }} />
+                                            <span className="text-slate-900">
+                                                {funnelRate === null ? "-" : `${Math.round(funnelRate)}%`}
+                                            </span>
+                                            <InfoTip
+                                                help={{
+                                                    title: "전환율",
+                                                    desc: "전환율 = 피드백 / 저장\n저장이 0이면 전환율은 '-' 처리합니다.",
+                                                }}
+                                            />
                                         </div>
                                     </div>
 
                                     <div className="h-[220px]">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={funnelData} margin={{ top: 10, right: 12, bottom: 10, left: 0 }}>
+                                            <BarChart
+                                                data={funnelData}
+                                                margin={{ top: 10, right: 12, bottom: 10, left: 0 }}
+                                            >
                                                 <CartesianGrid strokeDasharray="3 3" />
                                                 <XAxis dataKey="step" tick={{ fontSize: 12, fontWeight: 800 }} />
                                                 <YAxis allowDecimals={false} />
                                                 <RechartsTooltip />
-                                                <Bar dataKey="value" radius={[12, 12, 12, 12]} fill={DASHBOARD_THEME.brand.primary}>
+                                                <Bar
+                                                    dataKey="value"
+                                                    radius={[12, 12, 12, 12]}
+                                                    fill={DASHBOARD_THEME.brand.primary}
+                                                >
                                                     <LabelList dataKey="value" position="top" />
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
 
-                                    <div className={`mt-4 rounded-2xl px-4 py-3 text-xs font-bold ${DASHBOARD_THEME.notice.info} flex items-start gap-2`}>
+                                    <div
+                                        className={`mt-4 rounded-2xl px-4 py-3 text-xs font-bold ${DASHBOARD_THEME.notice.info} flex items-start gap-2`}
+                                    >
                                         <Info size={14} className="mt-[2px] shrink-0 text-slate-400" />
                                         <span className="leading-5">
-                      P0에서는 “추천 생성/선택” 단계 로그가 없어서 퍼널을 2단계로 제한합니다. (이벤트 로그 추가 시 확장)
-                    </span>
+                                            P0에서는 “추천 생성/선택” 단계 로그가 없어서 퍼널을 2단계로 제한합니다. (이벤트
+                                            로그 추가 시 확장)
+                                        </span>
                                     </div>
                                 </>
                             )}
@@ -519,9 +651,11 @@ const UserDashboardPage: React.FC = () => {
                             <div className="pt-4 flex items-center justify-between">
                                 <div className="text-xs font-black text-slate-600 flex items-center gap-2">
                                     기준:
-                                    <span className={`inline-flex items-center px-3 h-7 rounded-full ${DASHBOARD_THEME.badge.orange}`}>
-                    {ui ? basisLabel(ui.donut.basis) : "-"}
-                  </span>
+                                    <span
+                                        className={`inline-flex items-center px-3 h-7 rounded-full ${DASHBOARD_THEME.badge.orange}`}
+                                    >
+                                        {ui ? basisLabel(ui.donut.basis as DonutBasis) : basisLabel(donutBasis)}
+                                    </span>
                                     <InfoTip
                                         help={{
                                             title: "기준(basis)",
@@ -539,7 +673,9 @@ const UserDashboardPage: React.FC = () => {
                                                 onClick={() => setDonutBasis(b)}
                                                 className={[
                                                     "h-8 px-3 rounded-full text-xs font-black transition",
-                                                    active ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-50",
+                                                    active
+                                                        ? "bg-slate-900 text-white"
+                                                        : "bg-white text-slate-500 hover:bg-slate-50",
                                                 ].join(" ")}
                                                 type="button"
                                                 title="(현재는 표시 토글입니다. 서버가 basis 파라미터를 지원하면 리패치로 연결하세요.)"
@@ -551,32 +687,43 @@ const UserDashboardPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className={`mt-3 rounded-2xl px-4 py-3 text-xs font-bold ${DASHBOARD_THEME.notice.warn} flex items-start gap-2`}>
+                            <div
+                                className={`mt-3 rounded-2xl px-4 py-3 text-xs font-bold ${DASHBOARD_THEME.notice.warn} flex items-start gap-2`}
+                            >
                                 <MousePointerClick size={14} className="mt-[2px] shrink-0" />
-                                <span className="leading-5">클릭 데이터는 누적 기반이라, DB가 비어있으면 차트가 비어 보일 수 있습니다.</span>
+                                <span className="leading-5">
+                                    클릭 데이터는 누적 기반이라, DB가 비어있으면 차트가 비어 보일 수 있습니다. 현재는
+                                    예시 데이터를 사용해 분포를 보여줍니다.
+                                </span>
                             </div>
 
-                            {loading || !ui ? (
+                            {loading ? (
                                 <div className="py-6 space-y-4">
                                     <SkeletonBlock className="h-40 w-full" />
                                     <SkeletonBlock className="h-3 w-48" />
-                                </div>
-                            ) : donutEmpty ? (
-                                <div className="mt-6">
-                                    <EmptyState
-                                        icon={<MousePointerClick size={18} />}
-                                        title="아직 클릭 데이터가 없습니다"
-                                        desc="추천 결과에서 아이템을 눌러주면 카테고리 분포가 쌓입니다."
-                                    />
                                 </div>
                             ) : (
                                 <div className="mt-6 flex flex-col items-center gap-6">
                                     <div className="relative w-[220px] h-[220px]">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
-                                                <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={95} paddingAngle={2}>
+                                                <Pie
+                                                    data={donutData}
+                                                    dataKey="value"
+                                                    nameKey="name"
+                                                    innerRadius={70}
+                                                    outerRadius={95}
+                                                    paddingAngle={2}
+                                                >
                                                     {donutData.map((_, idx) => (
-                                                        <Cell key={idx} fill={DASHBOARD_THEME.donutColors[idx % DASHBOARD_THEME.donutColors.length]} />
+                                                        <Cell
+                                                            key={idx}
+                                                            fill={
+                                                                DASHBOARD_THEME.donutColors[
+                                                                idx % DASHBOARD_THEME.donutColors.length
+                                                                    ]
+                                                            }
+                                                        />
                                                     ))}
                                                 </Pie>
                                                 <RechartsTooltip />
@@ -584,24 +731,42 @@ const UserDashboardPage: React.FC = () => {
                                         </ResponsiveContainer>
 
                                         <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                                            <div className="text-2xl font-black text-[#0F172A]">{donutCenter.title}</div>
-                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{donutCenter.sub}</div>
+                                            <div className="text-2xl font-black text-[#0F172A]">
+                                                {donutCenter.title}
+                                            </div>
+                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                                                {donutCenter.sub}
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 w-full">
                                         {donutData.map((d, idx) => (
-                                            <div key={d.category} className="flex items-center gap-2">
+                                            <div key={`${d.category}-${idx}`} className="flex items-center gap-2">
                                                 <div
                                                     className="w-2.5 h-2.5 rounded-full"
-                                                    style={{ background: DASHBOARD_THEME.donutColors[idx % DASHBOARD_THEME.donutColors.length] }}
+                                                    style={{
+                                                        background:
+                                                            DASHBOARD_THEME.donutColors[
+                                                            idx % DASHBOARD_THEME.donutColors.length
+                                                                ],
+                                                    }}
                                                 />
                                                 <div className="text-[11px] font-bold text-slate-800">
-                                                    {d.name} <span className="text-slate-500 font-black">({ratioToPercentText(d.ratioRaw)})</span>
+                                                    {d.name}{" "}
+                                                    <span className="text-slate-500 font-black">
+                                                        ({ratioToPercentText(d.ratioRaw)})
+                                                    </span>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
+
+                                    {isMockDonut && (
+                                        <div className="w-full text-[11px] font-bold text-slate-400 text-right">
+                                            * 샘플 클릭 데이터 기준입니다.
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -612,56 +777,96 @@ const UserDashboardPage: React.FC = () => {
             {/* Top Lists */}
             <div className="grid lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-6">
-                    <Card title="가장 많이 클릭된 아이템" subtitle="Top Clicks" className="border border-slate-100">
+                    <Card
+                        title="가장 많이 클릭된 아이템"
+                        subtitle="Top Clicks"
+                        className="border border-slate-100"
+                    >
                         <div className="px-6 pb-6 pt-4">
-                            {loading || !ui ? (
+                            {loading ? (
                                 <div className="space-y-3">
                                     <SkeletonBlock className="h-12 w-full" />
                                     <SkeletonBlock className="h-12 w-full" />
                                     <SkeletonBlock className="h-12 w-full" />
                                 </div>
                             ) : topClicked.length === 0 ? (
-                                <EmptyState icon={<MousePointerClick size={18} />} title="데이터 없음" desc="아이템 클릭이 쌓이면 Top 리스트가 표시됩니다." />
+                                <EmptyState
+                                    icon={<MousePointerClick size={18} />}
+                                    title="데이터 없음"
+                                    desc="아이템 클릭이 쌓이면 Top 리스트가 표시됩니다."
+                                />
                             ) : (
-                                <div className="divide-y divide-slate-100">
-                                    {topClicked.slice(0, 5).map((it) => (
-                                        <TopItemRow
-                                            key={it.clothingId}
-                                            name={it.name}
-                                            category={categoryLabel(it.category)}
-                                            count={it.count}
-                                            imageUrl={it.imageUrl}
-                                        />
-                                    ))}
-                                </div>
+                                <>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-xs font-black text-slate-600">
+                                            상위 {Math.min(5, topClicked.length)}개 아이템
+                                        </div>
+                                        {isMockTopClicked && (
+                                            <span className="text-[10px] font-bold text-slate-400">
+                                                샘플 클릭 데이터
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="divide-y divide-slate-100">
+                                        {topClicked.slice(0, 5).map((it) => (
+                                            <TopItemRow
+                                                key={it.clothingId}
+                                                name={it.name}
+                                                category={categoryLabel(it.category)}
+                                                count={it.count}
+                                                imageUrl={it.imageUrl}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
                             )}
                         </div>
                     </Card>
                 </div>
 
                 <div className="lg:col-span-6">
-                    <Card title="찜한 아이템 중 클릭 Top" subtitle="Favorited Clicks" className="border border-slate-100">
+                    <Card
+                        title="찜한 아이템 중 클릭 Top"
+                        subtitle="Favorited Clicks"
+                        className="border border-slate-100"
+                    >
                         <div className="px-6 pb-6 pt-4">
-                            {loading || !ui ? (
+                            {loading ? (
                                 <div className="space-y-3">
                                     <SkeletonBlock className="h-12 w-full" />
                                     <SkeletonBlock className="h-12 w-full" />
                                     <SkeletonBlock className="h-12 w-full" />
                                 </div>
                             ) : topFavClicked.length === 0 ? (
-                                <EmptyState icon={<MousePointerClick size={18} />} title="데이터 없음" desc="찜 + 클릭 데이터가 쌓이면 Top 리스트가 표시됩니다." />
+                                <EmptyState
+                                    icon={<MousePointerClick size={18} />}
+                                    title="데이터 없음"
+                                    desc="찜 + 클릭 데이터가 쌓이면 Top 리스트가 표시됩니다."
+                                />
                             ) : (
-                                <div className="divide-y divide-slate-100">
-                                    {topFavClicked.slice(0, 5).map((it) => (
-                                        <TopItemRow
-                                            key={it.clothingId}
-                                            name={it.name}
-                                            category={categoryLabel(it.category)}
-                                            count={it.count}
-                                            imageUrl={it.imageUrl}
-                                        />
-                                    ))}
-                                </div>
+                                <>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-xs font-black text-slate-600">
+                                            상위 {Math.min(5, topFavClicked.length)}개 아이템
+                                        </div>
+                                        {isMockTopFavClicked && (
+                                            <span className="text-[10px] font-bold text-slate-400">
+                                                샘플 클릭 데이터
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="divide-y divide-slate-100">
+                                        {topFavClicked.slice(0, 5).map((it) => (
+                                            <TopItemRow
+                                                key={it.clothingId}
+                                                name={it.name}
+                                                category={categoryLabel(it.category)}
+                                                count={it.count}
+                                                imageUrl={it.imageUrl}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
                             )}
                         </div>
                     </Card>
@@ -676,7 +881,8 @@ const UserDashboardPage: React.FC = () => {
                 <div className="min-w-0">
                     <div className="text-sm font-black text-slate-800">주의</div>
                     <div className="mt-1 text-xs font-bold text-slate-600 leading-5">
-                        통계는 <b>세션키 기준</b>으로 집계됩니다. 데이터가 없으면 일부 차트/리스트는 비어 보일 수 있습니다.
+                        통계는 <b>세션키 기준</b>으로 집계됩니다. 실제 데이터가 없을 경우, 일부 차트와 리스트는
+                        <span className="ml-1 underline underline-offset-2">예시 데이터</span>로 표시됩니다.
                     </div>
                 </div>
             </div>

@@ -5,12 +5,12 @@ import { getUserMessage } from "@/lib/errors";
 import { recoApi } from "@/lib/api/recoApi";
 import { outfitRepo } from "@/lib/repo/outfitRepo";
 import type { TodayOutfitDto } from "@/lib/api/outfitApi";
-import type { ChecklistSubmitDto } from "@/shared/domain/checklist";
+import {ChecklistSubmitDto} from "@/shared/domain/checklist.ts";
+
 
 export type FeedbackScore = 1 | 0 | -1; // GOOD(1), NEUTRAL(0), BAD(-1)
 
 // 캘린더/상세에서 보여줄 “모델(머신) 키”
-// - 너 요구대로: 소재/혼합율 중 하나는 고정으로 잡아야 하니 기본은 BLEND_RATIO로 둠.
 export type RecommendationModelKey = "BLEND_RATIO" | "MATERIAL_RATIO" | "UNKNOWN";
 
 export type ClosetItem = {
@@ -77,8 +77,6 @@ export type SelectedOutfit = {
 
 /**
  * ✅ A안: “최근 저장한 아웃핏”을 API 없이도 그리기 위한 ViewModel
- * - 저장 시점 스냅샷(selectedOutfitSnapshot) 기반으로 생성
- * - TodayPage/History 카드에서 바로 렌더 가능한 최소 스펙
  */
 export type OutfitHistoryVmItem = {
     category: "TOP" | "BOTTOM" | "OUTER";
@@ -97,6 +95,7 @@ export type OutfitHistoryVm = {
 };
 
 export type OutfitRecoState = {
+    // ✅ ChecklistState 안에 recommendationId: string 포함
     checklist: ChecklistSubmitDto | null;
 
     // RecommendationPage가 쓰는 리스트(각 카테고리 3개만)
@@ -119,7 +118,6 @@ export type OutfitRecoState = {
     saveError: string | null;
 
     // ✅ “recentlySaved”로 캘린더에서 덮어쓰기할 원천(= 오늘 저장 직후 응답)
-    // - today GET에 의존하지 않고 이 값만 사용
     lastSavedTodayOutfit: TodayOutfitDto | null;
 
     // ✅ 저장 시점에 화면에서 선택된 outfit(이름/브랜드/이미지 등) 스냅샷
@@ -315,8 +313,16 @@ export const fetchRecommendation = createAsyncThunk<FetchRecommendationResult, v
     async (_, { getState, rejectWithValue }) => {
         try {
             const state = getState() as { outfitReco: OutfitRecoState };
-            const checklist = state.outfitReco.checklist;
-            if (!checklist) throw new Error("체크리스트가 없습니다. 체크리스트부터 제출해 주세요.");
+            const checklist = state.outfitReco.checklist; // ChecklistState | null
+
+            if (!checklist) {
+                throw new Error("체크리스트가 없습니다. 체크리스트부터 제출해 주세요.");
+            }
+
+            // ✅ checklist 안에 recommendationId 가 반드시 들어있어야 함
+            if (!checklist.recommendationId) {
+                throw new Error("추천 ID가 없습니다. 체크리스트를 다시 제출해 주세요.");
+            }
 
             // ✅ ML 후보군 호출 (POST /api/recommend/candidates)
             // region/lat/lon 고정(서울) 정책 반영
@@ -325,7 +331,13 @@ export const fetchRecommendation = createAsyncThunk<FetchRecommendationResult, v
                 lat: 37.5665,
                 lon: 126.978,
                 topNPerCategory: 10,
-                checklist,
+                recommendationId: checklist.recommendationId,
+                checklist: {
+                    usageType: checklist.usageType,
+                    thicknessLevel: checklist.thicknessLevel,
+                    activityLevel: checklist.activityLevel,
+                    yesterdayFeedback: checklist.yesterdayFeedback,
+                },
             } as any)) as unknown;
 
             // 구형(top/bottom/outer) 응답
@@ -373,13 +385,25 @@ export const saveTodayOutfitThunk = createAsyncThunk<SaveTodayOutfitResult, void
 
             const snapshot: SelectedOutfit = { top, bottom, outer };
 
-            const clothingIds = [top?.clothingId, bottom?.clothingId, outer?.clothingId].filter(
-                (v): v is number => typeof v === "number"
+            // ✅ 서버 저장용 payload (sortOrder 포함)
+            const items = [
+                top && { clothingId: top.clothingId, sortOrder: 1 },
+                bottom && { clothingId: bottom.clothingId, sortOrder: 2 },
+                outer && { clothingId: outer.clothingId, sortOrder: 3 },
+            ].filter(
+                (v): v is { clothingId: number; sortOrder: number } =>
+                    !!v && typeof v.clothingId === "number"
             );
 
-            // ✅ 서버 계약이 items(sortOrder)지만, outfitRepo가 clothingIds를 items로 매핑하는 구조면 그대로 사용 가능
-            // (너 프로젝트 흐름상 이미 그렇게 쓰고 있음)
-            const saved = await outfitRepo.saveTodayOutfit(clothingIds);
+            if (!items.length) {
+                throw new Error("저장할 아이템이 없습니다.");
+            }
+
+            const saved = await outfitRepo.saveTodayOutfit({
+                items,
+                recoStrategy: recoModelKey === "UNKNOWN" ? null : recoModelKey,
+                // recommendationKey: null, // 필요하면 나중에 checklist.recommendationId 등 연결
+            });
 
             return {
                 saved,
@@ -391,7 +415,6 @@ export const saveTodayOutfitThunk = createAsyncThunk<SaveTodayOutfitResult, void
         }
     }
 );
-
 const outfitRecoSlice = createSlice({
     name: "outfitReco",
     initialState,
@@ -426,7 +449,7 @@ const outfitRecoSlice = createSlice({
         clearLastSaved(state) {
             state.lastSavedTodayOutfit = null;
             state.selectedOutfitSnapshot = null;
-            state.recentHistory = []; // ✅ 같이 정리
+            state.recentHistory = [];
         },
 
         resetOutfitReco() {
@@ -462,16 +485,10 @@ const outfitRecoSlice = createSlice({
             .addCase(saveTodayOutfitThunk.fulfilled, (state, action) => {
                 state.saving = false;
 
-                // ✅ 캘린더/히스토리에서 today GET 없이 “recentlySaved”로 사용
                 state.lastSavedTodayOutfit = action.payload.saved;
-
-                // ✅ 상세 타이틀/프리뷰를 위한 스냅샷
                 state.selectedOutfitSnapshot = action.payload.snapshot;
-
-                // ✅ 저장된 건은 어떤 모델로 추천된 건지 같이 유지
                 state.recoModelKey = action.payload.modelKey;
 
-                // ✅ A안 핵심: recentHistory 업서트 (최근 3개)
                 const outfitDate =
                     (action.payload.saved as any)?.outfitDate ?? toIsoDateYYYYMMDD();
 
@@ -514,14 +531,17 @@ export const selectRecoError = (s: any) => s.outfitReco.error as string | null;
 export const selectSaving = (s: any) => s.outfitReco.saving as boolean;
 export const selectSaveError = (s: any) => s.outfitReco.saveError as string | null;
 
-// ✅ Calendar에서 monthly map에 덮어쓸 “recentlySaved”
-export const selectLastSavedTodayOutfit = (s: any) => s.outfitReco.lastSavedTodayOutfit as TodayOutfitDto | null;
+export const selectLastSavedTodayOutfit = (s: any) =>
+    s.outfitReco.lastSavedTodayOutfit as TodayOutfitDto | null;
 
-export const selectSelectedOutfitSnapshot = (s: any) => s.outfitReco.selectedOutfitSnapshot as SelectedOutfit | null;
+export const selectSelectedOutfitSnapshot = (s: any) =>
+    s.outfitReco.selectedOutfitSnapshot as SelectedOutfit | null;
 
-export const selectRecoFeedbackScore = (s: any) => s.outfitReco.recoFeedbackScore as FeedbackScore;
-export const selectChecklist = (s: any) => s.outfitReco.checklist as ChecklistSubmitDto | null;
+export const selectRecoFeedbackScore = (s: any) =>
+    s.outfitReco.recoFeedbackScore as FeedbackScore;
 
-// ✅ A안: 최근 저장 히스토리 (API 없이도 렌더)
+export const selectChecklist = (s: any) =>
+    s.outfitReco.checklist as ChecklistSubmitDto | null;
+
 export const selectRecentHistory = (s: any) =>
     s.outfitReco.recentHistory as OutfitHistoryVm[];

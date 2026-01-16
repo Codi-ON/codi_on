@@ -1,56 +1,45 @@
-export let YesterdayTempFeedback;
 // src/shared/domain/checklist.ts
 
 export type UsageType = "INDOOR" | "OUTDOOR" | "BOTH";
 export type ThicknessLevel = "THICK" | "NORMAL" | "THIN";
 export type YesterdayFeedback = "HOT" | "OK" | "COLD" | "UNKNOWN";
-
 export type ActivityLevel = "STATIC" | "NORMAL" | "HIGH";
 
-/**
- * UI/세션/리덕스에서 쓰는 "선택 3개" 답변 형태
- * - 이건 네 말대로 존재해야 함. (컴포넌트/세션 저장 포맷)
- */
+/** UI에서 사용하는 기본 답변 3개 */
 export type ChecklistAnswer = {
     usageType: UsageType;
-    thicknessLevel: ThicknessLevel;     // UI 2번에서 선택한 값(단수)
+    thicknessLevel: ThicknessLevel;
     yesterdayFeedback: YesterdayFeedback;
 };
 
-/**
- * 백 제출용 Request DTO (Swagger 기준)
- * - 중요: 키 이름이 UI와 다름 (yesterdayTempFeedback)
- * - 중요: clientDateISO 제거 (백에 없으면 보내지 말 것)
- */
+/** 백엔드 POST body용 (recommendationId 없음) */
 export type ChecklistSubmitRequestDto = {
     usageType: UsageType;
     thicknessLevel: ThicknessLevel;
     activityLevel: ActivityLevel;
+    // 백 스펙: yesterdayTempFeedback
     yesterdayTempFeedback: YesterdayFeedback;
 };
 
-/**
- * 앱 내부에서 "제출 후"에도 유지하고 싶으면(추천 페이지 등)
- * - UI Answer + 백 Request를 모두 커버하는 형태로 별도 타입 유지
- * - 굳이 필요없으면 삭제해도 됨.
- */
+/** 프론트에서 들고 다니는 “오늘 체크리스트” 기본 값 */
 export type ChecklistSubmitDto = ChecklistAnswer & {
     activityLevel: ActivityLevel;
-    clientDateISO?: string;
-    yesterdayTempFeedback: YesterdayFeedback;
-
+    clientDateISO?: string;          // “오늘 날짜” (YYYY-MM-DD)
+    recommendationId?: string;       // 백에서 생성한 UUID (옵션)
 };
 
-export type ChecklistTodayDto = {
-    recommendationId: string;
-    date: string; // YYYY-MM-DD
-    created: boolean;
-} | null;
-
+/** /api/checklist/submit, /today 의 data payload */
 export type ChecklistSubmitResponseDto = {
     recommendationId: string;
-    date: string; // YYYY-MM-DD
+    date: string;    // "2026-01-15"
     created: boolean;
 };
 
+/** 오늘 체크리스트 전체 상태 (리덕스/화면 공통) */
+export type ChecklistTodayDto = ChecklistSubmitDto & {
+    recommendationId: string;   // 이제 필수
+    created: boolean;
+};
 
+/** 리덕스에서 쓰는 상태 타입 alias */
+export type ChecklistState = ChecklistTodayDto;
